@@ -1,0 +1,13 @@
+name: pytorch-osc
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pytorch>=1.10
+  - torchaudio
+  - ipykernel
+  - seaborn
+  - tqdm
+  - pip:
+    - mido
