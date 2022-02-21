@@ -10,5 +10,7 @@ dependencies:
   - ipykernel
   - seaborn
   - tqdm
+  - fire
   - pip:
     - mido
+    - osc4py3
