@@ -7,7 +7,7 @@
 # Setup
 
 ```
-conda create -f environment.yml
+conda env create -f environment.yml
 conda activate pytorch-osc
 pip install -e notepredictor
 ```
