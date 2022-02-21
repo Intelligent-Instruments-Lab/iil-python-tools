@@ -1,6 +1,7 @@
 name: pytorch-osc
 channels:
   - pytorch
+  - defaults
   - conda-forge
 dependencies:
   - python=3.9
