@@ -21,6 +21,8 @@ class Trainer:
         batch_len = 64,
         lr = 3e-4,
         adam_betas = (0.9, 0.999),
+        adam_eps = 1e-08, 
+        weight_decay = 0.01,
         seed = 0, # random seed
         n_jobs = 0, # for dataloaders
         device = 'cpu', # 'cuda:0'
@@ -53,6 +55,8 @@ class Trainer:
         except KeyError as e:
             raise
 
+        self.device = torch.device(self.device)
+
         for d in (self.model_dir, self.log_dir):
             d.mkdir(parents=True, exist_ok=True)
 
@@ -73,11 +77,12 @@ class Trainer:
             generator=torch.Generator().manual_seed(0))
 
         self.opt = torch.optim.AdamW(
-            self.model.parameters(), self.lr, self.adam_betas)
+            self.model.parameters(), 
+            self.lr, self.adam_betas, self.adam_eps, self.weight_decay)
 
     @property
     def gpu(self):
-        return self.device!='cpu'
+        return self.device.type!='cpu'
 
     def seed_random(self):
         random.seed(self.seed)
@@ -139,7 +144,7 @@ class Trainer:
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
 
-                batch = batch.to(self.device)
+                batch = batch.to(self.device, non_blocking=True)
 
                 self.iteration += 1
                 self.exposure += self.batch_size
@@ -157,11 +162,12 @@ class Trainer:
             metrics = defaultdict(float)
             self.model.eval()
             for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
-                batch = batch.to(self.device)
+                batch = batch.to(self.device, non_blocking=True)
                 with torch.no_grad():
                     result = self.model(batch)
                     metrics['loss'] += self.get_loss(result).item()
                     metrics['acc'] += result['log_probs'].exp().mean().item()
+                    
             self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
 
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')

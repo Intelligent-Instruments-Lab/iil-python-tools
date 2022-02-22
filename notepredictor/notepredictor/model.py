@@ -36,7 +36,8 @@ class PitchPredictor(nn.Module):
             notes: LongTensor[batch, time]
         """
         x = self.emb(notes) # batch, time, emb_size
-        h, _ = self.rnn(x, self.h0[None].expand(1, x.shape[0], -1)) #batch, time, hidden_size
+        h0 = self.h0[None].expand(1, x.shape[0], -1).contiguous() # 1 x batch x hidden_size
+        h, _ = self.rnn(x, h0) #batch, time, hidden_size
         logits = self.proj(h[:,:-1]) # batch, time-1, 128
         logits = F.log_softmax(logits, -1) # logits = logits - logits.logsumexp(-1, keepdim=True)
         targets = notes[:,1:,None] #batch, time-1, 1
@@ -68,7 +69,7 @@ class PitchPredictor(nn.Module):
             ret = ret.multinomial(1).item()
         return ret
     
-    def reset(self):
+    def reset(self, start=True):
         """
         resets internal model state.
         """
