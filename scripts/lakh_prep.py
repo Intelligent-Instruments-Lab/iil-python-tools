@@ -29,10 +29,8 @@ def process(fnames, min_len=64):
         torch.save(dict(
             pitch=torch.LongTensor([m.note for m in seq]),
             velocity=torch.LongTensor([m.velocity for m in seq]),
-            # ticks=torch.LongTensor([m.time for m in seq]),
             time=torch.Tensor([m.time for m in seq])*s_per_tick,
-            # src_file=fname,
-            src_track=i,
+            # src_track=i,
             # tempo=micros_per_beat,
         ), g.with_suffix(f'.{i}.pkl') )
 
@@ -49,7 +47,6 @@ def main(data_path, dest_path, n_jobs=4):
     # files = files[:1000]
 
     with Pool(n_jobs) as pool:
-        # p.imap_unordered(ft.partial(process, data_path, dest_path), tqdm(files), 32)
         for _ in tqdm(pool.imap_unordered(process, zip(files, files_out), 32)):
             pass
        

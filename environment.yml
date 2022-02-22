@@ -8,6 +8,7 @@ dependencies:
   - pytorch>=1.10
   - torchaudio
   - ipykernel
+  - tensorboard
   - seaborn
   - tqdm
   - fire

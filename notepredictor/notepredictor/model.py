@@ -3,19 +3,29 @@ from torch import nn
 import torch.nn.functional as F
 
 class PitchPredictor(nn.Module):
-    def __init__(self, emb_size=128, hidden_size=512, domain_size=128):
+    defaults = dict(
+        emb_size=128, hidden_size=512, domain_size=128
+    )
+    def __init__(self, **kw):
         super().__init__()
-        self.emb = nn.Embedding(domain_size, emb_size)
-        self.proj = nn.Linear(hidden_size, domain_size)
+        for k,v in PitchPredictor.defaults.items():
+            if k in kw:
+                setattr(self, k, kw[k])
+            else:
+                setattr(self, k, v)
+
+        self.emb = nn.Embedding(self.domain_size, self.emb_size)
+        self.proj = nn.Linear(self.hidden_size, self.domain_size)
         
-        self.rnn = nn.GRU(emb_size, hidden_size, batch_first=True)
-        self.rnn_cell = nn.GRUCell(emb_size, hidden_size)
+        self.rnn = nn.GRU(self.emb_size, self.hidden_size, batch_first=True)
+        self.rnn_cell = nn.GRUCell(self.emb_size, self.hidden_size)
         self.rnn_cell.weight_ih = self.rnn.weight_ih_l0
         self.rnn_cell.weight_hh = self.rnn.weight_hh_l0
         self.rnn_cell.bias_ih = self.rnn.bias_ih_l0
         self.rnn_cell.bias_hh = self.rnn.bias_hh_l0
         
-        self.h0 = torch.nn.Parameter(torch.randn(1,hidden_size)*hidden_size**-0.5)
+        self.h0 = torch.nn.Parameter(
+            torch.randn(1,self.hidden_size)*self.hidden_size**-0.5)
         
         self.h = None
 
