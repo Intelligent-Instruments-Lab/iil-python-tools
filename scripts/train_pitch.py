@@ -34,6 +34,7 @@ class Trainer:
         device = 'cpu', # 'cuda:0'
         epoch_size = None, # in iterations, None for whole dataset
         ):
+        """TODO: Trainer __init__ docstring"""
         kw = locals(); kw.pop('self')
 
         # store all hyperparams for checkpointing
@@ -132,6 +133,7 @@ class Trainer:
         return -result['log_probs'].mean()
 
     def train(self):
+        """TODO: train docstring"""
         self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
         train_loader = DataLoader(
@@ -189,18 +191,23 @@ def deep_update(a, b):
         else:
             a[k] = b[k]
 
-class Resumable(Trainer):
-    """wrapper to allow intialization of Trainer from checkpoint"""
+class Resumable:
     def __init__(self, checkpoint=None, **kw):
         if checkpoint is not None:
             d = torch.load(checkpoint)
             # merges sub dicts, e.g. model hyperparameters
             deep_update(d['kw'], kw)
-            super().__init__(**d['kw'])
-            self.load_state(d)
+            self._trainer = Trainer(**d['kw'])
+            self._trainer.load_state(d)
         else:
-            super().__init__(**kw)
+            self._trainer = Trainer(**kw)
+
+    def train(self):
+        self._trainer.train()
+
+Resumable.__doc__ = Trainer.__init__.__doc__
+Resumable.train.__doc__ = Trainer.train.__doc__
 
 if __name__=='__main__':
-    # TODOL improve fire-generated help message
+    # TODO: improve fire-generated help message
     fire.Fire(Resumable)

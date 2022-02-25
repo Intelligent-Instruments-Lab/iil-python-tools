@@ -84,6 +84,8 @@ class GenericRNN(nn.Module):
 class PitchPredictor(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, emb_size=128, hidden_size=512, domain_size=128, num_layers=1):
+        """
+        """
         super().__init__()
 
         self.emb = nn.Embedding(domain_size, emb_size)
