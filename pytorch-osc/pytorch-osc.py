@@ -36,18 +36,18 @@ async def loop():
     Separate async loop.
     """
     for i in range(10):
-        osc.sendMessage("/hello", i)
+        osc.send_message("/hello", i)
         await asyncio.sleep(1)
 
 async def init_main():
-    fire.Fire(OSC) # Expose to CLI
+    fire.Fire(OSC) # Expose to CLI
 
-    await osc.createServer(asyncio.get_event_loop())
-    osc.addHandler("/predictor/*", predictor_handler)
-    osc.createClient()
+    await osc.create_server(asyncio.get_event_loop())
+    osc.add_handler("/predictor/*", predictor_handler)
+    osc.create_client()
     
     await loop()
     
-    osc.closeServer()
+    osc.close_server()
 
 asyncio.run(init_main())

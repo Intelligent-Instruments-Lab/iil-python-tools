@@ -20,7 +20,7 @@ class OSC():
         self.server = None
         self.client = None
     
-    async def createServer(self, event_loop, ip=None, port=None):
+    async def create_server(self, event_loop, ip=None, port=None):
         """
         Create the server
         """
@@ -31,11 +31,11 @@ class OSC():
         if (self.server == None):
             self.server = AsyncIOOSCUDPServer((ip, port), self.dispatcher, event_loop)
             self.transport, self.protocol = await self.server.create_serve_endpoint()
-            print(f"OSC serrver created {ip}:{port}")
+            print(f"OSC server created {ip}:{port}")
         else:
             print("OSC server already exists")
 
-    def closeServer(self):
+    def close_server(self):
         """
         Close the server
         """
@@ -44,7 +44,7 @@ class OSC():
         else:
             print("OSC server does not exist")
 
-    def addHandler(self, address, handler):
+    def add_handler(self, address, handler):
         """
         Map the custom message handler to the OSC dispatcher
         """
@@ -53,7 +53,7 @@ class OSC():
         else:
             print("OSC server does not exist")
 
-    def createClient(self, ip=None, port=None):
+    def create_client(self, ip=None, port=None):
         """
         Add an OSC client
         """
@@ -67,7 +67,7 @@ class OSC():
         else:
             print("OSC client already exists")
 
-    def sendMessage(self, address, msg):
+    def send_message(self, address, msg):
         """
         Send message to client
         """
