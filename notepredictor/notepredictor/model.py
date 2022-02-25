@@ -88,6 +88,9 @@ class PitchPredictor(nn.Module):
         """
         super().__init__()
 
+        self.start_token = domain_size-2
+        self.end_token = domain_size-1
+
         self.emb = nn.Embedding(domain_size, emb_size)
         self.proj = nn.Linear(hidden_size, domain_size)
         
@@ -159,4 +162,13 @@ class PitchPredictor(nn.Module):
         """
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
+        if start:
+            self.predict(self.start_token)
+
+    @classmethod
+    def from_checkpoint(cls, path):
+        checkpoint = torch.load(path, map_location=torch.device('cpu'))
+        model = cls(**checkpoint['kw']['model'])
+        model.load_state_dict(checkpoint['model_state'], strict=False)
+        return model
         
