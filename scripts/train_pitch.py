@@ -68,6 +68,7 @@ class Trainer:
         self.epoch = 0
 
         self.model = model_cls(**model_kw).to(self.device)
+        tqdm.write(repr(self.model))
 
         self.dataset = MIDIPitchDataset(self.data_dir, self.batch_len)
         valid_len = int(len(self.dataset)*0.05)
