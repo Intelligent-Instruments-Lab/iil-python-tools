@@ -37,8 +37,8 @@ o = OSCdef(\test, {
 
 o.free;    // remove the OSCFunc when you are done.
 
-n = NetAddr("127.0.0.1", NetAddr.langPort);
-n.sendMsg('/prediction', 1)
+// n = NetAddr("127.0.0.1", NetAddr.langPort);
+// n.sendMsg('/prediction', 1)
 
 // OSCdef.trace(true)
 
