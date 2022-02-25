@@ -9,6 +9,7 @@ dependencies:
   - torchaudio
   - tensorboard
   - ipykernel
+  - tensorboard
   - seaborn
   - tqdm
   - fire

@@ -3,3 +3,7 @@
 *.pt
 *.ts
 .ipynb_checkpoints
+*.egg-info
+__pycache__
+tmp
+.vscode
