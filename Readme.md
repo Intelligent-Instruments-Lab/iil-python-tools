@@ -9,11 +9,14 @@
 # Setup
 
 ```
-conda create -f environment.yml
+conda env create -f environment.yml
 conda activate pytorch-osc
-pip install -e notepredictor
+pip install -e pytorch-osc
 ```
 
 # Develop
 
-add new dependencies to environment.yml
+add new dependencies to `environment.yml`, then run:
+```
+conda env update -f environment.yml
+```
