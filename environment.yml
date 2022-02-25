@@ -16,4 +16,3 @@ dependencies:
   - pip:
     - mido
     - python-osc
-    - asyncio

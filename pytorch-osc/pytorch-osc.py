@@ -7,11 +7,8 @@ Authors:
 
 import asyncio
 import fire
-from predictor import PitchPredictor
+from notepredictor import PitchPredictor
 from osc import OSC
-
-predictor = PitchPredictor()
-osc = OSC()
 
 def predictor_handler(address, *args):
     """
@@ -19,15 +16,16 @@ def predictor_handler(address, *args):
     """
     address = address.split("/")
 
-    if(address[2] == "forward"):
-        print(f"/forward {args}")
-        # predictor.forward(args) # sanity check args
+    if(address[2] == "load"):
+        print(f"/load {args}")
+        global predictor
+        predictor = PitchPredictor.from_checkpoint(args)
     elif(address[2] == "predict"):
         print(f"/predict {args}")
-        # predictor.predict(args) # sanity check args
+        predictor.predict(args) # sanity check args
     elif(address[2] == "reset"):
         print(f"/reset {args}")
-        # predictor.reset()
+        predictor.reset()
     else:
         print(f"PitchPredictor: Unrecognised OSC {address} with {args}")
 
@@ -40,8 +38,6 @@ async def loop():
         await asyncio.sleep(1)
 
 async def init_main():
-    fire.Fire(OSC) # Expose to CLI
-
     await osc.create_server(asyncio.get_event_loop())
     osc.add_handler("/predictor/*", predictor_handler)
     osc.create_client()
@@ -50,4 +46,10 @@ async def init_main():
     
     osc.close_server()
 
-asyncio.run(init_main())
+def main(ip="127.0.0.1", send=8888, receive=9999):
+    global osc
+    osc = OSC(ip, send, receive)
+    asyncio.run(init_main())
+
+if __name__=='__main__':
+    fire.Fire(main)
