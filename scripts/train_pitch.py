@@ -14,9 +14,15 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from notepredictor import PitchPredictor, MIDIPitchDataset
+from notepredictor.util import get_class_defaults
 
 class Trainer:
-    defaults = dict(
+    def __init__(self, 
+        experiment, # experiment name
+        model_dir,
+        log_dir,
+        data_dir,
+        model = None, # dict of model constructor overrides
         batch_size = 128,
         batch_len = 64,
         lr = 3e-4,
@@ -26,50 +32,50 @@ class Trainer:
         seed = 0, # random seed
         n_jobs = 0, # for dataloaders
         device = 'cpu', # 'cuda:0'
-        epoch_size = None # in iterations, None for whole dataset
-    )
-    def __init__(self, **kw):
-        model_cls = PitchPredictor
-        # store all hyperparams for checkpoint
+        epoch_size = None, # in iterations, None for whole dataset
+        ):
+        kw = locals(); kw.pop('self')
+
+        # store all hyperparams for checkpointing
         self.kw = kw
 
-        # trainer defaults
-        for k,v in Trainer.defaults.items():
-            if k not in kw:
-                kw[k] = v
-
         # get model defaults from model class
-        model_kw = kw['model'] = model_cls.defaults | kw.get('model', {})
-        model_kw['domain_size'] = 130 # 128 MIDI + start + end tokens
+        model_cls = PitchPredictor
+        if model is None: model = {}
+        assert isinstance(model, dict), """
+            model keywords are not a dict. check shell/fire syntax
+            """
+        kw['model'] = model = get_class_defaults(model_cls) | model
+        model['domain_size'] = 130 # 128 MIDI + start + end tokens
 
-        # args with default values
-        for k in Trainer.defaults:
-            setattr(self, k, kw.get(k, Trainer.defaults[k]))
+        # assign all arguments to self by default
+        self.__dict__.update(kw)
+        # mutate some arguments:
+        self.model_dir = Path(model_dir) / self.experiment
+        self.log_dir = Path(log_dir) / self.experiment
+        self.data_dir = Path(data_dir)
+        self.device = torch.device(device)
 
-        # args without default values:
-        try:
-            self.name = kw['experiment'] # experiment name
-            self.model_dir = Path(kw['model_dir']) / self.name
-            self.log_dir = Path(kw['log_dir']) / self.name
-            self.data_dir = Path(kw['data_dir'])
-        except KeyError as e:
-            raise
-
-        self.device = torch.device(self.device)
-
+        # filesystem
         for d in (self.model_dir, self.log_dir):
             d.mkdir(parents=True, exist_ok=True)
 
+        # random states
         self.seed_random()
 
+        # logging
         self.writer = SummaryWriter(self.log_dir)
+
+        # Trainer state
         self.iteration = 0
         self.exposure = 0
         self.epoch = 0
 
-        self.model = model_cls(**model_kw).to(self.device)
+        # construct model from arguments 
+        self.model = model_cls(**model).to(self.device)
         tqdm.write(repr(self.model))
 
+        # dataset
         self.dataset = MIDIPitchDataset(self.data_dir, self.batch_len)
         valid_len = int(len(self.dataset)*0.05)
         train_len = len(self.dataset) - valid_len
@@ -196,4 +202,5 @@ class Resumable(Trainer):
             super().__init__(**kw)
 
 if __name__=='__main__':
+    # TODOL improve fire-generated help message
     fire.Fire(Resumable)

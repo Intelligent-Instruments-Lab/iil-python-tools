@@ -16,7 +16,6 @@ def rnn_shim(cls):
             return out, (h,)
     return shim
 
-
 GRU = rnn_shim(nn.GRU)
 RNN = rnn_shim(nn.RNN)
 LSTM = nn.LSTM
@@ -35,7 +34,6 @@ class GenericRNN(nn.Module):
         'exprnn':ExpRNN
         }
     # desiderata:
-    # fused forward, cell for inference
     # support geotorch constraints
     # clean API for multiple layers, multiple cell states (e.g. LSTM)
     def __init__(self, kind, *a, **kw):
@@ -46,11 +44,17 @@ class GenericRNN(nn.Module):
         cls = GenericRNN.kind_cls[kind]
         self.rnn = cls(*a, **kw)
 
+    def __getattr__(self, a):
+        try:
+            return  super().__getattr__(a)
+        except AttributeError:
+            return getattr(self.rnn, a)
+
     def forward(self, x, initial_state):
         """
         Args:
             x: Tensor[batch x time x channel] if batch_first else [time x batch x channel]
-            initial_states: List[Tensor[layers x batch x hidden]]], list of components 
+            initial_state: List[Tensor[layers x batch x hidden]]], list of components 
             with 0 being hidden state (e.g. 1 is cell state for LSTM). 
         Returns:
             hidden: hidden states of top layers Tensor[batch x time x hidden]
@@ -60,6 +64,7 @@ class GenericRNN(nn.Module):
         hidden, final_state = self.rnn.forward(x, initial_state)  #forward or __call__?
         return hidden, final_state
 
+    ## NOTE: individual time-step API might be useful, not actually needed yet though
     # def step(self, x, state):
     #     """
     #     Args:
@@ -76,33 +81,21 @@ class GenericRNN(nn.Module):
     #     return hidden.squeeze(time_idx), state
 
 
-
 class PitchPredictor(nn.Module):
-    defaults = dict(
-        emb_size=128, hidden_size=512, domain_size=128, num_layers=1
-    )
-    def __init__(self, **kw):
+    # note: use named arguments only for benefit of training script
+    def __init__(self, emb_size=128, hidden_size=512, domain_size=128, num_layers=1):
         super().__init__()
-        for k,v in PitchPredictor.defaults.items():
-            if k in kw:
-                setattr(self, k, kw[k])
-            else:
-                setattr(self, k, v)
-        #TODO: fail on unconsumed kw
-        extra_keys = kw.keys() - PitchPredictor.defaults.keys()
-        if len(extra_keys):
-            raise ValueError(f'unknown arguments: {extra_keys}')
 
-        self.emb = nn.Embedding(self.domain_size, self.emb_size)
-        self.proj = nn.Linear(self.hidden_size, self.domain_size)
+        self.emb = nn.Embedding(domain_size, emb_size)
+        self.proj = nn.Linear(hidden_size, domain_size)
         
-        self.rnn = GenericRNN('gru', self.emb_size, self.hidden_size, 
-            num_layers=self.num_layers, batch_first=True)
+        self.rnn = GenericRNN('gru', emb_size, hidden_size, 
+            num_layers=num_layers, batch_first=True)
         
         # learnable initial state
         self.initial_state = nn.ParameterList([
              # layer x batch x hidden
-            nn.Parameter(torch.randn(self.num_layers,1,self.hidden_size)*self.hidden_size**-0.5),
+            nn.Parameter(torch.randn(num_layers,1,hidden_size)*hidden_size**-0.5),
         ])
 
         # persistent state for inference
@@ -124,7 +117,7 @@ class PitchPredictor(nn.Module):
         x = self.emb(notes) # batch, time, emb_size
         ## broadcast intial state to batch size
         initial_state = tuple(
-            t.expand(self.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
+            t.expand(self.rnn.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
