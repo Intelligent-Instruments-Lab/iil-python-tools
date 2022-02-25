@@ -20,14 +20,17 @@ def predictor_handler(address, *args):
         print(f"/load {args}")
         global predictor
         predictor = PitchPredictor.from_checkpoint(*args)
+
     elif(address[2] == "predict"):
         print(f"/predict {args}")
         r = predictor.predict(*args) # sanity check args
         print(r)
         osc.send_message('/prediction', (r,))
+
     elif(address[2] == "reset"):
         print(f"/reset {args}")
         predictor.reset(*args)
+        
     else:
         print(f"PitchPredictor: Unrecognised OSC {address} with {args}")
 
