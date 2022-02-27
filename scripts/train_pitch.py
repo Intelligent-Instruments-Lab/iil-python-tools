@@ -30,7 +30,7 @@ class Trainer:
         adam_eps = 1e-08, 
         weight_decay = 0.01,
         seed = 0, # random seed
-        n_jobs = 0, # for dataloaders
+        n_jobs = 1, # for dataloaders
         device = 'cpu', # 'cuda:0'
         epoch_size = None, # in iterations, None for whole dataset
         ):
@@ -84,8 +84,20 @@ class Trainer:
             self.dataset, [train_len, valid_len], 
             generator=torch.Generator().manual_seed(0))
 
-        self.opt = torch.optim.AdamW(
-            self.model.parameters(), 
+        # optimizer
+        params = self.model.parameters()
+
+        if self.model.rnn.kind=='exprnn':
+            orth_params = [
+                p for cell in self.model.rnn.rnn.cells
+                for p in cell.recurrent_kernel.parameters()]
+            _orth_params = set(orth_params)
+            non_orth_params = [p for p in params if p not in _orth_params]
+            params = [
+                {'params': non_orth_params}, 
+                {'params': orth_params, 'lr': self.lr*1e-1}]
+
+        self.opt = torch.optim.AdamW(params, 
             self.lr, self.adam_betas, self.adam_eps, self.weight_decay)
 
     @property
