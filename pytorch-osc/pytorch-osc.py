@@ -20,6 +20,7 @@ def predictor_handler(address, *args):
         print(f"/load {args}")
         global predictor
         predictor = PitchPredictor.from_checkpoint(*args)
+        predictor.eval()
 
     elif(address[2] == "predict"):
         print(f"/predict {args}")
@@ -60,6 +61,7 @@ def main(ip="127.0.0.1", send=57120, receive=9999, checkpoint=None):
 
     if checkpoint is not None:
         predictor = PitchPredictor.from_checkpoint(checkpoint)
+        predictor.eval()
 
     asyncio.run(init_main())
 

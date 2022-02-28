@@ -7,7 +7,7 @@ from .rnn import GenericRNN
 class PitchPredictor(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, emb_size=128, hidden_size=512, domain_size=128, 
-            num_layers=1, kind='gru'):
+            num_layers=1, kind='gru', dropout=0):
         """
         """
         super().__init__()
@@ -22,7 +22,7 @@ class PitchPredictor(nn.Module):
             self.proj.weight.mul_(1e-2)
         
         self.rnn = GenericRNN(kind, emb_size, hidden_size, 
-            num_layers=num_layers, batch_first=True)
+            num_layers=num_layers, batch_first=True, dropout=dropout)
         
         # learnable initial state
         self.initial_state = nn.ParameterList([

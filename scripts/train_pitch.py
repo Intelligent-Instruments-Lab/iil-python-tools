@@ -99,6 +99,7 @@ class Trainer:
 
         self.opt = torch.optim.AdamW(params, 
             self.lr, self.adam_betas, self.adam_eps, self.weight_decay)
+        
 
     @property
     def gpu(self):

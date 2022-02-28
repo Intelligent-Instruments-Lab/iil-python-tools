@@ -142,9 +142,6 @@ class GenericRNN(nn.Module):
         'elman':RNN,
         'exprnn':ExpRNN
         }
-    # desiderata:
-    # support geotorch constraints
-    # clean API for multiple layers, multiple cell states (e.g. LSTM)
     def __init__(self, kind, *a, **kw):
         super().__init__()
         if kw.get('bidirectional'): raise ValueError("""
