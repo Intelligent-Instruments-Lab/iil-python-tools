@@ -153,13 +153,14 @@ class Trainer:
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
 
-                batch = batch.to(self.device, non_blocking=True)
+                pitch = batch['pitch'].to(self.device, non_blocking=True)
+                # time = batch['time'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
                 self.exposure += self.batch_size
 
                 self.opt.zero_grad()
-                result = self.model(batch)
+                result = self.model(pitch)
                 loss = self.get_loss(result)
                 loss.backward()
                 self.process_grad()

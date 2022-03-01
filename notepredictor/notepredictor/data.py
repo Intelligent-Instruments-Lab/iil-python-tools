@@ -6,7 +6,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-class MIDIPitchDataset(Dataset):
+class MIDIDataset(Dataset):
     def __init__(self, data_dir, batch_len, transpose=2, glob='**/*.pkl'):
         """
         """
@@ -23,23 +23,33 @@ class MIDIPitchDataset(Dataset):
     def __getitem__(self, idx):
         f = self.files[idx]
         item = torch.load(f)
-        notes = item['pitch'] # 1-d LongTensor of MIDI pitches 0-127
+        pitch = item['pitch'] # 1-d LongTensor of MIDI pitches 0-127
+        time = item['time']
+        assert len(pitch) == len(time)
 
         # random transpose avoiding out of range notes
-        transpose_down = min(self.transpose, notes.min().item())
-        transpose_up = min(self.transpose, 127-notes.max())
+        transpose_down = min(self.transpose, pitch.min().item())
+        transpose_up = min(self.transpose, 127-pitch.max())
         transpose = random.randint(-transpose_down, transpose_up)
-        notes = notes + transpose
+        pitch = pitch + transpose
 
         # pad with start, end tokens
-        pad = max(1, self.batch_len-len(notes))
-        notes = torch.cat((
-            notes.new_full((1,),self.start_token),
-            notes,
-            notes.new_full((pad,),self.end_token)))
+        pad = max(1, self.batch_len-len(pitch))
+        pitch = torch.cat((
+            pitch.new_full((1,), self.start_token),
+            pitch,
+            pitch.new_full((pad,), self.end_token)))
+        time = torch.cat((
+            time.new_zeros((1,)),
+            time,
+            time.new_zeros((pad,))))
 
         # random slice
-        i = random.randint(0, len(notes)-self.batch_len)
-        notes = notes[i:i+self.batch_len]
+        i = random.randint(0, len(pitch)-self.batch_len)
+        pitch = pitch[i:i+self.batch_len]
+        time = time[i:i+self.batch_len]
 
-        return notes
+        return {
+            'pitch':pitch,
+            'time':time
+        }
