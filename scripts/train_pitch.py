@@ -30,7 +30,7 @@ class Trainer:
         adam_eps = 1e-08, 
         weight_decay = 0.01,
         seed = 0, # random seed
-        n_jobs = 0, # for dataloaders
+        n_jobs = 1, # for dataloaders
         device = 'cpu', # 'cuda:0'
         epoch_size = None, # in iterations, None for whole dataset
         ):
