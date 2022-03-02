@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from notepredictor import PitchPredictor, MIDIPitchDataset
+from notepredictor import NotePredictor, MIDIDataset
 from notepredictor.util import get_class_defaults
 
 class Trainer:
@@ -29,6 +29,7 @@ class Trainer:
         adam_betas = (0.9, 0.999),
         adam_eps = 1e-08, 
         weight_decay = 0.01,
+        grad_clip = 1.0,
         seed = 0, # random seed
         n_jobs = 1, # for dataloaders
         device = 'cpu', # 'cuda:0'
@@ -41,13 +42,13 @@ class Trainer:
         self.kw = kw
 
         # get model defaults from model class
-        model_cls = PitchPredictor
+        model_cls = NotePredictor
         if model is None: model = {}
         assert isinstance(model, dict), """
             model keywords are not a dict. check shell/fire syntax
             """
         kw['model'] = model = get_class_defaults(model_cls) | model
-        model['domain_size'] = 130 # 128 MIDI + start + end tokens
+        model['num_pitches'] = 128
 
         # assign all arguments to self by default
         self.__dict__.update(kw)
@@ -77,7 +78,7 @@ class Trainer:
         tqdm.write(repr(self.model))
 
         # dataset
-        self.dataset = MIDIPitchDataset(self.data_dir, self.batch_len)
+        self.dataset = MIDIDataset(self.data_dir, self.batch_len)
         valid_len = int(len(self.dataset)*0.05)
         train_len = len(self.dataset) - valid_len
         self.train_dataset, self.valid_dataset = torch.utils.data.random_split(
@@ -123,62 +124,87 @@ class Trainer:
         self.set_random_state(d['random_state'])
 
     def log(self, tag, d):
-        self.writer.add_scalars(tag, d, self.exposure)
+        # self.writer.add_scalars(tag, d, self.exposure)
+        for k,v in d.items():
+            self.writer.add_scalar(f'{tag}/{k}', v, self.exposure)
     
     def process_grad(self):
-        # TODO: grad clip
-        pass
+        r = {}
+        if self.grad_clip is not None:
+            r['grad_l2'] = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.grad_clip, error_if_nonfinite=True)
+        return r
 
-    def get_loss(self, result):
-        return -result['log_probs'].mean()
+    def get_loss_components(self, result):
+        return {
+            'pitch_nll': -result['pitch_log_probs'].mean(),
+            'time_nll': -result['time_log_probs'].mean()
+        }
 
     def train(self):
         """TODO: train docstring"""
         self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
         train_loader = DataLoader(
-            self.train_dataset, self.batch_size, collate_fn=torch.stack,
+            self.train_dataset, self.batch_size,
             shuffle=True, num_workers=self.n_jobs, pin_memory=self.gpu)
         valid_loader = DataLoader(
-            self.valid_dataset, self.batch_size, collate_fn=torch.stack,
+            self.valid_dataset, self.batch_size,
             shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
 
+        ##### validation loop
+        def validate():
+            metrics = defaultdict(float)
+            self.model.eval()
+            for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
+                pitch = batch['pitch'].to(self.device, non_blocking=True)
+                time = batch['time'].to(self.device, non_blocking=True)
+                with torch.no_grad():
+                    result = self.model(pitch, time)
+                    losses = {k:v.item() for k,v in self.get_loss_components(result).items()}
+                    metrics['loss'] += sum(losses.values())
+                    for k,v in losses.items():
+                        metrics[k] += v
+                    metrics['pitch_acc'] += result['pitch_log_probs'].exp().mean().item()
+                    # metrics['time_acc'] += result['time_log_probs'].exp().mean().item()
+                    metrics['time_acc_30ms'] += result['time_acc_30ms'].mean().item()
+            self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
+
         epoch_size = self.epoch_size or len(train_loader)
+
+        # validate at initialization
+        validate()
 
         while True:
             self.epoch += 1
 
-            ##### train loop
+            ##### training loop
             self.model.train()
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
 
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
-                # time = batch['time'].to(self.device, non_blocking=True)
+                time = batch['time'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
                 self.exposure += self.batch_size
 
+                logs = {}
+
                 self.opt.zero_grad()
-                result = self.model(pitch)
-                loss = self.get_loss(result)
+                result = self.model(pitch, time)
+                losses = self.get_loss_components(result)
+                loss = sum(losses.values())
                 loss.backward()
-                self.process_grad()
+                logs |= self.process_grad()
                 self.opt.step()
 
-                self.log('train', {'loss':loss.item()})
+                logs |= {k:v.item() for k,v in losses.items()}
+                logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
+                logs |= {'loss':loss.item()}
+                self.log('train', logs)
 
-            ##### validation loop
-            metrics = defaultdict(float)
-            self.model.eval()
-            for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
-                batch = batch.to(self.device, non_blocking=True)
-                with torch.no_grad():
-                    result = self.model(batch)
-                    metrics['loss'] += self.get_loss(result).item()
-                    metrics['acc'] += result['log_probs'].exp().mean().item()
-                    
-            self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
+            validate()
 
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
