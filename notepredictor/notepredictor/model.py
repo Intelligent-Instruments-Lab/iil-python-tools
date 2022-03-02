@@ -54,8 +54,8 @@ class NotePredictor(nn.Module):
         ])
 
         # projection from RNN state to distribution parameters
-        self.time_proj = nn.Linear(hidden_size, self.time_dist.n_params, bias=False)
-        self.pitch_proj = nn.Linear(hidden_size + time_emb_size, self.pitch_domain)
+        self.time_proj = nn.Linear(hidden_size + pitch_emb_size, self.time_dist.n_params, bias=False)
+        self.pitch_proj = nn.Linear(hidden_size, self.pitch_domain)
         with torch.no_grad():
             self.time_proj.weight.mul_(1e-2)
             self.pitch_proj.weight.mul_(1e-2)
@@ -92,22 +92,24 @@ class NotePredictor(nn.Module):
         # this might make the harder time modeling problem easier,
         # and would also allow constructing the whole joint distribution
 
-        # RNN hidden state -> time prediction
-        time_params = self.time_proj(h[:,:-1]) # batch, time-1, time_params
-        time_targets = times[:,1:] # batch, time-1
-        time_result = self.time_dist(time_params, time_targets)
-        time_log_probs = time_result.pop('log_prob')
-
         # IDEA: alternate proj for second feature: 
         # project time_emb to hidden_size, sigmoid, multiply with h
         # pitch_params = self.pitch_proj(
         #     self.cond_proj(time_emb[:,1:]).sigmoid() * h[:,:-1]))
 
         # RNN hidden state, time -> pitch prediction
-        pitch_params = self.pitch_proj(torch.cat((h[:,:-1], time_emb[:,1:]), -1))
+        pitch_params = self.pitch_proj(h[:,:-1])
         pitch_logits = F.log_softmax(pitch_params, -1)
         pitch_targets = pitches[:,1:,None] #batch, time-1, 1
         pitch_log_probs = pitch_logits.gather(-1, pitch_targets)[...,0]
+
+        # RNN hidden state -> time prediction
+        time_params = self.time_proj(
+            torch.cat((h[:,:-1], pitch_emb[:,1:]), -1)
+            ) # batch, time-1, time_params
+        time_targets = times[:,1:] # batch, time-1
+        time_result = self.time_dist(time_params, time_targets)
+        time_log_probs = time_result.pop('log_prob')
 
         r = {
             'pitch_log_probs': pitch_log_probs,
@@ -144,13 +146,15 @@ class NotePredictor(nn.Module):
         h, new_state = self.rnn(x, self.cell_state)
         for t,new_t in zip(self.cell_state, new_state):
             t[:] = new_t
+
+        pitch_params = self.pitch_proj(h)
+        pred_pitch = D.Categorical(logits=pitch_params).sample()
         
-        time_params = self.time_proj(h) # 1, 1, time_params
+        time_params = self.time_proj(torch.cat((
+            h, self.pitch_emb(pred_pitch)
+        ), -1)) # 1, 1, time_params
         # TODO: importance sampling?
         pred_time = self.time_dist.sample(time_params).squeeze(0)
-
-        pitch_params = self.pitch_proj(torch.cat((h, self.time_emb(pred_time)), -1))
-        pred_pitch = D.Categorical(logits=pitch_params).sample()
 
         return {
             'pitch': pred_pitch.item(), 
