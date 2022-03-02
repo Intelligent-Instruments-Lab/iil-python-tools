@@ -3,6 +3,7 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
+import torch.distributions as D
 
 from .rnn import GenericRNN
 from .distributions import CensoredMixturePointyBoi
@@ -87,14 +88,22 @@ class NotePredictor(nn.Module):
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
+        # IDEA: compare pitch-first
+        # this might make the harder time modeling problem easier,
+        # and would also allow constructing the whole joint distribution
+
         # RNN hidden state -> time prediction
         time_params = self.time_proj(h[:,:-1]) # batch, time-1, time_params
         time_targets = times[:,1:] # batch, time-1
         time_result = self.time_dist(time_params, time_targets)
         time_log_probs = time_result.pop('log_prob')
 
+        # IDEA: alternate proj for second feature: 
+        # project time_emb to hidden_size, sigmoid, multiply with h
+        # pitch_params = self.pitch_proj(
+        #     self.cond_proj(time_emb[:,1:]).sigmoid() * h[:,:-1]))
+
         # RNN hidden state, time -> pitch prediction
-        # pitch_params = h[...,:self.pitch_domain] + self.pitch_bias # CI
         pitch_params = self.pitch_proj(torch.cat((h[:,:-1], time_emb[:,1:]), -1))
         pitch_logits = F.log_softmax(pitch_params, -1)
         pitch_targets = pitches[:,1:,None] #batch, time-1, 1
@@ -115,27 +124,38 @@ class NotePredictor(nn.Module):
         return r
     
     # TODO: time
-    def predict(self, note, time, sample=True):
+    def predict(self, pitch, time):
         """
         Args:
-            note: int
+            pitch: int
+            time: float
             sample: bool
-        Returns:
-            int if `sample` else Tensor[num_notes+2]
+        Returns: dict of
+            'pitch': int 
+            'time': float
         """
-        note = torch.LongTensor([[note]]) # 1x1 (batch, time)
-        x = self.note_emb(note) # 1, 1, emb_size
+        pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
+        time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
+        x = torch.cat((
+            self.pitch_emb(pitch), # 1, 1, pitch_emb_size
+            self.time_emb(time)# 1, 1, time_emb_size
+        ), -1)
         
         h, new_state = self.rnn(x, self.cell_state)
         for t,new_t in zip(self.cell_state, new_state):
             t[:] = new_t
         
-        logits = self.proj(h) # 1, 1, hidden_size
-        ret = logits.squeeze().softmax(0)
+        time_params = self.time_proj(h) # 1, 1, time_params
+        # TODO: importance sampling?
+        pred_time = self.time_dist.sample(time_params).squeeze(0)
 
-        if sample:
-            ret = ret.multinomial(1).item()
-        return ret
+        pitch_params = self.pitch_proj(torch.cat((h, self.time_emb(pred_time)), -1))
+        pred_pitch = D.Categorical(logits=pitch_params).sample()
+
+        return {
+            'pitch': pred_pitch.item(), 
+            'time': pred_time.item()
+        }
     
     def reset(self, start=True):
         """
@@ -144,7 +164,7 @@ class NotePredictor(nn.Module):
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
         if start:
-            self.predict(self.start_token)
+            self.predict(self.start_token, 0.)
 
     @classmethod
     def from_checkpoint(cls, path):
