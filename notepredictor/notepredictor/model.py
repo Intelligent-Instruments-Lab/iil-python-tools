@@ -8,11 +8,19 @@ import torch.distributions as D
 from .rnn import GenericRNN
 from .distributions import CensoredMixturePointyBoi
 
+
+# TODO: parameterized this wrong, meant to have increasing wavelength not frequency
 class SineEmbedding(nn.Module):
-    def __init__(self, n, f0=1e-3, interval=2):
+    def __init__(self, n, w0=1e-3, interval=1.08):
+        """
+        Args:
+            n (int): number of channels
+            w0 (float): minimum wavelength in seconds
+            interval (float): increase in frequency / decrease in wavelength per channel
+        """
         super().__init__()
         self.n = n
-        self.register_buffer('fs', f0 * interval**torch.arange(n) * 2 * math.pi)
+        self.register_buffer('fs', interval**(-torch.arange(n)) / w0 * 2 * math.pi)
 
     def forward(self, x):
         x = x[...,None] * self.fs
@@ -21,7 +29,7 @@ class SineEmbedding(nn.Module):
 class NotePredictor(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, 
-            pitch_emb_size=128, time_emb_size=16, hidden_size=512,
+            pitch_emb_size=128, time_emb_size=128, hidden_size=512,
             num_layers=1, kind='gru', dropout=0, 
             num_pitches=128, 
             time_components=5, time_res=1e-2,
@@ -54,8 +62,9 @@ class NotePredictor(nn.Module):
         ])
 
         # projection from RNN state to distribution parameters
-        self.time_proj = nn.Linear(hidden_size + pitch_emb_size, self.time_dist.n_params, bias=False)
+        self.time_proj = nn.Linear(hidden_size, self.time_dist.n_params, bias=False)
         self.pitch_proj = nn.Linear(hidden_size, self.pitch_domain)
+        self.cond_proj = nn.Linear(pitch_emb_size, hidden_size)
         with torch.no_grad():
             self.time_proj.weight.mul_(1e-2)
             self.pitch_proj.weight.mul_(1e-2)
@@ -94,8 +103,7 @@ class NotePredictor(nn.Module):
 
         # IDEA: alternate proj for second feature: 
         # project time_emb to hidden_size, sigmoid, multiply with h
-        # pitch_params = self.pitch_proj(
-        #     self.cond_proj(time_emb[:,1:]).sigmoid() * h[:,:-1]))
+        
 
         # RNN hidden state, time -> pitch prediction
         pitch_params = self.pitch_proj(h[:,:-1])
@@ -105,8 +113,10 @@ class NotePredictor(nn.Module):
 
         # RNN hidden state -> time prediction
         time_params = self.time_proj(
-            torch.cat((h[:,:-1], pitch_emb[:,1:]), -1)
-            ) # batch, time-1, time_params
+            self.cond_proj(pitch_emb[:,1:]).sigmoid() * h[:,:-1])
+        # time_params = self.time_proj(
+        #     torch.cat((h[:,:-1], pitch_emb[:,1:]), -1)
+        #     ) # batch, time-1, time_params
         time_targets = times[:,1:] # batch, time-1
         time_result = self.time_dist(time_params, time_targets)
         time_log_probs = time_result.pop('log_prob')
@@ -150,9 +160,10 @@ class NotePredictor(nn.Module):
         pitch_params = self.pitch_proj(h)
         pred_pitch = D.Categorical(logits=pitch_params).sample()
         
-        time_params = self.time_proj(torch.cat((
-            h, self.pitch_emb(pred_pitch)
-        ), -1)) # 1, 1, time_params
+        time_params = self.time_proj(h*self.cond_proj(self.pitch_emb(pred_pitch)).sigmoid())
+        # time_params = self.time_proj(torch.cat((
+        #     h, self.pitch_emb(pred_pitch)
+        # ), -1)) # 1, 1, time_params
         # TODO: importance sampling?
         pred_time = self.time_dist.sample(time_params).squeeze(0)
 

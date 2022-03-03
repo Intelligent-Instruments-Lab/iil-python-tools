@@ -6,11 +6,12 @@ import torch.distributions as D
 import torch.nn.functional as F
 
 class CensoredMixturePointyBoi(nn.Module):
-    def __init__(self, n, res=1e-2, lo='-inf', hi='inf', max_sharp=1e3):
+    def __init__(self, n, res=1e-2, lo='-inf', hi='inf', sharp_bounds=(1e-15,5e2)):
         super().__init__()
         self.n = n
         self.res = res
-        self.register_buffer('max_sharp', torch.tensor(float(max_sharp)))
+        self.sharp_bounds = sharp_bounds
+        # self.register_buffer('max_sharp', torch.tensor(float(max_sharp)))
         self.register_buffer('lo', torch.tensor(float(lo)))
         self.register_buffer('hi', torch.tensor(float(hi)))
         self.bias = nn.Parameter(torch.cat((
@@ -30,7 +31,8 @@ class CensoredMixturePointyBoi(nn.Module):
         log_pi = logit_pi - logit_pi.logsumexp(1,keepdim=True)
         # sharpness
         # s = log_s.exp()
-        s = torch.min(F.softplus(log_s), self.max_sharp)
+        # s = torch.min(F.softplus(log_s), self.max_sharp)
+        s = F.softplus(log_s).clamp(*self.sharp_bounds)
         return log_pi, loc, s
 
     def forward(self, h, x):
