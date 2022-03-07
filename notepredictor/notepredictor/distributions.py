@@ -6,7 +6,7 @@ import torch.distributions as D
 import torch.nn.functional as F
 
 class CensoredMixturePointyBoi(nn.Module):
-    def __init__(self, n, res=1e-2, lo='-inf', hi='inf', sharp_bounds=(1e-15,5e2)):
+    def __init__(self, n, res=1e-2, lo='-inf', hi='inf', sharp_bounds=(1e-5,2e3)):
         super().__init__()
         self.n = n
         self.res = res
@@ -14,8 +14,9 @@ class CensoredMixturePointyBoi(nn.Module):
         # self.register_buffer('max_sharp', torch.tensor(float(max_sharp)))
         self.register_buffer('lo', torch.tensor(float(lo)))
         self.register_buffer('hi', torch.tensor(float(hi)))
+        # TODO: init is not general-purpose
         self.bias = nn.Parameter(torch.cat((
-            torch.zeros(n), torch.linspace(0,1,n), -torch.ones(n)
+            torch.zeros(n), torch.logspace(-3,1,n), torch.zeros(n)
             )))
 
     @property
@@ -28,11 +29,14 @@ class CensoredMixturePointyBoi(nn.Module):
         # get parameters fron unconstrained hidden state:
         logit_pi, loc, log_s = torch.chunk(h, 3, -1)
         # mixture coefficients
-        log_pi = logit_pi - logit_pi.logsumexp(1,keepdim=True)
+        log_pi = logit_pi - logit_pi.logsumexp(-1,keepdim=True)
+        # location
+        loc = loc.clamp(self.lo-10*self.res, self.hi+10*self.res)
         # sharpness
         # s = log_s.exp()
         # s = torch.min(F.softplus(log_s), self.max_sharp)
         s = F.softplus(log_s).clamp(*self.sharp_bounds)
+        # s = log_s.exp().clamp(*self.sharp_bounds)
         return log_pi, loc, s
 
     def forward(self, h, x):
@@ -54,7 +58,6 @@ class CensoredMixturePointyBoi(nn.Module):
 
         log_delta_cdf = (
             (xp_ - xm_ + xp_*axm_ - axp_*xm_).log() 
-            # (2*self.res + xp_*axm_ - axp_*xm_).log() 
             - (axp_ + axm_ + axp_*axm_).log1p() 
             - math.log(2))
         
@@ -62,12 +65,16 @@ class CensoredMixturePointyBoi(nn.Module):
         r = {
             'log_prob': (log_pi + log_delta_cdf).logsumexp(-1)
         }
+        # diagnostics
         with torch.no_grad():
+            ent = D.Categorical(logits=log_pi).entropy()
             r |= {
-                'max_sharpness': s.max(),
                 'min_sharpness': s.min(),
-                'min_entropy': D.Categorical(logits=log_pi).entropy().min(),
-                'min_entropy': D.Categorical(logits=log_pi).entropy().min(),
+                'max_sharpness': s.max(),
+                'min_entropy': ent.min(),
+                'max_entropy': ent.max(),
+                'marginal_entropy': D.Categorical(
+                    log_pi.exp().mean(list(range(log_pi.ndim-1)))).entropy(),
                 'min_loc': loc.min(),
                 'max_loc': loc.max()
             }

@@ -7,15 +7,18 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class MIDIDataset(Dataset):
-    def __init__(self, data_dir, batch_len, transpose=2, glob='**/*.pkl'):
+    def __init__(self, data_dir, batch_len, transpose=2, speed=0.1, glob='**/*.pkl'):
+        #, clamp_time=(-,10)):
         """
         """
         super().__init__()
         self.files = list(Path(data_dir).glob(glob))
         self.batch_len = batch_len
         self.transpose = transpose
+        self.speed = speed
         self.start_token = 128
         self.end_token = 129
+        # self.clamp_time = clamp_time
         
     def __len__(self):
         return len(self.files)
@@ -33,6 +36,15 @@ class MIDIDataset(Dataset):
         transpose = random.randint(-transpose_down, transpose_up)
         pitch = pitch + transpose
 
+        # random speed
+        # delta t of first note?
+        time = time * (1 + random.random()*self.speed*2 - self.speed)
+        # dequantize
+        # TODO: use actual tactus from MIDI file
+        time = (
+            time + (torch.rand_like(time)-0.5)*2e-3
+            ).clamp(0., float('inf'))
+
         # pad with start, end tokens
         pad = max(1, self.batch_len-len(pitch))
         pitch = torch.cat((
@@ -48,6 +60,8 @@ class MIDIDataset(Dataset):
         i = random.randint(0, len(pitch)-self.batch_len)
         pitch = pitch[i:i+self.batch_len]
         time = time[i:i+self.batch_len]
+
+        # time = time.clamp(*self.clamp_time)
 
         return {
             'pitch':pitch,

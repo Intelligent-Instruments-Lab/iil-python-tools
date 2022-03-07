@@ -24,9 +24,10 @@ def predictor_handler(address, *args):
 
     elif(address[2] == "predict"):
         print(f"/predict {args}")
-        r = predictor.predict(*args) # sanity check args
-        print(r)
-        osc.send_message('/prediction', (r['pitch'], r['time']))
+        r = predictor.predict(*args)
+        msg = (r['pitch'], r['time'])
+        # print(msg)
+        osc.send_message('/prediction', msg)
 
     elif(address[2] == "reset"):
         print(f"/reset {args}")

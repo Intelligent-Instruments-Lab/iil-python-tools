@@ -23,6 +23,7 @@ class Trainer:
         log_dir,
         data_dir,
         model = None, # dict of model constructor overrides
+        # clamp_time = (0,10), # given to trainer because it needs to go to dataset+model
         batch_size = 128,
         batch_len = 64,
         lr = 3e-4,
@@ -49,6 +50,7 @@ class Trainer:
             """
         kw['model'] = model = get_class_defaults(model_cls) | model
         model['num_pitches'] = 128
+        # model['time_bounds'] = clamp_time
 
         # assign all arguments to self by default
         self.__dict__.update(kw)
@@ -78,7 +80,8 @@ class Trainer:
         tqdm.write(repr(self.model))
 
         # dataset
-        self.dataset = MIDIDataset(self.data_dir, self.batch_len)
+        self.dataset = MIDIDataset(
+            self.data_dir, self.batch_len)#, clamp_time=clamp_time)
         valid_len = int(len(self.dataset)*0.05)
         train_len = len(self.dataset) - valid_len
         self.train_dataset, self.valid_dataset = torch.utils.data.random_split(

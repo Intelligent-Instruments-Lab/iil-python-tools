@@ -32,7 +32,7 @@ class NotePredictor(nn.Module):
             pitch_emb_size=128, time_emb_size=128, hidden_size=512,
             num_layers=1, kind='gru', dropout=0, 
             num_pitches=128, 
-            time_components=5, time_res=1e-2,
+            time_bounds=(0,10), time_components=5, time_res=1e-2,
             ):
         """
         """
@@ -44,7 +44,8 @@ class NotePredictor(nn.Module):
         self.pitch_domain = num_pitches+2
 
         # TODO: upper truncation?
-        self.time_dist = CensoredMixturePointyBoi(time_components, time_res, 0, 10)
+        self.time_dist = CensoredMixturePointyBoi(
+            time_components, time_res, lo=time_bounds[0], hi=time_bounds[1])
         
         # embeddings for inputs
         self.pitch_emb = nn.Embedding(self.pitch_domain, pitch_emb_size)
@@ -82,6 +83,8 @@ class NotePredictor(nn.Module):
         
     def forward(self, pitches, times):
         """
+        teacher-forced probabilistic loss and diagnostics for training
+
         Args:
             pitches: LongTensor[batch, time]
             times: FloatTensor[batch, time]
@@ -117,7 +120,7 @@ class NotePredictor(nn.Module):
         # time_params = self.time_proj(
         #     torch.cat((h[:,:-1], pitch_emb[:,1:]), -1)
         #     ) # batch, time-1, time_params
-        time_targets = times[:,1:] # batch, time-1
+        time_targets = times[:,1:]# batch, time-1
         time_result = self.time_dist(time_params, time_targets)
         time_log_probs = time_result.pop('log_prob')
 
@@ -138,43 +141,59 @@ class NotePredictor(nn.Module):
     # TODO: time
     def predict(self, pitch, time):
         """
+        supply the most recent note and return a prediction for the next note.
+
         Args:
-            pitch: int
-            time: float
-            sample: bool
+            pitch: int. MIDI number of current note.
+            time: float. elapsed time since previous note.
         Returns: dict of
-            'pitch': int 
-            'time': float
+            'pitch': int. predicted MIDI number of next note.
+            'time': float. predicted time to next note.
         """
-        pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
-        time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
-        x = torch.cat((
-            self.pitch_emb(pitch), # 1, 1, pitch_emb_size
-            self.time_emb(time)# 1, 1, time_emb_size
-        ), -1)
-        
-        h, new_state = self.rnn(x, self.cell_state)
-        for t,new_t in zip(self.cell_state, new_state):
-            t[:] = new_t
+        with torch.no_grad():
+            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
+            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
+            x = torch.cat((
+                self.pitch_emb(pitch), # 1, 1, pitch_emb_size
+                self.time_emb(time)# 1, 1, time_emb_size
+            ), -1)
+            
+            h, new_state = self.rnn(x, self.cell_state)
+            for t,new_t in zip(self.cell_state, new_state):
+                t[:] = new_t
 
-        pitch_params = self.pitch_proj(h)
-        pred_pitch = D.Categorical(logits=pitch_params).sample()
-        
-        time_params = self.time_proj(h*self.cond_proj(self.pitch_emb(pred_pitch)).sigmoid())
-        # time_params = self.time_proj(torch.cat((
-        #     h, self.pitch_emb(pred_pitch)
-        # ), -1)) # 1, 1, time_params
-        # TODO: importance sampling?
-        pred_time = self.time_dist.sample(time_params).squeeze(0)
+            pitch_params = self.pitch_proj(h)
+            pred_pitch = D.Categorical(logits=pitch_params).sample()
+            
+            time_params = self.time_proj(h*self.cond_proj(self.pitch_emb(pred_pitch)).sigmoid())
+            # time_params = self.time_proj(torch.cat((
+            #     h, self.pitch_emb(pred_pitch)
+            # ), -1)) # 1, 1, time_params
+            # TODO: importance sampling?
+            pred_time = self.time_dist.sample(time_params).squeeze(0)
 
-        return {
-            'pitch': pred_pitch.item(), 
-            'time': pred_time.item()
-        }
+            ### DEBUG
+            # pi only, fewer zeros:
+            log_pi, loc, s = (
+                t.squeeze() for t in self.time_dist.get_params(time_params))
+            bias = 2#float('inf')
+            log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
+            idx = D.Categorical(logits=log_pi).sample()
+            pred_time = loc[idx].clamp(0,10)
+
+            return {
+                'pitch': pred_pitch.item(), 
+                'time': pred_time.item(),
+                'pitch_params': pitch_params,
+                'time_params': time_params
+            }
     
     def reset(self, start=True):
         """
         resets internal model state.
+        Args:
+            start: if True, send a start token through the model with dt=0
+                   but discard the prediction
         """
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
@@ -183,6 +202,10 @@ class NotePredictor(nn.Module):
 
     @classmethod
     def from_checkpoint(cls, path):
+        """
+        create a Predictor from a checkpoint file containing hyperparameters and 
+        model weights.
+        """
         checkpoint = torch.load(path, map_location=torch.device('cpu'))
         model = cls(**checkpoint['kw']['model'])
         model.load_state_dict(checkpoint['model_state'], strict=False)
