@@ -26,7 +26,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict", 60+12.rand, 0);
+b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0);
 )
 
 // set the delay for more precise timing
@@ -51,7 +51,7 @@ MIDIdef.noteOn(\input, {
     SystemClock.clear;
 
     //get a new prediction in light of current note
-    b.sendMsg("/predictor/predict", num, dt);
+    b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
 
     // release the previous note
     y.release(1.0);
@@ -99,7 +99,7 @@ OSCdef(\return, {
                 // be if there was a lot of fast MIDI input)
                 SystemClock.clear;
                 // feed model its own prediction as input
-                b.sendMsg("/predictor/predict", num, dt);
+                b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
                 // release the previous note
                 (dt<3e-2).if{
                     // if the time delay is very small, slowly release to play a chord
@@ -122,10 +122,11 @@ OSCdef(\return, {
             }
     })};
 
-}, '/prediction', nil);
+}, "/prediction", nil);
 )
 
-// b.sendMsg("/predictor/predict", 70, 0.1);
+// send a note manually if you don't have a MIDI controller:
+b.sendMsg("/predictor/predict", \pitch, 70, \time, 0);
 
 // load another model
 // b.sendMsg("/predictor/load", "/path/to/checkpoint");
