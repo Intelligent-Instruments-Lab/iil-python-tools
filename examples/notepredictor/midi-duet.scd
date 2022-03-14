@@ -1,12 +1,15 @@
 (
+~gui = false;
 MIDIIn.connectAll;
 b = NetAddr.new("127.0.0.1", 9999);
-// Server.default.options.inDevice_("Built-in Microph");
-// Server.default.options.outDevice_("Built-in Output");
-Server.default.options.inDevice_("mic-buds");
-Server.default.options.outDevice_("mic-buds");
+Server.default.options.inDevice_("Built-in Microph");
+Server.default.options.outDevice_("Built-in Output");
+// Server.default.options.inDevice_("mic-buds");
+// Server.default.options.outDevice_("mic-buds");
 s.boot;
-k = MIDIKeyboard.new(bounds: Rect(0, 0, 500, 100), octaves:11, startnote:0)
+~gui.if{
+    k = MIDIKeyboard.new(bounds: Rect(0, 0, 500, 100), octaves:11, startnote:0)
+};
 )
 
 (
@@ -42,7 +45,7 @@ b.sendMsg("/predictor/reset");
 MIDIdef.noteOn(\input, {
     arg val, num, chan, src;
     var t2 = Process.elapsedTime;
-    var dt = t2-t; //time since last note
+    var dt = t2-(t?t2); //time since last note
 
     // cancel any pending predictions
     SystemClock.clear;
@@ -87,15 +90,18 @@ OSCdef(\return, {
                 b.sendMsg("/predictor/reset");
                 //release the last note
                 y.release(1.0);
+                // unset time so next note will have dt=0
+                t = nil;
                 \reset.postln
             }{
-                // cancel any pending predictions (there shouldn't be any, but might
+                // cancel any pending predictions
+                // (there shouldn't be any, but might
                 // be if there was a lot of fast MIDI input)
                 SystemClock.clear;
                 // feed model its own prediction as input
                 b.sendMsg("/predictor/predict", num, dt);
                 // release the previous note
-                (dt<1e-2).if{
+                (dt<3e-2).if{
                     // if the time delay is very small, slowly release to play a chord
                     y.release(1.0)
                 }{
@@ -109,8 +115,10 @@ OSCdef(\return, {
                 // mark the time of current note
                 t = Process.elapsedTime;
                 // crudely draw note on piano GUI
-                AppClock.sched(0,{k.keyDown(num)});
-                AppClock.sched(0.2,{k.keyUp(num)});
+                ~gui.if{
+                    AppClock.sched(0,{k.keyDown(num)});
+                    AppClock.sched(0.2,{k.keyUp(num)});
+                }
             }
     })};
 

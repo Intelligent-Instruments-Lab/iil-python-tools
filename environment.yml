@@ -16,4 +16,5 @@ dependencies:
   - pip
   - pip:
     - mido
+    - python-rtmidi
     - python-osc
