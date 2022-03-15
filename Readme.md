@@ -1,31 +1,36 @@
 # Structure
 
-- clients: templates for SuperCollider, Bela (C++), Pure Data, ...
-- pytorch-osc: app with OSC server + event loops
+- iipyper: python package for easy MIDI, OSC, event loops
 - notepredictor: python package for defining+training pytorch RNN models
-- notebooks: jupyter notebooks
-- scripts: helper scripts for training, data preprocessing etc
+    - notebooks: jupyter notebooks
+    - scripts: helper scripts for training, data preprocessing etc
+- examples:
+    - iipyper: basic usage for iipyper
+    - notepredictor: interactive MIDI apps with notepredictor
+<!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
 
 # Setup
 
 ```
 conda env create -f environment.yml
-conda activate pytorch-osc
+conda activate iil-python-tools
 pip install -e notepredictor
+pip install -e iipyper
 ```
 
-# Train a model
-
+# notepredictor
+## Train a model
 ```
-python scipts/lakh_prep.py --data_path /path/to/midi/files --dest_path /path/to/data/storage
+python scripts/lakh_prep.py --data_path /path/to/midi/files --dest_path /path/to/data/storage
 python scripts/train_pitch.py --data_dir /path/to/data/storage --log_dir /path/for/tensorboard logs --model_dir /path/for/checkpoints train
 ```
 
-# Run OSC app
+## Run OSC app
 
 ```
-python pytorch-osc/pytorch-osc.py --checkpoint /path/to/my/model.ckpt
+python examples/notepredictor/server.py --checkpoint /path/to/my/model.ckpt
 ```
+open `examples/notepredictor/midi-duet.scd` in SuperCollider
 
 # Develop
 

@@ -1,4 +1,4 @@
-name: pytorch-osc
+name: iil-python-tools
 channels:
   - pytorch
   - defaults
