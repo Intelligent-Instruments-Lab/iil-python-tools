@@ -20,12 +20,13 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
 
     # # decorator to make a midi handler:
     # # here filtering for pitch > 0, channel = 0
-    @midi.handle.note_on(pitches=range(1,128), channels=0)
-    def _(pitch, velocity, channel):
-        print(pitch, velocity, channel)
+    # @midi.handle.note_on(notes=range(1,128), channels=0)
+    # def _(note, velocity, channel):
+    #     print(note, velocity, channel)
 
     # function to send MIDI:
-    midi.note_on(pitch=60, velocity=100, channel=0)
+    midi.note_on(note=60, velocity=100, channel=0)
+    midi.note_off(note=60, velocity=100, channel=0)
     midi.cc(control=0, value=127, channel=1)
 
     # @repeat(1)
