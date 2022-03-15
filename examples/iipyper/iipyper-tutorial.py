@@ -1,5 +1,8 @@
 from iipyper import OSC, MIDI, repeat, run
 
+# TODO: MIDI
+# TODO: loops are broken, why?
+
 def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     # loop API:
     # use the @repeat decorator to define functions which run every n seconds
@@ -11,25 +14,22 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     def _():
         print('looping every 1.5 sec')
 
-    # midi = MIDI()
+    midi = MIDI()
     # # MIDI API:
     # # midi.note_on, midi.cc, etc
 
-    # # use as a decorator to make a midi handler
-    # @midi.handle.note_on
-    # def _(pitch, velocity, channel):
-    #     print(pitch, velocity, channel)
+    # # decorator to make a midi handler:
+    # # here filtering for pitch > 0, channel = 0
+    @midi.handle.note_on(pitches=range(1,128), channels=0)
+    def _(pitch, velocity, channel):
+        print(pitch, velocity, channel)
 
-    # # above is kind of an abuse of python syntax, could do this instead:
-    # # (which would allow filtering on port, even note)
-    # @midi.handle.note_on(pitch=range(1,128), channel=0, port='')
-    # def _(pitch, velocity, channel):
-    #     print(pitch, velocity, channel)
-
-    # use as a function to send MIDI
+    # function to send MIDI:
+    midi.note_on(pitch=60, velocity=100, channel=0)
+    midi.cc(control=0, value=127, channel=1)
 
     # @repeat(1)
-    # def step():
+    # def _():
     #     midi.note_on(pitch=60, velocity=100, channel=0)
     #     midi.cc(number=0, value=127, channel=1)
 

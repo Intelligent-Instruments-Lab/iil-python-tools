@@ -12,7 +12,11 @@ def _get_filter(item):
 class MIDI:
     """"""
     def __init__(self, in_ports=None, out_ports=None, verbose=True):
-        """"""
+        """
+        Args:
+            in_ports: list of input devices (uses all by default)
+            out_ports: list of output devices (uses all by default)
+        """
         self.verbose = verbose
         # type -> list[Optional[set[port], Optional[set[channel]], function]
         self.handlers = defaultdict(list)
@@ -38,6 +42,11 @@ class MIDI:
             print(f"""opened MIDI output ports: {list(self.out_ports)}""")
 
         self.handle = MIDIHandlers(self)
+
+    # TODO: filtering needs to work for all message types...
+    # maybe there should be just one decorator
+    # which can accept any filter, including on type?
+    # and which just takes a mido message?
 
     def get_midi_callback(self):
         """callback for mido MIDI handling"""
@@ -82,22 +91,54 @@ class MIDI:
         
         return decorator if f is None else decorator(f)
 
-    # TODO: MIDI send
-    def note_on(self, pitch, velocity=64, channel=0):
-        pass
+    # send on all ports by default
+    def _send(self, port, *a, **kw):
+        ports = self.out_ports.values() if port is None else [self.out_ports[port]]
+        for p in ports:
+            p.send(mido.Message(*a, **kw))
 
-# this is effectively part of MIDI, 
+    # see https://mido.readthedocs.io/en/latest/message_types.html
+
+    def note_on(self, note, velocity=64, channel=0, port=None):
+        self._send(port, 'note_on', channel=channel, note=note, velocity=velocity)
+
+    def note_off(self, note, velocity=64, channel=0, port=None):
+        self._send(port, 'note_off', channel=channel, note=note, velocity=velocity)
+
+    def control_change(self, control, value, channel=0, port=None):
+        self._send(port, 'control_change', channel=channel, control=control, value=value)
+
+    def cc(self, *a, **kw):
+        self.control_change(*a, **kw)
+
+    def program_change(self, program, channel=0, port=None):
+        self._send(port, 'program_change', channel=channel, program=program)
+
+    def polytouch(self, note, value=64, channel=0, port=None):
+        self._send(port, 'polytouch', channel=channel, note=note, value=value)
+
+    def aftertouch(self, value=64, channel=0, port=None):
+        self._send(port, 'aftertouch', channel=channel, value=value)
+
+    def pitchwheel(self, pitch=0, port=None):
+        self._send(port, 'pitchwheel', pitch=pitch)
+
+    def pitchbend(self, *a, **kw):
+        self.pitchwheel(*a, **kw)
+
+
+# this is effectively part of MIDI class, 
 # it is only a separate class for naming aesthetics
 class MIDIHandlers:
     """specific MIDI handler decorators"""
     def __init__(self, midi):
         self.midi = midi
 
-    def note_on(self, ports=None, channels=None, pitches=None, velocities=None):
-        return self.midi._decorator('note_on', ports, channels, pitches, velocities)
+    def note_on(self, ports=None, channels=None, notes=None, velocities=None):
+        return self.midi._decorator('note_on', ports, channels, notes, velocities)
 
-    def note_off(self, ports=None, channels=None, pitches=None, velocities=None):
-        return self.midi._decorator('note_off', ports, channels, pitches, velocities)
+    def note_off(self, ports=None, channels=None, notes=None, velocities=None):
+        return self.midi._decorator('note_off', ports, channels, notes, velocities)
 
     def control_change(self, ports=None, channels=None, controls=None, values=None):
         return self.midi._decorator('control_change', ports, channels, controls, values)

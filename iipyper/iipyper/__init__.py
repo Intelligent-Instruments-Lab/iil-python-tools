@@ -39,6 +39,7 @@ async def _run_async():
     # for osc in OSC.instances:
     #     osc.close_server()
 
-def run(main):
-    fire.Fire(main)
+def run(main=None):
+    if main is not None:
+        fire.Fire(main)
     asyncio.run(_run_async())
