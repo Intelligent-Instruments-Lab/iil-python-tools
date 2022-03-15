@@ -1,3 +1,5 @@
+import mido
+
 from iipyper import OSC, MIDI, repeat, run
 
 # TODO: MIDI
@@ -19,15 +21,16 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     # # midi.note_on, midi.cc, etc
 
     # # decorator to make a midi handler:
-    # # here filtering for pitch > 0, channel = 0
-    # @midi.handle.note_on(notes=range(1,128), channels=0)
-    # def _(note, velocity, channel):
-    #     print(note, velocity, channel)
+    # # here filtering for type='note_on', note > 0, channel = 0
+    @midi.handle(type='note_on', note=range(1,128), channel=0)
+    def _(msg):
+        print(msg)
 
     # function to send MIDI:
-    midi.note_on(note=60, velocity=100, channel=0)
-    midi.note_off(note=60, velocity=100, channel=0)
-    midi.cc(control=0, value=127, channel=1)
+    midi.send('note_on', note=60, velocity=100, channel=0)
+    # or mido-style:
+    m = mido.Message('note_off', note=60, velocity=100, channel=0)
+    midi.send(m)
 
     # @repeat(1)
     # def _():
