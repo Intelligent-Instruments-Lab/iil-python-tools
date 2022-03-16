@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixturePointyBoi
+from .distributions import CensoredMixtureLogistic
 
 
 # TODO: parameterized this wrong, meant to have increasing wavelength not frequency
@@ -32,7 +32,7 @@ class NotePredictor(nn.Module):
             pitch_emb_size=128, time_emb_size=128, hidden_size=512,
             num_layers=1, kind='gru', dropout=0, 
             num_pitches=128, 
-            time_bounds=(0,10), time_components=5, time_res=1e-2,
+            time_bounds=(0,10), time_components=16, time_res=1e-2,
             ):
         """
         """
@@ -44,7 +44,7 @@ class NotePredictor(nn.Module):
         self.pitch_domain = num_pitches+2
 
         # TODO: upper truncation?
-        self.time_dist = CensoredMixturePointyBoi(
+        self.time_dist = CensoredMixtureLogistic(
             time_components, time_res, lo=time_bounds[0], hi=time_bounds[1])
         
         # embeddings for inputs
@@ -100,12 +100,17 @@ class NotePredictor(nn.Module):
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
-        # IDEA: compare pitch-first
-        # this might make the harder time modeling problem easier,
-        # and would also allow constructing the whole joint distribution
-
-        # IDEA: alternate proj for second feature: 
-        # project time_emb to hidden_size, sigmoid, multiply with h
+        # IDEA: fit all factorizations at once.
+        # add a 'missing' value for time / pitch / velocity as mode parameters
+        # expand the batch to 6x wide with have ~/~/~, T/~/~, ~/P/~, T/P/~, ~/P/V, T/~/V inputs
+        # the factorizations are:
+        # _~~ -> T_~ -> TP_
+        # _~~ -> T~_ -> T_V
+        # ~_~ -> _P~ -> TP_
+        # ~_~ -> ~P_ -> _PV
+        # ~~_ -> _~V -> T_V
+        # ~~_ -> ~_V -> _PV
+        # i.e. ~~~ is counted 2x, and each other masked position is counted once
         
 
         # RNN hidden state, time -> pitch prediction
@@ -172,6 +177,7 @@ class NotePredictor(nn.Module):
             # TODO: importance sampling?
             pred_time = self.time_dist.sample(time_params).squeeze(0)
 
+            ### TODO: generalize, move into sample
             ### DEBUG
             # pi only, fewer zeros:
             log_pi, loc, s = (

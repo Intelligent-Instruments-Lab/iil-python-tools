@@ -6,7 +6,7 @@
     - scripts: helper scripts for training, data preprocessing etc
 - examples:
     - iipyper: basic usage for iipyper
-    - notepredictor: interactive MIDI apps with notepredictor
+    - notepredictor: interactive MIDI apps with notepredictor and SuperCollider
 <!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
 
 # Setup
