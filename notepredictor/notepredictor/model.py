@@ -206,16 +206,20 @@ class NotePredictor(nn.Module):
         # chunk into 7 and discard unmasked positions;
         # stack the masked positions along new first dim
         pitch_params, time_params, vel_params = (
-            torch.cat([
-                ch[None].expand(m, -1, -1, -1) 
+            torch.stack([
+                ch
                 for m,ch in zip(mask, dp.chunk(7, 0)) if m>0
                 ], 0)
             for mask,dp in zip(masks, dist_params)
         )
 
+        #TODO: weighting
+        # weights = np.log([[m for m in mask if m>0] for mask in masks]) # 3 x 4
+
         # get likelihoods
         pitch_logits = F.log_softmax(pitch_params, -1)
-        pitch_targets = pitches[None,:,1:,None] #1, batch, time-1, 1
+        # TODO: is gather working right with extra dim?
+        pitch_targets = pitches[None,:,1:,None].expand(4, -1, -1, -1) #1, batch, time-1, 1
         pitch_log_probs = pitch_logits.gather(-1, pitch_targets)[...,0]
 
         time_targets = times[:,1:]# batch, time-1

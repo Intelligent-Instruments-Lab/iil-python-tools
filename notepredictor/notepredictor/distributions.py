@@ -48,7 +48,12 @@ class CensoredMixtureLogistic(nn.Module):
 
 
     def forward(self, h, x):
-        """log prob of x under distribution parameterized by h"""
+        """log prob of x under distribution parameterized by h
+        Args:
+            h: Tensor[...,n_params]
+            x: Tensor[...]
+            "..." dims must broadcast
+        """
         log_pi, loc, s = self.get_params(h)    
 
         d = self.res/2
@@ -59,8 +64,8 @@ class CensoredMixtureLogistic(nn.Module):
         # # censoring
         lo_cens = x <= self.lo+d
         hi_cens = x >= self.hi-d
-        ones = torch.ones_like(x_)
-        zeros = torch.zeros_like(x_)
+        ones = torch.ones_like(s)
+        zeros = torch.zeros_like(s)
 
         diff_term = torch.where(lo_cens | hi_cens, 
             ones, sd.exp() - (-sd).exp()
