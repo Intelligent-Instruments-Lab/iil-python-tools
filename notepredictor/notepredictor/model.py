@@ -8,8 +8,6 @@ import torch.distributions as D
 from .rnn import GenericRNN
 from .distributions import CensoredMixtureLogistic
 
-
-# TODO: parameterized this wrong, meant to have increasing wavelength not frequency
 class SineEmbedding(nn.Module):
     def __init__(self, n, w0=1e-3, interval=1.08):
         """
@@ -26,13 +24,67 @@ class SineEmbedding(nn.Module):
         x = x[...,None] * self.fs
         return x.sin()
 
+class MixEmbedding(nn.Module):
+    def __init__(self, n, domain=(0,1)):
+        """
+        Args:
+            n (int): number of channels
+            domain (Tuple[float])
+        """
+        super().__init__()
+        self.domain = domain
+        self.lo = nn.Parameter(torch.randn(n))
+        self.hi = nn.Parameter(torch.randn(n))
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor[...]
+        Returns:
+            Tensor[...,n]
+        """
+        x = (x - self.domain[0])*(self.domain[1] - self.domain[0])
+        x = x[...,None]
+        return self.hi * x + self.lo * (1-x)
+
+class SelfGated(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        a, b = x.chunk(2, -1)
+        return a * b.sigmoid()
+
+class SelfGatedMLP(nn.Module):
+    def __init__(self, input, hidden, output, layers, dropout=0):
+        super().__init__()
+        h = input
+        def get_dropout():
+            if dropout > 0:
+                return (nn.Dropout(dropout),)
+            else:
+                return tuple()
+        self.net = []
+        for _ in range(layers):
+            self.net.append(nn.Sequential(
+                *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
+            h = hidden
+        self.net.append(nn.Linear(hidden, output))
+        self.net = nn.Sequential(*self.net)
+
+        with torch.no_grad():
+            self.net[-1].weight.mul_(1e-2)
+
+    def forward(self, x):
+        return self.net(x)
+
 class NotePredictor(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, 
-            pitch_emb_size=128, time_emb_size=128, hidden_size=512,
-            num_layers=1, kind='gru', dropout=0, 
+            pitch_emb_size=128, time_emb_size=128, vel_emb_size=128, 
+            hidden_size=512, num_layers=1, kind='gru', dropout=0, 
             num_pitches=128, 
             time_bounds=(0,10), time_components=16, time_res=1e-2,
+            vel_components=8
             ):
         """
         """
@@ -43,16 +95,24 @@ class NotePredictor(nn.Module):
 
         self.pitch_domain = num_pitches+2
 
-        # TODO: upper truncation?
         self.time_dist = CensoredMixtureLogistic(
-            time_components, time_res, lo=time_bounds[0], hi=time_bounds[1])
+            time_components, time_res, 
+            lo=time_bounds[0], hi=time_bounds[1], init='time')
+        self.vel_dist = CensoredMixtureLogistic(
+            vel_components, 1.0, lo=0, hi=127, init='velocity')
         
         # embeddings for inputs
         self.pitch_emb = nn.Embedding(self.pitch_domain, pitch_emb_size)
         self.time_emb = SineEmbedding(time_emb_size)
+        self.vel_emb = MixEmbedding(vel_emb_size, (0, 127))
+
+        self.pitch_missing = nn.Parameter(torch.randn(pitch_emb_size))
+        self.time_missing = nn.Parameter(torch.randn(time_emb_size))
+        self.vel_missing = nn.Parameter(torch.randn(vel_emb_size))
 
         # RNN backbone
-        self.rnn = GenericRNN(kind, pitch_emb_size+time_emb_size, hidden_size, 
+        self.rnn = GenericRNN(kind, 
+            pitch_emb_size+time_emb_size+vel_emb_size, hidden_size, 
             num_layers=num_layers, batch_first=True, dropout=dropout)
 
         # learnable initial RNN state
@@ -63,12 +123,11 @@ class NotePredictor(nn.Module):
         ])
 
         # projection from RNN state to distribution parameters
-        self.time_proj = nn.Linear(hidden_size, self.time_dist.n_params, bias=False)
-        self.pitch_proj = nn.Linear(hidden_size, self.pitch_domain)
-        self.cond_proj = nn.Linear(pitch_emb_size, hidden_size)
-        with torch.no_grad():
-            self.time_proj.weight.mul_(1e-2)
-            self.pitch_proj.weight.mul_(1e-2)
+        self.param_proj = SelfGatedMLP(
+            pitch_emb_size+time_emb_size+vel_emb_size+hidden_size, 
+            hidden_size//2,
+            self.pitch_domain+self.time_dist.n_params+self.vel_dist.n_params,
+            layers=2, dropout=dropout)
 
         # persistent RNN state for inference
         for n,t in zip(self.cell_state_names(), self.initial_state):
@@ -81,19 +140,22 @@ class NotePredictor(nn.Module):
     def cell_state(self):
         return tuple(getattr(self, n) for n in self.cell_state_names())
         
-    def forward(self, pitches, times):
+    def forward(self, pitches, times, velocities, validation=False):
         """
         teacher-forced probabilistic loss and diagnostics for training
 
         Args:
             pitches: LongTensor[batch, time]
             times: FloatTensor[batch, time]
+            velocities: FloatTensor[batch, time]
         """
+        batch_size, batch_len = pitches.shape
 
+        pitch_emb = self.pitch_emb(pitches) # batch, time, pitch_emb_size
         time_emb = self.time_emb(times) # batch, time, time_emb_size
-        pitch_emb = self.pitch_emb(pitches) # batch, time, note_emb_size
+        vel_emb = self.vel_emb(velocities) # batch, time, vel_emb_size
 
-        x = torch.cat((pitch_emb, time_emb), -1)
+        x = torch.cat((pitch_emb, time_emb, vel_emb), -1)
         ## broadcast intial state to batch size
         initial_state = tuple(
             t.expand(self.rnn.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
@@ -101,8 +163,8 @@ class NotePredictor(nn.Module):
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
         # IDEA: fit all factorizations at once.
-        # add a 'missing' value for time / pitch / velocity as mode parameters
-        # expand the batch to 6x wide with have ~/~/~, T/~/~, ~/P/~, T/P/~, ~/P/V, T/~/V inputs
+        # add 'missing' value for time / pitch / velocity as model parameters
+        # expand the batch to 6x wide with ~/~/~, T/~/~, ~/P/~, ~/~/V, T/P/~, ~/P/V, T/~/V inputs
         # the factorizations are:
         # _~~ -> T_~ -> TP_
         # _~~ -> T~_ -> T_V
@@ -110,50 +172,95 @@ class NotePredictor(nn.Module):
         # ~_~ -> ~P_ -> _PV
         # ~~_ -> _~V -> T_V
         # ~~_ -> ~_V -> _PV
-        # i.e. ~~~ is counted 2x, and each other masked position is counted once
-        
+        # i.e. the fully masked positions are counted 2x, 
+        # the single-masked positions are counted 2x,
+        # and each double-masked position is counted once
 
-        # RNN hidden state, time -> pitch prediction
-        pitch_params = self.pitch_proj(h[:,:-1])
+        masks = [
+            [2,  0, 0, 2,  0, 1, 1], #pitch
+            [2,  2, 0, 0,  1, 0, 1], #time
+            [2,  0, 2, 0,  1, 1, 0]  #velocity
+        ]
+
+        def mask_cat(missing, present, mask):
+            missing = missing[None,None].expand(batch_size, batch_len-1, -1)
+            return torch.cat([
+                present if m==0 else missing for m in mask
+            ], 0)
+        
+        pitch_features = mask_cat(self.pitch_missing, pitch_emb[:,1:], masks[0])
+        time_features = mask_cat(self.time_missing, time_emb[:,1:], masks[1])
+        vel_features = mask_cat(self.vel_missing, vel_emb[:,1:], masks[2])
+        
+        features = torch.cat((
+            pitch_features, time_features, vel_features, h[:,:-1].repeat(7,1,1)
+            ), -1) # cat along feature dim
+
+        dist_params = self.param_proj(features) # combine features with h 
+
+        # split again into time/pitch/vel params
+        dist_params = dist_params.split([
+            self.pitch_domain, self.time_dist.n_params, self.vel_dist.n_params
+            ], -1)
+
+        # chunk into 7 and discard unmasked positions;
+        # stack the masked positions along new first dim
+        pitch_params, time_params, vel_params = (
+            torch.cat([
+                ch[None].expand(m, -1, -1, -1) 
+                for m,ch in zip(mask, dp.chunk(7, 0)) if m>0
+                ], 0)
+            for mask,dp in zip(masks, dist_params)
+        )
+
+        # get likelihoods
         pitch_logits = F.log_softmax(pitch_params, -1)
-        pitch_targets = pitches[:,1:,None] #batch, time-1, 1
+        pitch_targets = pitches[None,:,1:,None] #1, batch, time-1, 1
         pitch_log_probs = pitch_logits.gather(-1, pitch_targets)[...,0]
 
-        # RNN hidden state -> time prediction
-        time_params = self.time_proj(
-            self.cond_proj(pitch_emb[:,1:]).sigmoid() * h[:,:-1])
-        # time_params = self.time_proj(
-        #     torch.cat((h[:,:-1], pitch_emb[:,1:]), -1)
-        #     ) # batch, time-1, time_params
         time_targets = times[:,1:]# batch, time-1
         time_result = self.time_dist(time_params, time_targets)
         time_log_probs = time_result.pop('log_prob')
 
+        vel_targets = velocities[:,1:]# batch, time-1
+        vel_result = self.vel_dist(vel_params, vel_targets)
+        vel_log_probs = vel_result.pop('log_prob')
+
+        # should reduce over chunk dim with logsumexp?
+        # i.e. average likelihood over factorizations, not LL?
+
         r = {
             'pitch_log_probs': pitch_log_probs,
             'time_log_probs': time_log_probs,
-            **time_result
+            'velocity_log_probs': vel_log_probs,
+            **{'time_'+k:v for k,v in time_result.items()},
+            **{'velocity_'+k:v for k,v in vel_result.items()}
         }
-        with torch.no_grad():
-            r['time_acc_30ms'] = (
-                self.time_dist.cdf(time_params, time_targets + 0.03)
-                - torch.where(time_targets - 0.03 >= 0,
-                    self.time_dist.cdf(time_params, time_targets - 0.03),
-                    time_targets.new_zeros([]))
-            )
+        if validation:
+            with torch.no_grad():
+                r['time_acc_30ms'] = (
+                    self.time_dist.cdf(time_params, time_targets + 0.03)
+                    - torch.where(time_targets - 0.03 >= 0,
+                        self.time_dist.cdf(time_params, time_targets - 0.03),
+                        time_targets.new_zeros([]))
+                )
         return r
     
-    # TODO: time
-    def predict(self, pitch, time):
+    # TODO: vel
+    def predict(self, pitch, time, vel, force=(None, None, None)):
         """
         supply the most recent note and return a prediction for the next note.
 
         Args:
             pitch: int. MIDI number of current note.
             time: float. elapsed time since previous note.
+            vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
+            force: Tuple[Optional[Number]].
+
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
             'time': float. predicted time to next note.
+            'velocity': float. unquantized predicted velocity of next note.
         """
         with torch.no_grad():
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
@@ -190,10 +297,12 @@ class NotePredictor(nn.Module):
             return {
                 'pitch': pred_pitch.item(), 
                 'time': pred_time.item(),
+                'velocity': None,
                 'pitch_params': pitch_params,
                 'time_params': time_params
             }
     
+    # TODO: start velocity
     def reset(self, start=True):
         """
         resets internal model state.
