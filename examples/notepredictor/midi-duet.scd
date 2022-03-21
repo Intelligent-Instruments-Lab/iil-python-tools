@@ -12,6 +12,8 @@ s.boot;
 };
 )
 
+MIDIFunc.trace
+
 (
 SynthDef(\pluck, {
     var signal = Saw.ar(\freq.kr, 0.2) * EnvGate.new(1);
@@ -38,8 +40,15 @@ b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0);
 // duet with the model
 // feeds the model's predictions back to it as well as player input
 (
+~gate = 0;
 t = Process.elapsedTime;
 b.sendMsg("/predictor/reset");
+
+// footswitch
+MIDIdef.program(\switch {
+    arg num, chan, src;
+    ~gate = num-1;
+});
 
 // MIDI from controller
 MIDIdef.noteOn(\input, {
@@ -65,7 +74,6 @@ MIDIdef.noteOn(\input, {
     // mark time of current note
     t = t2;
 });
-
 
 // OSC return from python
 OSCdef(\return, {
