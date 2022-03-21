@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -19,10 +21,11 @@ class SineEmbedding(nn.Module):
         super().__init__()
         self.n = n
         self.register_buffer('fs', interval**(-torch.arange(n)) / w0 * 2 * math.pi)
+        self.proj = nn.Linear(n,n)
 
     def forward(self, x):
         x = x[...,None] * self.fs
-        return x.sin()
+        return self.proj(x.sin())
 
 class MixEmbedding(nn.Module):
     def __init__(self, n, domain=(0,1)):
@@ -42,49 +45,85 @@ class MixEmbedding(nn.Module):
         Returns:
             Tensor[...,n]
         """
-        x = (x - self.domain[0])*(self.domain[1] - self.domain[0])
+        x = (x - self.domain[0])/(self.domain[1] - self.domain[0])
         x = x[...,None]
         return self.hi * x + self.lo * (1-x)
 
-class SelfGated(nn.Module):
-    def __init__(self):
+# class SelfGated(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+
+#     def forward(self, x):
+#         a, b = x.chunk(2, -1)
+#         return a * b.sigmoid()
+
+# class SelfGatedMLP(nn.Module):
+#     def __init__(self, input, hidden, output, layers, dropout=0):
+#         super().__init__()
+#         h = input
+#         def get_dropout():
+#             if dropout > 0:
+#                 return (nn.Dropout(dropout),)
+#             else:
+#                 return tuple()
+#         self.net = []
+#         for _ in range(layers):
+#             self.net.append(nn.Sequential(
+#                 *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
+#             h = hidden
+#         self.net.append(nn.Linear(hidden, output))
+#         self.net = nn.Sequential(*self.net)
+
+#         with torch.no_grad():
+#             self.net[-1].weight.mul_(1e-2)
+
+#     def forward(self, x):
+#         return self.net(x)
+
+class ModalityTransformer(nn.Module):
+    """Model joint distribution of modalities autoregressively with random permutations"""
+    def __init__(self, input_size, hidden_size, heads=4, layers=1):
         super().__init__()
+        self.net = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                input_size, heads, hidden_size, norm_first=False
+                ), layers)
 
-    def forward(self, x):
-        a, b = x.chunk(2, -1)
-        return a * b.sigmoid()
+    def forward(self, h, modes):
+        """
+        Args:
+            modes: each a Tensor[batch x time x input_size]
+        """
+        x = [h]+modes
+        batch_size = h.shape[0]*h.shape[1]
+        # fold time into batch, stack modes
+        x = torch.stack([
+            item.reshape(batch_size,-1)
+            for item in x
+        ],0)
+        # now "time"(mode) x "batch"(+time) x channel
 
-class SelfGatedMLP(nn.Module):
-    def __init__(self, input, hidden, output, layers, dropout=0):
-        super().__init__()
-        h = input
-        def get_dropout():
-            if dropout > 0:
-                return (nn.Dropout(dropout),)
-            else:
-                return tuple()
-        self.net = []
-        for _ in range(layers):
-            self.net.append(nn.Sequential(
-                *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
-            h = hidden
-        self.net.append(nn.Linear(hidden, output))
-        self.net = nn.Sequential(*self.net)
+        # generate a mask
+        # upper triangular (i.e. diagonal and above is True, meaning masked)
+        # except h position should attend to self
+        n = len(modes)+1
+        mask = x.new_ones((n,n), dtype=bool).triu()
+        mask[0,0] = False 
 
-        with torch.no_grad():
-            self.net[-1].weight.mul_(1e-2)
+        x = self.net(x, mask)
+        return list(x.reshape(n, *h.shape).unbind(0))[1:]
 
-    def forward(self, x):
-        return self.net(x)
 
 class NotePredictor(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, 
-            pitch_emb_size=128, time_emb_size=128, vel_emb_size=128, 
-            hidden_size=512, num_layers=1, kind='gru', dropout=0, 
+            emb_size=256, 
+            rnn_hidden=2048, rnn_layers=1, kind='gru', 
+            ar_hidden=2048, ar_layers=1, ar_heads=4,
+            dropout=0.1, 
             num_pitches=128, 
-            time_bounds=(0,10), time_components=16, time_res=1e-2,
-            vel_components=8
+            time_bounds=(0,10), time_components=32, time_res=1e-2,
+            vel_components=16
             ):
         """
         """
@@ -102,32 +141,34 @@ class NotePredictor(nn.Module):
             vel_components, 1.0, lo=0, hi=127, init='velocity')
         
         # embeddings for inputs
-        self.pitch_emb = nn.Embedding(self.pitch_domain, pitch_emb_size)
-        self.time_emb = SineEmbedding(time_emb_size)
-        self.vel_emb = MixEmbedding(vel_emb_size, (0, 127))
-
-        self.pitch_missing = nn.Parameter(torch.randn(pitch_emb_size))
-        self.time_missing = nn.Parameter(torch.randn(time_emb_size))
-        self.vel_missing = nn.Parameter(torch.randn(vel_emb_size))
+        self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
+        self.time_emb = SineEmbedding(emb_size)
+        self.vel_emb = MixEmbedding(emb_size, (0, 127))
 
         # RNN backbone
         self.rnn = GenericRNN(kind, 
-            pitch_emb_size+time_emb_size+vel_emb_size, hidden_size, 
-            num_layers=num_layers, batch_first=True, dropout=dropout)
+            3*emb_size, rnn_hidden, 
+            num_layers=rnn_layers, batch_first=True, dropout=dropout)
 
         # learnable initial RNN state
         self.initial_state = nn.ParameterList([
              # layer x batch x hidden
-            nn.Parameter(torch.randn(num_layers,1,hidden_size)*hidden_size**-0.5)
+            nn.Parameter(torch.randn(rnn_layers,1,rnn_hidden)*rnn_hidden**-0.5)
             for _ in range(2 if kind=='lstm' else 1)
         ])
 
         # projection from RNN state to distribution parameters
-        self.param_proj = SelfGatedMLP(
-            pitch_emb_size+time_emb_size+vel_emb_size+hidden_size, 
-            hidden_size//2,
-            self.pitch_domain+self.time_dist.n_params+self.vel_dist.n_params,
-            layers=2, dropout=dropout)
+        self.h_proj = nn.Linear(rnn_hidden, emb_size)
+        self.projections = nn.ModuleList([
+            nn.Linear(emb_size, self.pitch_domain),
+            nn.Linear(emb_size, self.time_dist.n_params, bias=False),
+            nn.Linear(emb_size, self.vel_dist.n_params, bias=False)
+        ])
+        for p in self.projections:
+            with torch.no_grad():
+                p.weight.mul_(1e-2)
+
+        self.xformer = ModalityTransformer(emb_size, ar_hidden, ar_heads, ar_layers)
 
         # persistent RNN state for inference
         for n,t in zip(self.cell_state_names(), self.initial_state):
@@ -151,82 +192,43 @@ class NotePredictor(nn.Module):
         """
         batch_size, batch_len = pitches.shape
 
-        pitch_emb = self.pitch_emb(pitches) # batch, time, pitch_emb_size
-        time_emb = self.time_emb(times) # batch, time, time_emb_size
-        vel_emb = self.vel_emb(velocities) # batch, time, vel_emb_size
+        pitch_emb = self.pitch_emb(pitches) # batch, time, emb_size
+        time_emb = self.time_emb(times) # batch, time, emb_size
+        vel_emb = self.vel_emb(velocities) # batch, time, emb_size
 
-        x = torch.cat((pitch_emb, time_emb, vel_emb), -1)
+        embs = (pitch_emb, time_emb, vel_emb)
+
+        x = torch.cat(embs, -1)[:,:-1] # skip last time position
         ## broadcast intial state to batch size
         initial_state = tuple(
             t.expand(self.rnn.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
-        # IDEA: fit all factorizations at once.
-        # add 'missing' value for time / pitch / velocity as model parameters
-        # expand the batch to 6x wide with ~/~/~, T/~/~, ~/P/~, ~/~/V, T/P/~, ~/P/V, T/~/V inputs
-        # the factorizations are:
-        # _~~ -> T_~ -> TP_
-        # _~~ -> T~_ -> T_V
-        # ~_~ -> _P~ -> TP_
-        # ~_~ -> ~P_ -> _PV
-        # ~~_ -> _~V -> T_V
-        # ~~_ -> ~_V -> _PV
-        # i.e. the fully masked positions are counted 2x, 
-        # the single-masked positions are counted 2x,
-        # and each double-masked position is counted once
+        # include initial hidden state for predicting first note
+        h = torch.cat((
+            self.initial_state[0][-1][None].expand(batch_size, 1, -1),
+            h), -2)
 
-        masks = [
-            [2,  0, 0, 2,  0, 1, 1], #pitch
-            [2,  2, 0, 0,  1, 0, 1], #time
-            [2,  0, 2, 0,  1, 1, 0]  #velocity
-        ]
+        # fit all note factorizations at once.
+        perm = torch.randperm(3)
+        embs = [embs[i] for i in perm]
+        mode_hs = self.xformer(self.h_proj(h), embs)
+        mode_hs = [mode_hs[perm[i]] for i in perm]
 
-        def mask_cat(missing, present, mask):
-            missing = missing[None,None].expand(batch_size, batch_len-1, -1)
-            return torch.cat([
-                present if m==0 else missing for m in mask
-            ], 0)
-        
-        pitch_features = mask_cat(self.pitch_missing, pitch_emb[:,1:], masks[0])
-        time_features = mask_cat(self.time_missing, time_emb[:,1:], masks[1])
-        vel_features = mask_cat(self.vel_missing, vel_emb[:,1:], masks[2])
-        
-        features = torch.cat((
-            pitch_features, time_features, vel_features, h[:,:-1].repeat(7,1,1)
-            ), -1) # cat along feature dim
-
-        dist_params = self.param_proj(features) # combine features with h 
-
-        # split again into time/pitch/vel params
-        dist_params = dist_params.split([
-            self.pitch_domain, self.time_dist.n_params, self.vel_dist.n_params
-            ], -1)
-
-        # chunk into 7 and discard unmasked positions;
-        # stack the masked positions along new first dim
-        pitch_params, time_params, vel_params = (
-            torch.stack([
-                ch
-                for m,ch in zip(mask, dp.chunk(7, 0)) if m>0
-                ], 0)
-            for mask,dp in zip(masks, dist_params)
-        )
-
-        #TODO: weighting
-        # weights = np.log([[m for m in mask if m>0] for mask in masks]) # 3 x 4
+        pitch_params, time_params, vel_params = [
+            proj(h) for proj,h in zip(self.projections, mode_hs)]
 
         # get likelihoods
         pitch_logits = F.log_softmax(pitch_params, -1)
-        # TODO: is gather working right with extra dim?
-        pitch_targets = pitches[None,:,1:,None].expand(4, -1, -1, -1) #1, batch, time-1, 1
+        pitch_targets = pitches[:,1:,None] #batch, time, 1
         pitch_log_probs = pitch_logits.gather(-1, pitch_targets)[...,0]
 
-        time_targets = times[:,1:]# batch, time-1
+        time_targets = times# batch, time
         time_result = self.time_dist(time_params, time_targets)
         time_log_probs = time_result.pop('log_prob')
 
-        vel_targets = velocities[:,1:]# batch, time-1
+        vel_targets = velocities # batch, time
         vel_result = self.vel_dist(vel_params, vel_targets)
         vel_log_probs = vel_result.pop('log_prob')
 
@@ -269,41 +271,58 @@ class NotePredictor(nn.Module):
         with torch.no_grad():
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
             time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
-            x = torch.cat((
-                self.pitch_emb(pitch), # 1, 1, pitch_emb_size
-                self.time_emb(time)# 1, 1, time_emb_size
-            ), -1)
+            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
+
+            embs = [
+                self.pitch_emb(pitch), # 1, 1, emb_size
+                self.time_emb(time),# 1, 1, emb_size
+                self.vel_emb(vel)# 1, 1, emb_size
+            ]
+            x = torch.cat(embs, -1)
             
             h, new_state = self.rnn(x, self.cell_state)
             for t,new_t in zip(self.cell_state, new_state):
                 t[:] = new_t
 
-            pitch_params = self.pitch_proj(h)
-            pred_pitch = D.Categorical(logits=pitch_params).sample()
-            
-            time_params = self.time_proj(h*self.cond_proj(self.pitch_emb(pred_pitch)).sigmoid())
-            # time_params = self.time_proj(torch.cat((
-            #     h, self.pitch_emb(pred_pitch)
-            # ), -1)) # 1, 1, time_params
-            # TODO: importance sampling?
-            pred_time = self.time_dist.sample(time_params).squeeze(0)
+            h = self.h_proj(h)
 
-            ### TODO: generalize, move into sample
-            ### DEBUG
-            # pi only, fewer zeros:
-            log_pi, loc, s = (
-                t.squeeze() for t in self.time_dist.get_params(time_params))
-            bias = 2#float('inf')
-            log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
-            idx = D.Categorical(logits=log_pi).sample()
-            pred_time = loc[idx].clamp(0,10)
+            # TODO: permutations
+            # TODO: optimize by removing unused positions
+            # TODO: refactor with common distribution API
+            pitch_h, = self.xformer(h, embs[:1])
+
+            pitch_params = self.projections[0](pitch_h)
+            pred_pitch = D.Categorical(logits=pitch_params).sample()
+
+            embs[0] = self.pitch_emb(pred_pitch)
+            _, time_h = self.xformer(h, embs[:2])
+
+            time_params = self.projections[1](time_h)
+            pred_time = self.time_dist.sample(time_params)
+
+            embs[1] = self.time_emb(pred_time)
+            _, _, vel_h = self.xformer(h, embs)
+
+            vel_params = self.projections[2](vel_h)
+            pred_vel = self.vel_dist.sample(vel_params)
+
+            # ### TODO: generalize, move into sample
+            # ### DEBUG
+            # # pi only, fewer zeros:
+            # log_pi, loc, s = (
+            #     t.squeeze() for t in self.time_dist.get_params(time_params))
+            # bias = 2#float('inf')
+            # log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
+            # idx = D.Categorical(logits=log_pi).sample()
+            # pred_time = loc[idx].clamp(0,10)
 
             return {
                 'pitch': pred_pitch.item(), 
                 'time': pred_time.item(),
-                'velocity': None,
+                'velocity': pred_vel.item(),
                 'pitch_params': pitch_params,
-                'time_params': time_params
+                'time_params': time_params,
+                'vel_params': vel_params
             }
     
     # TODO: start velocity
