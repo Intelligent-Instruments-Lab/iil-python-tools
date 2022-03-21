@@ -10,6 +10,7 @@ s.boot;
 ~gui.if{
     k = MIDIKeyboard.new(bounds: Rect(0, 0, 500, 100), octaves:11, startnote:0)
 };
+~linn = IILinnstrument.new;
 )
 
 MIDIFunc.trace
@@ -17,6 +18,8 @@ MIDIFunc.trace
 (
 SynthDef(\pluck, {
     var signal = Saw.ar(\freq.kr, 0.2) * EnvGate.new(1);
+    var fr = 2.pow(Decay.ar(Impulse.ar(0), 3)*5+8);
+    signal = BLowPass.ar(signal, fr);
     Out.ar([0,1], signal);
 }).add
 )
@@ -45,9 +48,19 @@ t = Process.elapsedTime;
 b.sendMsg("/predictor/reset");
 
 // footswitch
-MIDIdef.program(\switch {
+MIDIdef.program(\switch, {
     arg num, chan, src;
-    ~gate = num-1;
+    num.switch
+    {1}{~gate = 0}
+    {2}{~gate = 1}
+    {3}{
+        ~gate = 0;
+        SystemClock.clear;
+        b.sendMsg("/predictor/reset");
+        y.release;
+        SystemClock.clear;
+        };
+    ~gate.postln;
 });
 
 // MIDI from controller
@@ -63,7 +76,13 @@ MIDIdef.noteOn(\input, {
     b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
 
     // release the previous note
-    y.release(1.0);
+    (dt<3e-2).if{
+        // if the time delay is very small, slowly release to play a chord
+        y.release(1.0)
+    }{
+        // otherwise release fast to play a melody
+        y.release(0.1)
+    };
 
     // play the current note
     y = Synth(\pluck, [\freq, num.midicps]);//.release(1);
@@ -92,42 +111,43 @@ OSCdef(\return, {
     }{
         // schedule the predicted note
         SystemClock.sched(dt-~delay, {
-            (num==129).if{
-                // 129 is the 'stop token',  meaning 'end-of-performance'
-                // in this case don't schedule a note, and reset the model
-                b.sendMsg("/predictor/reset");
-                //release the last note
-                y.release(1.0);
-                // unset time so next note will have dt=0
-                t = nil;
-                \reset.postln
-            }{
-                // cancel any pending predictions
-                // (there shouldn't be any, but might
-                // be if there was a lot of fast MIDI input)
-                SystemClock.clear;
-                // feed model its own prediction as input
-                b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
-                // release the previous note
-                (dt<3e-2).if{
-                    // if the time delay is very small, slowly release to play a chord
-                    y.release(1.0)
+            (~gate>0).if{
+                (num==129).if{
+                    // 129 is the 'stop token',  meaning 'end-of-performance'
+                    // in this case don't schedule a note, and reset the model
+                    b.sendMsg("/predictor/reset");
+                    //release the last note
+                    y.release(1.0);
+                    // unset time so next note will have dt=0
+                    t = nil;
+                    \reset.postln
                 }{
-                    // otherwise release fast to play a melody
-                    y.release(0.1)
-                };
-                // play the current note
-                y = Synth(\pluck, [\freq, num.midicps]);//.release(1);
-                // post the current note
-                [\model, dt, num].postln;
-                // mark the time of current note
-                t = Process.elapsedTime;
-                // crudely draw note on piano GUI
-                ~gui.if{
-                    AppClock.sched(0,{k.keyDown(num)});
-                    AppClock.sched(0.2,{k.keyUp(num)});
-                }
-            }
+                    // cancel any pending predictions
+                    // (there shouldn't be any, but might
+                    // be if there was a lot of fast MIDI input)
+                    SystemClock.clear;
+                    // feed model its own prediction as input
+                    b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
+                    // release the previous note
+                    (dt<3e-2).if{
+                        // if the time delay is very small, slowly release to play a chord
+                        y.release(1.0)
+                    }{
+                        // otherwise release fast to play a melody
+                        y.release(0.1)
+                    };
+                    // play the current note
+                    y = Synth(\pluck, [\freq, num.midicps]);//.release(1);
+                    // post the current note
+                    [\model, dt, num].postln;
+                    // mark the time of current note
+                    t = Process.elapsedTime;
+                    // crudely draw note on piano GUI
+                    ~gui.if{
+                        AppClock.sched(0,{k.keyDown(num)});
+                        AppClock.sched(0.2,{k.keyUp(num)});
+                    }
+            }}
     })};
 
 }, "/prediction", nil);
