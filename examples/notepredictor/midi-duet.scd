@@ -14,6 +14,7 @@ s.boot;
 
 (
 SynthDef(\pluck, {
+    var vel = \vel.kr;
     var signal = Saw.ar(\freq.kr, 0.2) * EnvGate.new(1);
     Out.ar([0,1], signal);
 }).add
@@ -26,7 +27,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0);
+b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0, \vel, 0);
 )
 
 // set the delay for more precise timing
@@ -51,16 +52,16 @@ MIDIdef.noteOn(\input, {
     SystemClock.clear;
 
     //get a new prediction in light of current note
-    b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
+    b.sendMsg("/predictor/predict", \pitch, num, \time, dt, \vel, val);
 
     // release the previous note
-    y.release(1.0);
+    y.release(0.1);
 
     // play the current note
-    y = Synth(\pluck, [\freq, num.midicps]);//.release(1);
+    y = Synth(\pluck, [\freq, num.midicps, \vel, val/127]);//.release(1);
 
     // post the current note
-    [\player, dt, num].postln;
+    [\player, dt, num, val].postln;
 
     // mark time of current note
     t = t2;
@@ -72,15 +73,16 @@ OSCdef(\return, {
     arg msg, time, addr, recvPort;
     var num = msg[1]; // MIDI number of predicted note
     var dt = msg[2]; // time to predicted note
+    var val = msg[3]; // velocity 0-127
 
     // time-to-next note gets 'censored' by the model
     // when over a threshold, in this case 10 seconds,
     // meaning it just predicts 10s rather than a any longer time
-    var censor = dt==10.0;
+    var censor = true;//dt==10.0;
 
     censor.if{
         // if the predicted time is > 10 seconds, don't schedule it, just stop.
-        \censor.postln; y.release(3.0)
+        \censor.postln; //y.release(3.0)
     }{
         // schedule the predicted note
         SystemClock.sched(dt-~delay, {
@@ -99,17 +101,19 @@ OSCdef(\return, {
                 // be if there was a lot of fast MIDI input)
                 SystemClock.clear;
                 // feed model its own prediction as input
-                b.sendMsg("/predictor/predict", \pitch, num, \time, dt);
+                b.sendMsg("/predictor/predict",
+                    \pitch, num, \time, dt, \vel, val);
                 // release the previous note
                 (dt<3e-2).if{
-                    // if the time delay is very small, slowly release to play a chord
+                    // if the time delay is very small, slow release for chord
                     y.release(1.0)
                 }{
                     // otherwise release fast to play a melody
                     y.release(0.1)
                 };
                 // play the current note
-                y = Synth(\pluck, [\freq, num.midicps]);//.release(1);
+                y = Synth(\pluck, [
+                    \freq, num.midicps, \vel, val/127]);//.release(1);
                 // post the current note
                 [\model, dt, num].postln;
                 // mark the time of current note
@@ -126,7 +130,7 @@ OSCdef(\return, {
 )
 
 // send a note manually if you don't have a MIDI controller:
-b.sendMsg("/predictor/predict", \pitch, 70, \time, 0);
+// b.sendMsg("/predictor/predict", \pitch, 70, \time, 0, \vel, 64);
 
 // load another model
 // b.sendMsg("/predictor/load", "/path/to/checkpoint");
