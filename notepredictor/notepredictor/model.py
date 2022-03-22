@@ -308,16 +308,15 @@ class NotePredictor(nn.Module):
             _, time_h = self.xformer(h[:3], embs[:1])
 
             time_params = self.projections[1](time_h)
-            # pred_time = self.time_dist.sample(time_params)
-
+            pred_time = self.time_dist.sample(time_params)
             ### TODO: generalize, move into sample
             # pi only, fewer zeros:
-            log_pi, loc, s = (
-                t for t in self.time_dist.get_params(time_params))
-            bias = float('inf')
-            log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
-            idx = D.Categorical(logits=log_pi).sample().item()
-            pred_time = loc[...,idx].clamp(0,10)
+            # log_pi, loc, s = (
+            #     t for t in self.time_dist.get_params(time_params))
+            # bias = float('inf')
+            # log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
+            # idx = D.Categorical(logits=log_pi).sample().item()
+            # pred_time = loc[...,idx].clamp(0,10)
             ###
 
             embs[1] = self.time_emb(pred_time)
