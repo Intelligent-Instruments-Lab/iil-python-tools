@@ -297,42 +297,91 @@ class NotePredictor(nn.Module):
 
             h = self.h_proj(h).chunk(self.note_dim+1, -1)
 
-            # TODO: permutations
-            # TODO: refactor with common distribution API
-            pitch_h, = self.xformer(h[:2], [])
+            modalities = [
+                (
+                    self.projections[0], 
+                    lambda x: D.Categorical(logits=x).sample(), 
+                    self.pitch_emb
+                ),
+                (
+                    self.projections[1],
+                    lambda x: self.time_dist.sample(x),
+                    self.time_emb
+                ),
+                (
+                    self.projections[2],
+                    lambda x: self.vel_dist.sample(x),
+                    self.vel_emb
+                )
+            ]
 
-            pitch_params = self.projections[0](pitch_h)
-            pred_pitch = D.Categorical(logits=pitch_params).sample()
+            # TODO: refactor for this:
+            # modalities = list(zip(
+            #     self.projections,
+            #     self.distributions,
+            #     self.embeddings,
+            #     ))
 
-            embs[0] = self.pitch_emb(pred_pitch)
-            _, time_h = self.xformer(h[:3], embs[:1])
+            # TODO: permute h[1:], embs, modalities
 
-            time_params = self.projections[1](time_h)
-            pred_time = self.time_dist.sample(time_params)
-            ### TODO: generalize, move into sample
-            # pi only, fewer zeros:
-            # log_pi, loc, s = (
-            #     t for t in self.time_dist.get_params(time_params))
-            # bias = float('inf')
-            # log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
-            # idx = D.Categorical(logits=log_pi).sample().item()
-            # pred_time = loc[...,idx].clamp(0,10)
-            ###
-
-            embs[1] = self.time_emb(pred_time)
-            _, _, vel_h = self.xformer(h, embs[:2])
-
-            vel_params = self.projections[2](vel_h)
-            pred_vel = self.vel_dist.sample(vel_params)
+            condition = []
+            predicted = []
+            params = []
+            for i, (project, sample, embed) in enumerate(modalities):
+                hidden = self.xformer(h[:i+2], condition)[i]
+                params.append(project(hidden))
+                predicted.append(sample(params[-1]))
+                if i<len(modalities)-1:
+                    condition.append(embed(predicted[-1]))
+                
+            # TODO: unpermute
 
             return {
-                'pitch': pred_pitch.item(), 
-                'time': pred_time.item(),
-                'velocity': pred_vel.item(),
-                'pitch_params': pitch_params,
-                'time_params': time_params,
-                'vel_params': vel_params
+                'pitch': predicted[0].item(), 
+                'time': predicted[1].item(),
+                'velocity': predicted[2].item(),
+                'pitch_params': params[0],
+                'time_params': params[1],
+                'vel_params': params[2]
             }
+
+
+            # TODO: permutations
+            # TODO: refactor with common distribution API
+            # pitch_h, = self.xformer(h[:2], [])
+
+            # pitch_params = self.projections[0](pitch_h)
+            # pred_pitch = D.Categorical(logits=pitch_params).sample()
+
+            # embs[0] = self.pitch_emb(pred_pitch)
+            # _, time_h = self.xformer(h[:3], embs[:1])
+
+            # time_params = self.projections[1](time_h)
+            # pred_time = self.time_dist.sample(time_params)
+            # ### TODO: generalize, move into sample
+            # # pi only, fewer zeros:
+            # # log_pi, loc, s = (
+            # #     t for t in self.time_dist.get_params(time_params))
+            # # bias = float('inf')
+            # # log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
+            # # idx = D.Categorical(logits=log_pi).sample().item()
+            # # pred_time = loc[...,idx].clamp(0,10)
+            # ###
+
+            # embs[1] = self.time_emb(pred_time)
+            # _, _, vel_h = self.xformer(h, embs[:2])
+
+            # vel_params = self.projections[2](vel_h)
+            # pred_vel = self.vel_dist.sample(vel_params)
+
+            # return {
+            #     'pitch': pred_pitch.item(), 
+            #     'time': pred_time.item(),
+            #     'velocity': pred_vel.item(),
+            #     'pitch_params': pitch_params,
+            #     'time_params': time_params,
+            #     'vel_params': vel_params
+            # }
     
     # TODO: start velocity
     def reset(self, start=True):
