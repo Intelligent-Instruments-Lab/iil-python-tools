@@ -42,7 +42,7 @@ b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0, \vel, 0);
 // duet with the model
 // feeds the model's predictions back to it as well as player input
 (
-~gate = 0;
+~gate = 1;
 t = Process.elapsedTime;
 b.sendMsg("/predictor/reset");
 
@@ -137,7 +137,7 @@ OSCdef(\return, {
                     y = Synth(\pluck, [
                         \freq, num.midicps, \vel, val/127]);//.release(1);
                     // post the current note
-                    [\model, dt, num].postln;
+                    [\model, dt, num, val].postln;
                     // mark the time of current note
                     t = Process.elapsedTime;
                     // crudely draw note on piano GUI

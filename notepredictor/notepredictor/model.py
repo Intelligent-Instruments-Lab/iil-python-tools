@@ -89,35 +89,39 @@ class ModalityTransformer(nn.Module):
                 input_size, heads, hidden_size, norm_first=False
                 ), layers)
 
-    def forward(self, h, targets):
+    def forward(self, ctx, h_ctx, h_tgt):
         """
         Args:
-            h: list of Tensor[batch x time x input_size], length note_dim+1
-            targets: list of Tensor[batch x time x input_size], length note_dim-1
+            ctx: list of Tensor[batch x time x input_size], length note_dim-1
+                these are the embedded ground truth values
+            h_ctx: Tensor[batch x time x input_size]
+                (need something to attend to when ctx is empty)
+            h_tgt: list of Tensor[batch x time x input_size], length note_dim
+                these are projections of the RNN state
         """
-        h = list(h)
-        targets = list(targets)
-        # h is 'target' w.r.t TransformerDecoder
-        # targets is 'memory'
-        batch_size = h[0].shape[0]*h[0].shape[1]
+        h_tgt = list(h_tgt)
+        ctx = list(ctx)
+        # h_tgt is 'target' w.r.t TransformerDecoder
+        # h_ctx and context are 'memory'
+        batch_size = h_ctx.shape[0]*h_ctx.shape[1]
         # fold time into batch, stack modes
         tgt = torch.stack([
             item.reshape(batch_size,-1)
-            for item in h[1:]
+            for item in h_tgt
         ],0)
         mem = torch.stack([
             item.reshape(batch_size,-1)
-            for item in h[:1]+targets
+            for item in [h_ctx, *ctx]
         ],0)
         # now "time"(mode) x "batch"(+time) x channel
 
         # generate a mask
         # this is both the target and memory mask
-        n = len(h)-1
+        n = len(h_tgt)
         mask = ~tgt.new_ones((n,n), dtype=bool).tril()
 
         x = self.net(tgt, mem, mask, mask)
-        return list(x.reshape(n, *h[0].shape).unbind(0))
+        return list(x.reshape(n, *h_ctx.shape).unbind(0))
 
 
 class NotePredictor(nn.Module):
@@ -189,6 +193,22 @@ class NotePredictor(nn.Module):
     def cell_state(self):
         return tuple(getattr(self, n) for n in self.cell_state_names())
         
+    @property
+    def samplers(self):
+        return (
+            lambda x: D.Categorical(logits=x).sample(), 
+            lambda x: self.time_dist.sample(x),
+            lambda x: self.vel_dist.sample(x),
+        )
+
+    @property
+    def embeddings(self):
+        return (
+            self.pitch_emb,
+            self.time_emb,
+            self.vel_emb
+        )
+        
     def forward(self, pitches, times, velocities, validation=False):
         """
         teacher-forced probabilistic loss and diagnostics for training
@@ -222,9 +242,10 @@ class NotePredictor(nn.Module):
         # TODO: perm each batch item independently?
         perm = torch.randperm(self.note_dim)
         hs = list(self.h_proj(h).chunk(self.note_dim+1, -1))
-        hs = hs[:1] + [hs[i+1] for i in perm]
+        h_ctx = hs[0]
+        h_tgt = [hs[i+1] for i in perm]
         embs = [embs[i][:,1:] for i in perm[:-1]]
-        mode_hs = self.xformer(hs, embs)
+        mode_hs = self.xformer(embs, h_ctx, h_tgt)
         mode_hs = [mode_hs[i] for i in perm.argsort()]
 
         pitch_params, time_params, vel_params = [
@@ -296,94 +317,66 @@ class NotePredictor(nn.Module):
                 t[:] = new_t
 
             h = self.h_proj(h).chunk(self.note_dim+1, -1)
+            h_ctx = h[0]
+            h_tgt = h[1:]
 
-            modalities = [
-                (
-                    self.projections[0], 
-                    lambda x: D.Categorical(logits=x).sample(), 
-                    self.pitch_emb
-                ),
-                (
-                    self.projections[1],
-                    lambda x: self.time_dist.sample(x),
-                    self.time_emb
-                ),
-                (
-                    self.projections[2],
-                    lambda x: self.vel_dist.sample(x),
-                    self.vel_emb
-                )
-            ]
+            modalities = list(zip(
+                self.projections,
+                self.samplers,
+                self.embeddings,
+                ))
 
-            # TODO: refactor for this:
-            # modalities = list(zip(
-            #     self.projections,
-            #     self.distributions,
-            #     self.embeddings,
-            #     ))
-
-            # TODO: permute h[1:], embs, modalities
-
-            condition = []
+            context = []
             predicted = []
             params = []
-            for i, (project, sample, embed) in enumerate(modalities):
-                hidden = self.xformer(h[:i+2], condition)[i]
+
+            force = [
+                None if item is None else torch.tensor([[item]], dtype=dtype)
+                for item, dtype in zip(
+                    force, [torch.long, torch.float, torch.float])]
+
+            # permute h_tgt, embs, modalities
+            # if any modalities are determined, embed them;
+            det_idx, undet_idx = [], []
+            for i,(item, embed) in enumerate(zip(force, self.embeddings)):
+                if item is None:
+                    undet_idx.append(i)
+                else:
+                    det_idx.append(i)
+                    context.append(embed(item))
+                    predicted.append(item.item())
+                    params.append(None)
+            perm = det_idx + undet_idx
+            iperm = np.argsort(perm)
+
+            perm_h_tgt = [h_tgt[i] for i in perm]
+
+            # for each undetermined modality, 
+            # sample a new value conditioned on alteady determined ones
+
+            while len(undet_idx):
+                i = undet_idx.pop(0) # index of modality to determine
+                j = len(det_idx) # number already determined
+                project, sample, embed = modalities[i]
+                # determine the next modality
+                hidden = self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
                 params.append(project(hidden))
-                predicted.append(sample(params[-1]))
-                if i<len(modalities)-1:
-                    condition.append(embed(predicted[-1]))
-                
-            # TODO: unpermute
+                pred = sample(params[-1])
+                predicted.append(pred.item())
+                # prepare for next iteration
+                if len(undet_idx):
+                    context.append(embed(pred))
+                det_idx.append(i)
 
             return {
-                'pitch': predicted[0].item(), 
-                'time': predicted[1].item(),
-                'velocity': predicted[2].item(),
-                'pitch_params': params[0],
-                'time_params': params[1],
-                'vel_params': params[2]
+                'pitch': predicted[iperm[0]], 
+                'time': predicted[iperm[1]],
+                'velocity': predicted[iperm[2]],
+                'pitch_params': params[iperm[0]],
+                'time_params': params[iperm[1]],
+                'vel_params': params[iperm[2]]
             }
-
-
-            # TODO: permutations
-            # TODO: refactor with common distribution API
-            # pitch_h, = self.xformer(h[:2], [])
-
-            # pitch_params = self.projections[0](pitch_h)
-            # pred_pitch = D.Categorical(logits=pitch_params).sample()
-
-            # embs[0] = self.pitch_emb(pred_pitch)
-            # _, time_h = self.xformer(h[:3], embs[:1])
-
-            # time_params = self.projections[1](time_h)
-            # pred_time = self.time_dist.sample(time_params)
-            # ### TODO: generalize, move into sample
-            # # pi only, fewer zeros:
-            # # log_pi, loc, s = (
-            # #     t for t in self.time_dist.get_params(time_params))
-            # # bias = float('inf')
-            # # log_pi = torch.where(loc <= self.time_dist.res, log_pi-bias, log_pi)
-            # # idx = D.Categorical(logits=log_pi).sample().item()
-            # # pred_time = loc[...,idx].clamp(0,10)
-            # ###
-
-            # embs[1] = self.time_emb(pred_time)
-            # _, _, vel_h = self.xformer(h, embs[:2])
-
-            # vel_params = self.projections[2](vel_h)
-            # pred_vel = self.vel_dist.sample(vel_params)
-
-            # return {
-            #     'pitch': pred_pitch.item(), 
-            #     'time': pred_time.item(),
-            #     'velocity': pred_vel.item(),
-            #     'pitch_params': pitch_params,
-            #     'time_params': time_params,
-            #     'vel_params': vel_params
-            # }
     
-    # TODO: start velocity
     def reset(self, start=True):
         """
         resets internal model state.
