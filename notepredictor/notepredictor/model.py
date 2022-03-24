@@ -242,11 +242,6 @@ class NotePredictor(nn.Module):
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
-        # include initial hidden state for predicting first note
-        # h = torch.cat((
-        #     self.initial_state[0][-1][None].expand(batch_size, 1, -1),
-        #     h), -2)
-
         # fit all note factorizations at once.
         # TODO: perm each batch item independently?
         perm = torch.randperm(self.note_dim)
@@ -272,9 +267,6 @@ class NotePredictor(nn.Module):
         vel_targets = velocities[:,1:] # batch, time
         vel_result = self.vel_dist(vel_params, vel_targets)
         vel_log_probs = vel_result.pop('log_prob')
-
-        # should reduce over chunk dim with logsumexp?
-        # i.e. average likelihood over factorizations, not LL?
 
         r = {
             'pitch_log_probs': pitch_log_probs,
@@ -344,9 +336,9 @@ class NotePredictor(nn.Module):
                 self.embeddings,
                 ))
 
-            context = []
-            predicted = []
-            params = []
+            context = [] # embedded outputs for autoregressive prediction
+            predicted = [] # raw outputs
+            params = [] # distribution parameters for visualization
 
             fix = [
                 None if item is None else torch.tensor([[item]], dtype=dtype)
@@ -355,7 +347,7 @@ class NotePredictor(nn.Module):
                     [torch.long, torch.float, torch.float])]
 
             # permute h_tgt, embs, modalities
-            # if any modalities are determined, embed them;
+            # if any modalities are determined, embed them
             det_idx, undet_idx = [], []
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
@@ -365,10 +357,8 @@ class NotePredictor(nn.Module):
                     context.append(embed(item))
                     predicted.append(item.item())
                     params.append(None)
-            perm = det_idx + undet_idx
-            iperm = np.argsort(perm)
-
-            perm_h_tgt = [h_tgt[i] for i in perm]
+            perm = det_idx + undet_idx # permutation from the canonical order
+            iperm = np.argsort(perm) # inverse permutation back to canonical order
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
@@ -378,7 +368,8 @@ class NotePredictor(nn.Module):
             # constraints can be:
             # discrete set, in which case evaluate probs and then sample categorical
             # range, in which case truncate
-
+            
+            perm_h_tgt = [h_tgt[i] for i in perm]
             while len(undet_idx):
                 i = undet_idx.pop(0) # index of modality to determine
                 j = len(det_idx) # number already determined
