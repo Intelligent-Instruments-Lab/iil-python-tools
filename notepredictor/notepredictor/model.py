@@ -301,11 +301,17 @@ class NotePredictor(nn.Module):
         """
         supply the most recent note and return a prediction for the next note.
 
+        various constraints can be enforced on the next note.
+
         Args:
             pitch: int. MIDI number of current note.
             time: float. elapsed time since previous note.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
             fix_*: same as above, but to fix a value for the predicted note
+            index_pitch: Optional[int]. if not None, determinisitically take the nth
+                most likely pitch instead of sampling.
+            allow_start: if False, zero probability for sampling the start token
+            allow_end: if False, zero probaility for sampling the end token
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
