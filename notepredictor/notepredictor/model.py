@@ -193,13 +193,16 @@ class NotePredictor(nn.Module):
     def cell_state(self):
         return tuple(getattr(self, n) for n in self.cell_state_names())
         
-    def get_samplers(self, allow_start=False, allow_end=False):
+    def get_samplers(self, index_pitch=None, allow_start=False, allow_end=False):
         def sample_pitch(x):
             if not allow_start:
                 x[...,self.start_token] = -np.inf
             if not allow_end:
                 x[...,self.end_token] = -np.inf
-            return D.Categorical(logits=x).sample()
+            if index_pitch is not None:
+                return x.argsort(-1, True)[...,index_pitch]
+            else:
+                return D.Categorical(logits=x).sample()
 
         return (
             sample_pitch, 
@@ -294,7 +297,7 @@ class NotePredictor(nn.Module):
     def predict(self, 
             pitch, time, vel, 
             fix_pitch=None, fix_time=None, fix_vel=None, 
-            allow_end=False, allow_start=False):
+            index_pitch=None, allow_start=False, allow_end=False):
         """
         supply the most recent note and return a prediction for the next note.
 
@@ -331,7 +334,7 @@ class NotePredictor(nn.Module):
 
             modalities = list(zip(
                 self.projections,
-                self.get_samplers(allow_start=allow_start, allow_end=allow_end),
+                self.get_samplers(index_pitch, allow_start, allow_end),
                 self.embeddings,
                 ))
 

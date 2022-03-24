@@ -92,7 +92,7 @@ MIDIdef.noteOn(\input, {
     // fixing dt and vel to performed values so just pitch is predicted
     b.sendMsg("/predictor/predict",
         \pitch, ~last_pitch, \time, ~last_dt, \vel, ~last_vel,
-        \fix_time, dt, \fix_vel, vel);
+        \index_pitch, pitch, \fix_time, dt, \fix_vel, vel);
 
     ~last_dt = dt;
     ~last_vel = vel;
@@ -122,12 +122,9 @@ OSCdef(\return, {
 
 ~reset.()
 // send a note manually if you don't have a midi controller
-MIDIdef.all[\input].func.(64)
+MIDIdef.all[\input].func.(64, 16) //velocity, "pitch"
 
-(
-MIDIdef.all[\input].func.(64);
-MIDIdef.all[\input].func.(64);
-)
+"abc"+0
 
 // load another model
 // b.sendMsg("/predictor/load", "/path/to/checkpoint");
