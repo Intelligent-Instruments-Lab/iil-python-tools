@@ -193,10 +193,16 @@ class NotePredictor(nn.Module):
     def cell_state(self):
         return tuple(getattr(self, n) for n in self.cell_state_names())
         
-    @property
-    def samplers(self):
+    def get_samplers(self, allow_start=False, allow_end=False):
+        def sample_pitch(x):
+            if not allow_start:
+                x[...,self.start_token] = -np.inf
+            if not allow_end:
+                x[...,self.end_token] = -np.inf
+            return D.Categorical(logits=x).sample()
+
         return (
-            lambda x: D.Categorical(logits=x).sample(), 
+            sample_pitch, 
             lambda x: self.time_dist.sample(x),
             lambda x: self.vel_dist.sample(x),
         )
@@ -285,7 +291,10 @@ class NotePredictor(nn.Module):
         return r
     
     # TODO: force
-    def predict(self, pitch, time, vel, force=(None, None, None)):
+    def predict(self, 
+            pitch, time, vel, 
+            fix_pitch=None, fix_time=None, fix_vel=None, 
+            allow_end=False, allow_start=False):
         """
         supply the most recent note and return a prediction for the next note.
 
@@ -293,7 +302,7 @@ class NotePredictor(nn.Module):
             pitch: int. MIDI number of current note.
             time: float. elapsed time since previous note.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
-            force: Tuple[Optional[Number]].
+            fix_*: same as above, but to fix a value for the predicted note
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
@@ -322,7 +331,7 @@ class NotePredictor(nn.Module):
 
             modalities = list(zip(
                 self.projections,
-                self.samplers,
+                self.get_samplers(allow_start=allow_start, allow_end=allow_end),
                 self.embeddings,
                 ))
 
@@ -330,15 +339,16 @@ class NotePredictor(nn.Module):
             predicted = []
             params = []
 
-            force = [
+            fix = [
                 None if item is None else torch.tensor([[item]], dtype=dtype)
                 for item, dtype in zip(
-                    force, [torch.long, torch.float, torch.float])]
+                    [fix_pitch, fix_time, fix_vel],
+                    [torch.long, torch.float, torch.float])]
 
             # permute h_tgt, embs, modalities
             # if any modalities are determined, embed them;
             det_idx, undet_idx = [], []
-            for i,(item, embed) in enumerate(zip(force, self.embeddings)):
+            for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     undet_idx.append(i)
                 else:
@@ -354,11 +364,17 @@ class NotePredictor(nn.Module):
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
 
+            # TODO: allow constraints; 
+            # attempt to sort the strongest constraints first
+            # constraints can be:
+            # discrete set, in which case evaluate probs and then sample categorical
+            # range, in which case truncate
+
             while len(undet_idx):
                 i = undet_idx.pop(0) # index of modality to determine
                 j = len(det_idx) # number already determined
                 project, sample, embed = modalities[i]
-                # determine the next modality
+                # determine value for the next modality
                 hidden = self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
                 params.append(project(hidden))
                 pred = sample(params[-1])
