@@ -103,11 +103,16 @@ class CensoredMixtureLogistic(nn.Module):
         cdf = (cdfs * log_pi.softmax(-1)).sum(-1)
         return cdf
 
-    def sample(self, h, shape=1):
+    def sample(self, h, shape=None):
         """
         Args:
             shape: additional sample shape to be prepended to dims
         """
+        if shape is None:
+            unwrap = True
+            shape = 1
+        else:
+            unwrap = False
         log_pi, loc, s = self.get_params(h)
         scale = 1/s
 
@@ -119,7 +124,8 @@ class CensoredMixtureLogistic(nn.Module):
         u = torch.rand(shape, *h.shape[:-1])
 
         x = loc + scale * (u.log() - (1 - u).log())
-        return x.clamp(self.lo, self.hi)
+        x = x.clamp(self.lo, self.hi)
+        return x[0] if unwrap else x
 
 
 class CensoredMixturePointyBoi(nn.Module):

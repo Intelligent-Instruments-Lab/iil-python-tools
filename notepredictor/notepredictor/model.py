@@ -99,8 +99,13 @@ class ModalityTransformer(nn.Module):
             h_tgt: list of Tensor[batch x time x input_size], length note_dim
                 these are projections of the RNN state
         """
-        h_tgt = list(h_tgt)
-        ctx = list(ctx)
+        # h_tgt = list(h_tgt)
+        # ctx = list(ctx)
+
+        # explicitly broadcast
+        h_ctx, *ctx = torch.broadcast_tensors(h_ctx, *ctx)
+        h_ctx, *h_tgt = torch.broadcast_tensors(h_ctx, *h_tgt)
+
         # h_tgt is 'target' w.r.t TransformerDecoder
         # h_ctx and context are 'memory'
         batch_size = h_ctx.shape[0]*h_ctx.shape[1]
@@ -193,7 +198,9 @@ class NotePredictor(nn.Module):
     def cell_state(self):
         return tuple(getattr(self, n) for n in self.cell_state_names())
         
-    def get_samplers(self, index_pitch=None, allow_start=False, allow_end=False):
+    def get_samplers(self, 
+            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
+            sweep_time=False):
         def sample_pitch(x):
             if not allow_start:
                 x[...,self.start_token] = -np.inf
@@ -201,12 +208,25 @@ class NotePredictor(nn.Module):
                 x[...,self.end_token] = -np.inf
             if index_pitch is not None:
                 return x.argsort(-1, True)[...,index_pitch]
+            elif pitch_topk is not None:
+                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
             else:
                 return D.Categorical(logits=x).sample()
 
+        def sample_time(x):
+            if sweep_time:
+                assert x.shape[0]==1, "batch size should be 1 here"
+                log_pi, loc, s = self.time_dist.get_params(x)
+                idx = log_pi.squeeze().argsort()[:9]
+                loc = loc.squeeze()[idx].sort().values[...,None] # multiple times in batch dim
+                # print(loc.shape)
+                return loc
+            else:
+                return self.time_dist.sample(x)
+
         return (
             sample_pitch, 
-            lambda x: self.time_dist.sample(x),
+            sample_time,
             lambda x: self.vel_dist.sample(x),
         )
 
@@ -289,9 +309,10 @@ class NotePredictor(nn.Module):
     def predict(self, 
             pitch, time, vel, 
             fix_pitch=None, fix_time=None, fix_vel=None, 
-            index_pitch=None, allow_start=False, allow_end=False):
+            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
+            sweep_time=False):
         """
-        supply the most recent note and return a prediction for the next note.
+        consume the most recent note and return a prediction for the next note.
 
         various constraints can be enforced on the next note.
 
@@ -304,6 +325,8 @@ class NotePredictor(nn.Module):
                 most likely pitch instead of sampling.
             allow_start: if False, zero probability for sampling the start token
             allow_end: if False, zero probaility for sampling the end token
+            sweep_time: if True, instead of sampling time, choose a diverse set of
+                times and stack along the batch dimension
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
@@ -332,7 +355,8 @@ class NotePredictor(nn.Module):
 
             modalities = list(zip(
                 self.projections,
-                self.get_samplers(index_pitch, allow_start, allow_end),
+                self.get_samplers(
+                    pitch_topk, index_pitch, allow_start, allow_end, sweep_time),
                 self.embeddings,
                 ))
 
@@ -348,15 +372,21 @@ class NotePredictor(nn.Module):
 
             # permute h_tgt, embs, modalities
             # if any modalities are determined, embed them
-            det_idx, undet_idx = [], []
+            # sort constrained modailities before unconstrained
+            # TODO: option to skip modalities
+            det_idx, cons_idx, uncons_idx = [], [], []
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
-                    undet_idx.append(i)
+                    if (i==1 and sweep_time) or (i==0 and pitch_topk):
+                        cons_idx.append(i)
+                    else:
+                        uncons_idx.append(i)
                 else:
                     det_idx.append(i)
                     context.append(embed(item))
-                    predicted.append(item.item())
+                    predicted.append(item)
                     params.append(None)
+            undet_idx = cons_idx + uncons_idx
             perm = det_idx + undet_idx # permutation from the canonical order
             iperm = np.argsort(perm) # inverse permutation back to canonical order
 
@@ -378,16 +408,34 @@ class NotePredictor(nn.Module):
                 hidden = self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
                 params.append(project(hidden))
                 pred = sample(params[-1])
-                predicted.append(pred.item())
+                predicted.append(pred)
                 # prepare for next iteration
                 if len(undet_idx):
                     context.append(embed(pred))
                 det_idx.append(i)
 
+
+            pred_pitch = predicted[iperm[0]]
+            pred_time = predicted[iperm[1]]
+            pred_vel = predicted[iperm[2]]
+
+            print(pred_time.shape)
+            print(pred_pitch.shape)
+            print(pred_vel.shape)
+
+            if sweep_time or pitch_topk:
+                pred_pitch = [x.item() for x in pred_pitch]
+                pred_time = [x.item() for x in pred_time]
+                pred_vel = [x.item() for x in pred_vel]
+                print(pred_time, pred_pitch, pred_vel)
+            else:
+                pred_pitch = pred_pitch.item()
+                pred_time = pred_time.item()
+                pred_vel = pred_vel.item()
             return {
-                'pitch': predicted[iperm[0]], 
-                'time': predicted[iperm[1]],
-                'velocity': predicted[iperm[2]],
+                'pitch': pred_pitch, 
+                'time': pred_time,
+                'velocity': pred_vel,
                 'pitch_params': params[iperm[0]],
                 'time_params': params[iperm[1]],
                 'vel_params': params[iperm[2]]
