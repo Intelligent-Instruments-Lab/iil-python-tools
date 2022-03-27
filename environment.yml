@@ -1,4 +1,4 @@
-name: pytorch-osc
+name: iil-python-tools
 channels:
   - pytorch
   - defaults
@@ -9,11 +9,12 @@ dependencies:
   - torchaudio
   - tensorboard
   - ipykernel
+  - tensorboard
   - seaborn
   - tqdm
   - fire
   - pip
   - pip:
     - mido
+    - python-rtmidi
     - python-osc
-    - asyncio

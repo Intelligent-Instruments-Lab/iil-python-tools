@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name='pytorch-osc',
+    name='iipyper',
     version='0.0.1',
-    packages=['pytorch-osc'],
+    packages=['iipyper'],
     install_requires=[
     ],
 )
