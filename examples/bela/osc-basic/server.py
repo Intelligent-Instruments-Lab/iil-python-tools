@@ -5,36 +5,44 @@ Authors:
   Intelligent Instruments Lab 2022
 """
 
-from iipyper import OSC, run
+from iipyper import OSC, run, repeat
 
-def main(host="127.0.0.1", port=9999, checkpoint=None):
+def main(host="192.168.7.1", port=9999):
+    
     osc = OSC(host, port)
-    osc.create_client('bela', port=8888)
+    osc.create_client("bela", host="192.168.7.2", port=8888)
+
     connected = False
     count = 0
  
-    @osc.kwargs('/bela/*')
+    @osc.kwargs("/*")
     def _(address, **kw):
         """
         Handle OSC messages from Bela
         """
         print(f"{address} {kw}")
 
-        address = address.split("/")
-        cmd = address[2]
-
-        if cmd=="osc-setup":
+        if address=="/osc-setup":
+            nonlocal connected
             connected = True
-            osc("bela", "osc-setup-reply", "")
+            print("Bela connected!")
+            osc("bela", "/osc-setup-reply")
 
-        elif cmd=="osc-acknowledge":
-            print(f"Bela: test acknowledged: {kw}")
+        elif address=="/osc-acknowledge":
+            print(f"Bela acknowledged osc-test: {kw}")
             
         else:
-            print(f"Bela: Unrecognised OSC {address} with {kw}")
+            print(f"Unrecognised OSC {address} with {kw}")
 
-    if connected=True:
-        osc("bela", "osc-test", [count++, 3.14])
+    @repeat(1)
+    def _():
+        nonlocal connected
+        nonlocal count
+        if connected==True:
+            osc("bela", "/osc-test", count)
+            count=count+1
+        else:
+            print("Waiting for Bela to connect...")
 
 if __name__=='__main__':
     run(main)

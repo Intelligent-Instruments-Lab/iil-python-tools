@@ -36,21 +36,24 @@ OscReceiver oscReceiver;
 OscSender oscSender;
 int localPort = 8888;
 int remotePort = 9999;
-const char* remoteIp = "127.0.0.1";
+const char* remoteIp = "192.168.7.1";
 
 // parse messages received by the OSC receiver
 // msg is Message class of oscpkt: http://gruntthepeon.free.fr/oscpkt/
 bool handshakeReceived;
 void on_receive(oscpkt::Message* msg, void* arg)
 {
-  if(msg->match("/bela/osc-setup-reply"))
+  if(msg->match("/osc-setup-reply"))
     handshakeReceived = true;
-  else if(msg->match("/bela/osc-test")){
+  else if(msg->match("/osc-test")){
     int intArg;
-    float floatArg;
-    msg->match("/bela/osc-test").popInt32(intArg).popFloat(floatArg).isOkNoMoreArgs();
-    printf("received a message with int %i and float %f\n", intArg, floatArg);
-    oscSender.newMessage("/bela/osc-acknowledge").add(intArg).add(4.2f).add(std::string("OSC message received")).send();
+    // float floatArg;
+    msg->match("/osc-test").popInt32(intArg).isOkNoMoreArgs();
+    printf("%i\n",intArg);
+    // msg->match("/osc-test").popInt32(intArg).popFloat(floatArg).isOkNoMoreArgs();
+    // int intArg;
+    // printf("received a message with int %i and float %f\n", intArg, floatArg);
+    // oscSender.newMessage("/osc-acknowledge").add(intArg).add(4.2f).add(std::string("OSC message received")).send();
   }
 }
 
@@ -61,9 +64,9 @@ bool setup(BelaContext *context, void *userData)
 
   // the following code sends an OSC message to address /osc-setup
   // then waits 1 second for a reply on /osc-setup-reply
-  oscSender.newMessage("/bela/osc-setup").send();
+  oscSender.newMessage("/osc-setup").send();
   int count = 0;
-  int timeoutCount = 10;
+  int timeoutCount = 5;
   printf("Waiting for handshake ....\n");
   while(!handshakeReceived && ++count != timeoutCount)
   {
