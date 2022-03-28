@@ -1,3 +1,6 @@
+// in this example, the most likely next pitches (according to NotePredictor)
+// are drawn on the Linnstrument as you play
+
 (
 ~use_linn = true; // use linnstrument
 ~gui = false; // use keyboard GUI
@@ -19,7 +22,7 @@ Server.default.options.outDevice_("Built-in Output");
         // release the previous note
         ~synth!?(_.release(0.1));
 
-        // attack the current note with the old pitch
+        // attack the current note
         ~synth = Synth(\pluck, [\freq, freq, \vel, amp]);
 
         //
@@ -46,40 +49,11 @@ s.waitForBoot{
 };
 )
 
-~linn_reset.()
-
-
-// ~linn.setNoteOnAction({}); ~linn.setNoteOffAction({});
-
-
-// measure round-trip latency
-(
-OSCdef(\return, {
-    arg msg, time, addr, recvPort;
-    (Process.elapsedTime - t).postln;
-}, '/prediction', nil);
-t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
-    \pitch, 60+12.rand, \time, 0, \vel, 0,
-    \index_pitch, 0,
-    \sweep_time, true,
-    // \fix_time, 0,
-    // \fix_vel, 0
-);
-)
-
-
-// NetAddr.localAddr    // retrieve the current IP and port
-// thisProcess.openPorts; // list all open ports
-
-// model chooses pitches
 (
 // set the delay for more precise timing
 ~delay = 0.2;
 
-~gate = 1;
-
-~reset = {
+~model_reset = {
     t = Process.elapsedTime;
     b.sendMsg("/predictor/reset");
     // ~synth!?{~synth.free};
@@ -90,24 +64,8 @@ b.sendMsg("/predictor/predict",
         \pitch_topk, 5);
 
 };
-~reset.();
+~model_reset.();
 ~linn_reset.();
-
-// footswitch
-MIDIdef.program(\switch, {
-    arg num, chan, src;
-    num.switch
-    {1}{~gate = 0}
-    {2}{~gate = 1}
-    {3}{
-        ~gate = 0;
-        SystemClock.clear;
-        b.sendMsg("/predictor/reset");
-        y.release;
-        SystemClock.clear;
-        };
-    ~gate.postln;
-});
 
 // OSC return from python
 OSCdef(\return, {
@@ -116,7 +74,8 @@ OSCdef(\return, {
     var last_pitch = nil;
     var colormap = [8,3,10,9,1];
     var color = 0;
-    // whhyyyy are OSC arrays not handled by supercollider
+
+    // OSC arrays are not handled automatically by supercollider
     var stack = List[List[]];
     msg.do{arg item;
         case
@@ -125,6 +84,7 @@ OSCdef(\return, {
         {true}{stack.last.add(item)};
     };
     msg = stack[0];
+
     pitches = msg[1];
     dts = msg[2];
 
@@ -141,9 +101,27 @@ OSCdef(\return, {
 }, "/prediction", nil);
 )
 
-~reset.()
+
+
+// ======
+// additional useful blocks
+
+~model_reset.()
 // send a note manually if you don't have a midi controller
 MIDIdef.all[\input].func.(64, 16) //velocity, "pitch"
 
-// load another model
-// b.sendMsg("/predictor/load", "/path/to/checkpoint");
+// measure round-trip latency
+(
+OSCdef(\return, {
+    arg msg, time, addr, recvPort;
+    (Process.elapsedTime - t).postln;
+}, '/prediction', nil);
+t = Process.elapsedTime;
+b.sendMsg("/predictor/predict",
+    \pitch, 60+12.rand, \time, 0, \vel, 0,
+    \index_pitch, 0,
+    \sweep_time, true,
+    // \fix_time, 0,
+    // \fix_vel, 0
+);
+)

@@ -1,3 +1,6 @@
+// in this example the model's predictions are fed back to it so it plays itself.
+// the player can add notes as well and start/stop/reset the model with a footswitch.
+
 (
 ~gui = false;
 MIDIIn.connectAll;
@@ -35,9 +38,6 @@ b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0, \vel, 0);
 
 // set the delay for more precise timing
 ~delay = 0.015;
-
-// NetAddr.localAddr    // retrieve the current IP and port
-// thisProcess.openPorts; // list all open ports
 
 // duet with the model
 // feeds the model's predictions back to it as well as player input

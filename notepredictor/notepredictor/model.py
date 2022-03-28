@@ -321,7 +321,9 @@ class NotePredictor(nn.Module):
             time: float. elapsed time since previous note.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
             fix_*: same as above, but to fix a value for the predicted note
-            index_pitch: Optional[int]. if not None, determinisitically take the nth
+            pitch_topk: Optional[int]. if not None, instead of sampling pitch, stack
+                the top k most likely pitches along the batch dimension
+            index_pitch: Optional[int]. if not None, deterministically take the nth
                 most likely pitch instead of sampling.
             allow_start: if False, zero probability for sampling the start token
             allow_end: if False, zero probaility for sampling the end token
@@ -372,7 +374,7 @@ class NotePredictor(nn.Module):
 
             # permute h_tgt, embs, modalities
             # if any modalities are determined, embed them
-            # sort constrained modailities before unconstrained
+            # sort constrained modalities before unconstrained
             # TODO: option to skip modalities
             det_idx, cons_idx, uncons_idx = [], [], []
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
@@ -414,21 +416,18 @@ class NotePredictor(nn.Module):
                     context.append(embed(pred))
                 det_idx.append(i)
 
-
             pred_pitch = predicted[iperm[0]]
             pred_time = predicted[iperm[1]]
             pred_vel = predicted[iperm[2]]
 
-            print(pred_time.shape)
-            print(pred_pitch.shape)
-            print(pred_vel.shape)
-
             if sweep_time or pitch_topk:
+                # return lists of predictions
                 pred_pitch = [x.item() for x in pred_pitch]
                 pred_time = [x.item() for x in pred_time]
                 pred_vel = [x.item() for x in pred_vel]
                 print(pred_time, pred_pitch, pred_vel)
             else:
+                # return single predictions
                 pred_pitch = pred_pitch.item()
                 pred_time = pred_time.item()
                 pred_vel = pred_vel.item()

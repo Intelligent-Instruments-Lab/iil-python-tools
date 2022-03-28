@@ -1,3 +1,14 @@
+// in this example the Linnstrument displays an interface to perform pitches
+// by their likelihood under the NotePredictor model instead of by MIDI number
+
+// the grid in the upper left gives control of pitches from
+// the single most likely (cyan) to least likely (pink).
+
+// the white pad samples pitches stochastically from the model.
+// the lone yellow pad resets the model.
+
+// model predictions are conditioned on performed timing and velocity.
+
 (
 ~use_linn = true; // use linnstrument
 ~gui = false; // use keyboard GUI
@@ -93,7 +104,7 @@ b.sendMsg("/predictor/predict",
 (
 ~gate = 1;
 
-~reset = {
+~model_reset = {
     ~last_pitch = nil;
     ~last_dt = nil;
     ~last_vel = nil;
@@ -105,7 +116,7 @@ b.sendMsg("/predictor/predict",
 
 };
 
-~reset.();
+~model_reset.();
 
 // footswitch
 MIDIdef.program(\switch, {
@@ -178,7 +189,7 @@ OSCdef(\return, {
 }, "/prediction", nil);
 )
 
-~reset.()
+~model_reset.()
 // send a note manually if you don't have a midi controller
 MIDIdef.all[\input].func.(64, 16) //velocity, "pitch"
 
