@@ -9,20 +9,18 @@ Authors:
 To run this example, open the Bela OSC example at:
 https://github.com/BelaPlatform/Bela/blob/master/examples/Communication/OSC/render.cpp
 
-And replace the ports and IP with the following:
+And change the IP address to the following:
 ```
-int localPort = 8888;
-int remotePort = 9999;
 const char* remoteIp = "192.168.7.1";
 ```
 """
 
 from iipyper import OSC, run, repeat
 
-def main(host="192.168.7.1", port=9999):
+def main(host="192.168.7.1", port=7563):
     
     osc = OSC(host, port)
-    osc.create_client("bela", host="192.168.7.2", port=8888)
+    osc.create_client("bela", host="192.168.7.2", port=7562)
 
     connected = False
     count = 0
