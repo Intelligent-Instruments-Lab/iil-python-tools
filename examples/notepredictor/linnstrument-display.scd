@@ -41,7 +41,7 @@ s.waitForBoot{
     };
     SynthDef(\pluck, {
         var vel = \vel.kr;
-        var signal = Saw.ar(\freq.kr(20), 3e-2) * EnvGate.new(1);
+        var signal = Saw.ar(\freq.kr(20), 0.2) * EnvGate.new(1);
         var fr = 2.pow(Decay.ar(Impulse.ar(0), 3)*6*vel+8);
         signal = BLowPass.ar(signal, fr)*vel;
         Out.ar([0,1], signal);

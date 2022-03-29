@@ -425,7 +425,7 @@ class NotePredictor(nn.Module):
                 pred_pitch = [x.item() for x in pred_pitch]
                 pred_time = [x.item() for x in pred_time]
                 pred_vel = [x.item() for x in pred_vel]
-                print(pred_time, pred_pitch, pred_vel)
+                # print(pred_time, pred_pitch, pred_vel)
             else:
                 # return single predictions
                 pred_pitch = pred_pitch.item()

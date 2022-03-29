@@ -2,9 +2,6 @@ import mido
 
 from iipyper import OSC, MIDI, repeat, run
 
-# TODO: MIDI
-# TODO: loops are broken, why?
-
 def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     # loop API:
     # use the @repeat decorator to define functions which run every n seconds
@@ -63,7 +60,7 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
         print(address, arg1, arg2, arg3)
         # no return value: does not send OSC back
 
-    # can also give the route explictly to the decorator,
+    # can also give the route explicitly to the decorator,
     # supporting wildcards
     @osc.args('/math/*')
     def _(address, a, b):
@@ -74,7 +71,7 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
         if op=='mul':
             return address, a * b
 
-    # OSC clients can be created explcitly and given names:
+    # OSC clients can be created explicitly and given names:
     osc.create_client('supercollider', port=57120) # uses same host as server
     # but clients will also be created automatically when possible
 
@@ -91,9 +88,8 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     osc('supercollider2', '/other_send_test', 3)
 
 # it may be possible to have async/threaded option for both OSC and MIDI?
-# MIDI is threaded and OSC is async
-# but MIDI could be enqueued and handled in the loop,
-# OSC could launch the threading server?
+# MIDI handlers are threaded in mido and OSC handlers as async in pythonosc.
+# currently MIDI is enqueued and handled async.
 
 if __name__=='__main__':
     run(main)
