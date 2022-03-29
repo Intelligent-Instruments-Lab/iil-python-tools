@@ -200,7 +200,8 @@ class NotePredictor(nn.Module):
         
     def get_samplers(self, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            sweep_time=False):
+            sweep_time=False, trunc_time=None):
+
         def sample_pitch(x):
             if not allow_start:
                 x[...,self.start_token] = -np.inf
@@ -214,7 +215,12 @@ class NotePredictor(nn.Module):
                 return D.Categorical(logits=x).sample()
 
         def sample_time(x):
+            # TODO: respect trunc_time when sweep_time is True
             if sweep_time:
+                if trunc_time is not None:
+                    raise NotImplementedError("""
+                    trunc_time with sweep_time needs implementation
+                    """)
                 assert x.shape[0]==1, "batch size should be 1 here"
                 log_pi, loc, s = self.time_dist.get_params(x)
                 idx = log_pi.squeeze().argsort()[:9]
@@ -222,7 +228,7 @@ class NotePredictor(nn.Module):
                 # print(loc.shape)
                 return loc
             else:
-                return self.time_dist.sample(x)
+                return self.time_dist.sample(x, truncate=trunc_time)
 
         return (
             sample_pitch, 
@@ -310,7 +316,7 @@ class NotePredictor(nn.Module):
             pitch, time, vel, 
             fix_pitch=None, fix_time=None, fix_vel=None, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
-            sweep_time=False):
+            sweep_time=False, trunc_time=None):
         """
         consume the most recent note and return a prediction for the next note.
 
@@ -329,6 +335,7 @@ class NotePredictor(nn.Module):
             allow_end: if False, zero probaility for sampling the end token
             sweep_time: if True, instead of sampling time, choose a diverse set of
                 times and stack along the batch dimension
+            trunc_time: if not None, truncate the time distribution to (lo, hi)
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
@@ -358,7 +365,8 @@ class NotePredictor(nn.Module):
             modalities = list(zip(
                 self.projections,
                 self.get_samplers(
-                    pitch_topk, index_pitch, allow_start, allow_end, sweep_time),
+                    pitch_topk, index_pitch, allow_start, allow_end, 
+                    sweep_time, trunc_time),
                 self.embeddings,
                 ))
 
@@ -379,7 +387,10 @@ class NotePredictor(nn.Module):
             det_idx, cons_idx, uncons_idx = [], [], []
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
-                    if (i==1 and sweep_time) or (i==0 and pitch_topk):
+                    if (
+                        i==1 and (sweep_time or (trunc_time is not None)) or
+                        i==0 and pitch_topk
+                        ):
                         cons_idx.append(i)
                     else:
                         uncons_idx.append(i)
@@ -398,8 +409,9 @@ class NotePredictor(nn.Module):
             # TODO: allow constraints; 
             # attempt to sort the strongest constraints first
             # constraints can be:
-            # discrete set, in which case evaluate probs and then sample categorical
-            # range, in which case truncate
+            # discrete set, in which case evaluate probs and then sample categorical;
+            # range, in which case truncate;
+            # temperature?
             
             perm_h_tgt = [h_tgt[i] for i in perm]
             while len(undet_idx):

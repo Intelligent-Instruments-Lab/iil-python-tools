@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 import torch
 from torch import nn
@@ -97,33 +98,63 @@ class CensoredMixtureLogistic(nn.Module):
         return r
 
     def cdf(self, h, x):
+        """
+        Args:
+            h: Tensor[...,n_params]
+            x: Tensor[...]
+                `h` should broadcast with `x[...,None]`
+        Returns:
+            cdf: Tensor[...] (shape of `x` broadcasted with `h[...,0]`)
+        """
         log_pi, loc, s = self.get_params(h)  
-        x_ = (x[...,None] - loc) * s
-        cdfs = x_.sigmoid()
+        cdfs = self.cdf_components(loc, s, x)
         cdf = (cdfs * log_pi.softmax(-1)).sum(-1)
         return cdf
 
-    def sample(self, h, shape=None):
+    def cdf_components(self, loc, s, x):
+        x_ = (x[...,None] - loc) * s
+        return x_.sigmoid()
+
+    def sample(self, h, truncate=None, shape=None):
         """
         Args:
-            shape: additional sample shape to be prepended to dims
+            h: Tensor[...,n_params]
+            shape: additional sample shape to be prepended to dims or None
+        Returns:
+            Tensor[*shape,...] (h without last dimension, prepended with `shape`)
         """
         if shape is None:
             unwrap = True
             shape = 1
         else:
             unwrap = False
+
+        if truncate is None:
+            truncate = (-np.inf, np.inf)
+        truncate = torch.tensor(truncate)
+
         log_pi, loc, s = self.get_params(h)
         scale = 1/s
 
-        c = D.Categorical(logits=log_pi).sample((shape,))
+        # cdfs: [...,bound,component]
+        cdfs = self.cdf_components(loc[...,None,:], s[...,None,:], truncate) 
+        # prob. mass of each component witin bounds
+        trunc_probs = cdfs[...,1,:] - cdfs[...,0,:] # [...,component]
+        probs = log_pi.exp() * trunc_probs # reweighted mixture component probs
+
+        c = D.Categorical(probs).sample((shape,))
         # move sample dimension first
         loc = loc.movedim(-1, 0).gather(0, c)
         scale = scale.movedim(-1, 0).gather(0, c)
+        upper = cdfs[...,1,:].movedim(-1, 0).gather(0, c)
+        lower = cdfs[...,0,:].movedim(-1, 0).gather(0, c)
 
         u = torch.rand(shape, *h.shape[:-1])
+        # truncate
+        u = u * (upper-lower) + lower
 
-        x = loc + scale * (u.log() - (1 - u).log())
+        # x = loc + scale * (u.log() - (1 - u).log())
+        x = loc - scale * (1/u - 1).log()
         x = x.clamp(self.lo, self.hi)
         return x[0] if unwrap else x
 
