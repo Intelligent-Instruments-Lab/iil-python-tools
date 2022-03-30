@@ -115,11 +115,17 @@ class CensoredMixtureLogistic(nn.Module):
         x_ = (x[...,None] - loc) * s
         return x_.sigmoid()
 
-    def sample(self, h, truncate=None, shape=None):
+    def sample(self, h, truncate=None, shape=None, temp=None, bias=None):
         """
         Args:
             h: Tensor[...,n_params]
-            shape: additional sample shape to be prepended to dims or None
+            truncate: Optional[Tuple[2]]. lower and upper bound for truncation.
+            shape: Optional[int]. additional sample shape to be prepended to dims.
+            temp: Optional[float]. pseudo-temperature (temperature of each mixture 
+                component). default is 1. 0 would sample component location only,
+                ignoring sharpness.
+            bias: applied outside of truncation but inside of clamping,
+                useful e.g. for latency correction when sampling delta-time
         Returns:
             Tensor[*shape,...] (h without last dimension, prepended with `shape`)
         """
@@ -132,6 +138,12 @@ class CensoredMixtureLogistic(nn.Module):
         if truncate is None:
             truncate = (-np.inf, np.inf)
         truncate = torch.tensor(truncate)
+
+        if temp is None:
+            temp = 1
+
+        if bias is None:
+            bias = 0
 
         log_pi, loc, s = self.get_params(h)
         scale = 1/s
@@ -154,7 +166,7 @@ class CensoredMixtureLogistic(nn.Module):
         u = u * (upper-lower) + lower
 
         # x = loc + scale * (u.log() - (1 - u).log())
-        x = loc - scale * (1/u - 1).log()
+        x = loc + bias - scale * temp * (1/u - 1).log()
         x = x.clamp(self.lo, self.hi)
         return x[0] if unwrap else x
 

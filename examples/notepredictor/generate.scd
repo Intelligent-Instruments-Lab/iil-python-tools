@@ -42,8 +42,11 @@ b.sendMsg("/predictor/predict", \pitch, 60+12.rand, \time, 0, \vel, 0);
 // duet with the model
 // feeds the model's predictions back to it as well as player input
 (
+~step = 0;
 ~gate = 1;
-t = Process.elapsedTime;
+t = nil;
+~player_t = t;
+~machine_t = t;
 b.sendMsg("/predictor/reset");
 
 // footswitch
@@ -58,6 +61,7 @@ MIDIdef.program(\switch, {
         b.sendMsg("/predictor/reset");
         y.release;
         SystemClock.clear;
+        ~step = 0;
         };
     ~gate.postln;
 });
@@ -73,7 +77,12 @@ MIDIdef.noteOn(\input, {
     SystemClock.clear;
 
     //get a new prediction in light of current note
-    b.sendMsg("/predictor/predict", \pitch, num, \time, dt, \vel, val);
+    b.sendMsg("/predictor/predict",
+        \pitch, num, \time, dt, \vel, val,
+        \allow_start, false, \allow_end, false,
+        \time_temp, 0, \min_time, 0.1, \max_time, 5
+        // \fix_time, 9
+    );
 
     // release the previous note
     y.release(0.1);
@@ -86,6 +95,9 @@ MIDIdef.noteOn(\input, {
 
     // mark time of current note
     t = t2;
+    ~player_t = t;
+
+    ~step = ~step + 1;
 });
 
 
@@ -98,8 +110,8 @@ OSCdef(\return, {
 
     // time-to-next note gets 'censored' by the model
     // when over a threshold, in this case 10 seconds,
-    // meaning it just predicts 10s rather than a any longer time
-    var censor = dt==10.0;
+    // meaning it just predicts 10s rather than any longer time
+    var censor = dt>10.0;
 
     censor.if{
         // if the predicted time is > 10 seconds, don't schedule it, just stop.
@@ -108,6 +120,8 @@ OSCdef(\return, {
         // schedule the predicted note
         SystemClock.sched(dt-~delay, {
             (~gate>0).if{
+                var t2 = Process.elapsedTime;
+                var dt_actual = t2 - t;
                 (num==129).if{
                     // 129 is the 'stop token',  meaning 'end-of-performance'
                     // in this case don't schedule a note, and reset the model
@@ -124,7 +138,13 @@ OSCdef(\return, {
                     SystemClock.clear;
                     // feed model its own prediction as input
                     b.sendMsg("/predictor/predict",
-                        \pitch, num, \time, dt, \vel, val);
+                        \pitch, num, \time, dt_actual, \vel, val,
+                        \allow_start, false, \allow_end, false,
+                        \time_temp, 0.1, \min_time, 0.1, \max_time, 5
+                        // \fix_time, (~step%4==0).if{0.6}{0}  // tetrachords
+                        // \fix_time, (~step%8)*0.1 // specific rhythm
+
+                    );
                     // release the previous note
                     (dt<3e-2).if{
                         // if the time delay is very small, slow release for chord
@@ -138,14 +158,17 @@ OSCdef(\return, {
                         \freq, num.midicps, \vel, val/127]);//.release(1);
                     // post the current note
                     [\model, dt, num, val].postln;
-                    // mark the time of current note
-                    t = Process.elapsedTime;
+                    // mark the actual time of current note
+                    t = t2;
+                    ~machine_t = t;
                     // crudely draw note on piano GUI
                     ~gui.if{
                         AppClock.sched(0,{k.keyDown(num)});
                         AppClock.sched(0.2,{k.keyUp(num)});
                     }
-                }
+                };
+                ~step = ~step+1;
+                [\late, dt_actual-dt].postln;
             }
     })};
 

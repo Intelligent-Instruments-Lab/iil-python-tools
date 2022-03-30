@@ -67,6 +67,7 @@ s.waitForBoot{
 };
 )
 
+OSCdef.trace(false)
 // ~linn_reset.()
 
 (

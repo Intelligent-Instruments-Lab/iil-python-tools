@@ -200,7 +200,11 @@ class NotePredictor(nn.Module):
         
     def get_samplers(self, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            sweep_time=False, trunc_time=None):
+            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_temp=None):
+        """
+        this method converts the many arguments to `predict` into functions for
+        sampling each note modality (e.g. pitch, time, velocity)
+        """
 
         def sample_pitch(x):
             if not allow_start:
@@ -217,7 +221,7 @@ class NotePredictor(nn.Module):
         def sample_time(x):
             # TODO: respect trunc_time when sweep_time is True
             if sweep_time:
-                if trunc_time is not None:
+                if min_time is not None or max_time is not None:
                     raise NotImplementedError("""
                     trunc_time with sweep_time needs implementation
                     """)
@@ -228,7 +232,11 @@ class NotePredictor(nn.Module):
                 # print(loc.shape)
                 return loc
             else:
-                return self.time_dist.sample(x, truncate=trunc_time)
+                trunc = (
+                    -np.inf if min_time is None else min_time,
+                    np.inf if max_time is None else max_time)
+                return self.time_dist.sample(x, 
+                    truncate=trunc, temp=time_temp, bias=bias_time)
 
         return (
             sample_pitch, 
@@ -316,7 +324,7 @@ class NotePredictor(nn.Module):
             pitch, time, vel, 
             fix_pitch=None, fix_time=None, fix_vel=None, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
-            sweep_time=False, trunc_time=None):
+            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_temp=None):
         """
         consume the most recent note and return a prediction for the next note.
 
@@ -335,7 +343,8 @@ class NotePredictor(nn.Module):
             allow_end: if False, zero probaility for sampling the end token
             sweep_time: if True, instead of sampling time, choose a diverse set of
                 times and stack along the batch dimension
-            trunc_time: if not None, truncate the time distribution to (lo, hi)
+            min_time, max_time: if not None, truncate the time distribution
+            time_temp: if not None, apply pseudo-temperature to the time distribution.
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
@@ -366,7 +375,7 @@ class NotePredictor(nn.Module):
                 self.projections,
                 self.get_samplers(
                     pitch_topk, index_pitch, allow_start, allow_end, 
-                    sweep_time, trunc_time),
+                    sweep_time, min_time, max_time, bias_time, time_temp),
                 self.embeddings,
                 ))
 
@@ -388,7 +397,9 @@ class NotePredictor(nn.Module):
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     if (
-                        i==1 and (sweep_time or (trunc_time is not None)) or
+                        i==1 and (sweep_time 
+                            or (min_time is not None) or (max_time is not None)
+                            or (time_temp is not None)) or
                         i==0 and pitch_topk
                         ):
                         cons_idx.append(i)
@@ -402,6 +413,9 @@ class NotePredictor(nn.Module):
             undet_idx = cons_idx + uncons_idx
             perm = det_idx + undet_idx # permutation from the canonical order
             iperm = np.argsort(perm) # inverse permutation back to canonical order
+
+            md = ['pitch', 'time', 'vel']
+            print([md[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
