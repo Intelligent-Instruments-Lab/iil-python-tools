@@ -353,9 +353,13 @@ class NotePredictor(nn.Module):
 
         Args:
             pitch: int. MIDI number of current note.
-            time: float. elapsed time since previous note.
+            time: float. elapsed time in seconds since previous note.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
-            fix_*: same as above, but to fix a value for the predicted note
+            fix_*: same as above, but to fix a value for the predicted note.
+                sampled values will always condition on fixed values, so passing
+                `fix_time=0`, for example, will make a probabilistically-sound
+                prediction of a chord tone: "what is the next note given that it 
+                happens immediately after the last one?"
             pitch_topk: Optional[int]. if not None, instead of sampling pitch, stack
                 the top k most likely pitches along the batch dimension
             index_pitch: Optional[int]. if not None, deterministically take the nth
@@ -365,12 +369,21 @@ class NotePredictor(nn.Module):
             sweep_time: if True, instead of sampling time, choose a diverse set of
                 times and stack along the batch dimension
             min_time, max_time: if not None, truncate the time distribution
+            bias_time: add this delay to the time 
+                (after applying min/max but before clamping to 0).
+                may be useful for latency correction.
             time_temp: if not None, apply pseudo-temperature to the time distribution.
+                i.e., scale the temperature of each mixture component.
+                this is not technically the same as changing the temperature of the whole
+                time distribution, but it can be useful if we assume each component
+                corresponds to a different rhythmic interval. then passing `time_temp=0`
+                would lead to more rhythmically steady, less random playing. 
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
             'time': float. predicted time to next note.
             'velocity': float. unquantized predicted velocity of next note.
+            '*_params': tensor. distrubution parameters for visualization purposes.
         """
         with torch.no_grad():
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
