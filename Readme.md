@@ -6,7 +6,7 @@
     - scripts: helper scripts for training, data preprocessing etc
 - examples:
     - iipyper: basic usage for iipyper
-    - notepredictor: interactive MIDI apps with notepredictor
+    - notepredictor: interactive MIDI apps with notepredictor and SuperCollider
 <!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
 
 # Setup
@@ -30,7 +30,7 @@ python scripts/train_notes.py --data_dir /path/to/data/storage --log_dir /path/f
 ```
 python examples/notepredictor/server.py --checkpoint /path/to/my/model.ckpt
 ```
-step through `examples/notepredictor/midi-duet.scd` in SuperCollider IDE
+step through `examples/notepredictor/generate.scd` in SuperCollider IDE
 
 # Develop
 

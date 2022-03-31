@@ -28,6 +28,7 @@ class MIDIDataset(Dataset):
         item = torch.load(f)
         pitch = item['pitch'] # 1-d LongTensor of MIDI pitches 0-127
         time = item['time']
+        velocity = item['velocity']
         assert len(pitch) == len(time)
 
         # random transpose avoiding out of range notes
@@ -45,6 +46,11 @@ class MIDIDataset(Dataset):
             time + (torch.rand_like(time)-0.5)*2e-3
             ).clamp(0., float('inf'))
 
+        velocity = (
+            velocity + 
+            (torch.rand_like(time)-0.5) * ((velocity>0) & (velocity<127)).float()
+            ).clamp(0., 127.)
+
         # pad with start, end tokens
         pad = max(1, self.batch_len-len(pitch))
         pitch = torch.cat((
@@ -55,15 +61,21 @@ class MIDIDataset(Dataset):
             time.new_zeros((1,)),
             time,
             time.new_zeros((pad,))))
+        velocity = torch.cat((
+            velocity.new_zeros((1,)),
+            velocity,
+            velocity.new_zeros((pad,))))
 
         # random slice
         i = random.randint(0, len(pitch)-self.batch_len)
         pitch = pitch[i:i+self.batch_len]
         time = time[i:i+self.batch_len]
+        velocity = velocity[i:i+self.batch_len]
 
         # time = time.clamp(*self.clamp_time)
 
         return {
             'pitch':pitch,
-            'time':time
+            'time':time,
+            'velocity':velocity
         }

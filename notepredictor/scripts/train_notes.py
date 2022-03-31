@@ -141,7 +141,8 @@ class Trainer:
     def get_loss_components(self, result):
         return {
             'pitch_nll': -result['pitch_log_probs'].mean(),
-            'time_nll': -result['time_log_probs'].mean()
+            'time_nll': -result['time_log_probs'].mean(),
+            'velocity_nll': -result['velocity_log_probs'].mean()
         }
 
     def train(self):
@@ -162,15 +163,16 @@ class Trainer:
             for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
                 time = batch['time'].to(self.device, non_blocking=True)
+                vel = batch['velocity'].to(self.device, non_blocking=True)
                 with torch.no_grad():
-                    result = self.model(pitch, time)
+                    result = self.model(pitch, time, vel, validation=True)
                     losses = {k:v.item() for k,v in self.get_loss_components(result).items()}
                     metrics['loss'] += sum(losses.values())
                     for k,v in losses.items():
                         metrics[k] += v
                     metrics['pitch_acc'] += result['pitch_log_probs'].exp().mean().item()
-                    # metrics['time_acc'] += result['time_log_probs'].exp().mean().item()
                     metrics['time_acc_30ms'] += result['time_acc_30ms'].mean().item()
+                    metrics['velocity_acc'] += result['velocity_log_probs'].exp().mean().item()
             self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
 
         epoch_size = self.epoch_size or len(train_loader)
@@ -188,6 +190,7 @@ class Trainer:
 
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
                 time = batch['time'].to(self.device, non_blocking=True)
+                vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
                 self.exposure += self.batch_size
@@ -195,7 +198,7 @@ class Trainer:
                 logs = {}
 
                 self.opt.zero_grad()
-                result = self.model(pitch, time)
+                result = self.model(pitch, time, vel)
                 losses = self.get_loss_components(result)
                 loss = sum(losses.values())
                 loss.backward()
