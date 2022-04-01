@@ -1,0 +1,26 @@
+
+{-
+
+
+
+-}
+
+d1
+  $ path1 "something"
+  # param1 0.5
+
+d2
+  $ path2 "something"
+  # param2 0.5
+
+hush
+
+{-
+
+
+
+-}
+
+d1 $ s (cP "bd" "d1pattern")
+
+
