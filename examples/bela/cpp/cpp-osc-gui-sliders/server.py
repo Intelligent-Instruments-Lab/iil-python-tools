@@ -14,13 +14,13 @@ def main(host="192.168.7.1", port=7563, verbose=False):
     osc = OSC(host, port)
     osc.create_client("bela", host="192.168.7.2", port=7562)
 
-    pitch = { "val": 60, "min": 48, "max": 84, "step": 1 }
+    pitch = { "val": 60.0, "min": 48, "max": 84, "step": 4 }
     amplitude = { "val": 0.1, "min": 0.0, "max": 0.5, "step": 0.01 }
 
     @osc.args("/pitch")
     def _(address, *args):
         print(f"Received pitch", args)
-        pitch['val'] = int(args[0])
+        pitch['val'] = args[0]
 
     @osc.args("/amplitude")
     def _(address, *args):
@@ -34,7 +34,7 @@ def main(host="192.168.7.1", port=7563, verbose=False):
         
         if coin_flip[0]==True:
             step = np.random.randint(-pitch['step'], pitch['step']+1)
-            pitch['val'] = int(constrain(pitch['val'] + step, pitch['min'], pitch['max']))
+            pitch['val'] = constrain(pitch['val'] + step, pitch['min'], pitch['max'])
             osc("bela", "/pitch", pitch['val'])
 
         elif coin_flip[1]==True:

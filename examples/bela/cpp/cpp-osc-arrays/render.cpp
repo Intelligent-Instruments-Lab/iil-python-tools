@@ -22,7 +22,7 @@ int writePointer = 0;
 int packetsSent = 0;
 int gAudioFramesPerAnalogFrame = 0;
 
-void on_receive(oscpkt::Message* msg, void* arg) {
+void onReceive(oscpkt::Message* msg, const char* addr, void* arg) {
   if(msg->match("/bela")) {
     auto argReader = msg->match("/bela");
     for (int i=0; i<OUT_CHANNELS * OSC_PACKET_LEN; i++)

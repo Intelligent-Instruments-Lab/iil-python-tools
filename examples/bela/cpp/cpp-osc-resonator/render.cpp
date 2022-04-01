@@ -10,7 +10,7 @@ const int localPort = 7562;
 Resonator res;
 ResonatorOptions options; // will initialise to default
 
-void onReceive(oscpkt::Message* msg, void* arg) {
+void onReceive(oscpkt::Message* msg, const char* addr, void* arg) {
 
   if(msg->match("/resonator")) {
     float freq, gain, decay;

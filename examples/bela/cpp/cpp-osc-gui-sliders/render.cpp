@@ -22,19 +22,19 @@ const int remotePort = 7563;
 
 unsigned int gPitchSliderIdx;
 unsigned int gAmplitudeSliderIdx;
-int gPitch = 60;
+float gPitch = 60.0;
 float gAmplitude = 0.1;
 
-void onReceive(oscpkt::Message* msg, void* arg) {
+void onReceive(oscpkt::Message* msg, const char* addr, void* arg) {
 
   if (msg->match("/pitch")) {
 
-    int pitch;
-    msg->match("/pitch").popInt32(pitch).isOkNoMoreArgs();
+    float pitch;
+    msg->match("/pitch").popFloat(pitch).isOkNoMoreArgs();
     if (gPitch != pitch) {
       gPitch = pitch;
       controller.setSliderValue(gPitchSliderIdx, gPitch);
-      printf("Pitch %i\n", gPitch);
+      printf("Pitch %f\n", gPitch);
     }
 
   } else if (msg->match("/amplitude")) {
@@ -75,7 +75,7 @@ bool setup(BelaContext *context, void *userData)
 void render(BelaContext *context, void *userData)
 {
   // Access the sliders specifying the index we obtained when creating then
-  int pitch = (int) controller.getSliderValue(gPitchSliderIdx);
+  float pitch = controller.getSliderValue(gPitchSliderIdx);
   float amplitude = controller.getSliderValue(gAmplitudeSliderIdx);
   if (gPitch != pitch) {
     gPitch = pitch;
