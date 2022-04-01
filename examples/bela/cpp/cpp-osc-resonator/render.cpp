@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <Bela.h>
 #include <libraries/OscSender/OscSender.h>
 #include <libraries/OscReceiver/OscReceiver.h>
@@ -9,6 +10,11 @@ const int localPort = 7562;
 
 Resonator res;
 ResonatorOptions options; // will initialise to default
+
+bool audioInput = false;
+float impulseInterval = 44100;
+float impulseWidth = 0.125;
+float impulseCount = 0;
 
 void onReceive(oscpkt::Message* msg, const char* addr, void* arg) {
 
@@ -67,7 +73,14 @@ void render (BelaContext *context, void *userData) {
 
   for (unsigned int n = 0; n < context->audioFrames; ++n) {
 
-    float in = audioRead(context, n, 0); // an excitation signal
+    float in = 0.0f;
+    if (audioInput)
+      in = audioRead(context, n, 0); // an excitation signal
+    else {
+      if (++impulseCount >= impulseInterval * (1-impulseWidth))
+        in = 1.0f * ( rand() / (float)RAND_MAX * 2.f - 1.f ); // noise
+      if (impulseCount >= impulseInterval) impulseCount = 0;
+    }
     float out = 0.0f;
 
     out = res.render(in);
