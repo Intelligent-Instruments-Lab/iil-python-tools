@@ -74,8 +74,7 @@ void render (BelaContext *context, void *userData) {
   for (unsigned int n = 0; n < context->audioFrames; ++n) {
 
     float in = 0.0f;
-    if (audioInput)
-      in = audioRead(context, n, 0); // an excitation signal
+    if (audioInput) in = audioRead(context, n, 0); // an excitation signal
     else {
       if (++impulseCount >= impulseInterval * (1-impulseWidth))
         in = 1.0f * ( rand() / (float)RAND_MAX * 2.f - 1.f ); // noise
