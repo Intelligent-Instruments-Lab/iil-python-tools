@@ -8,6 +8,7 @@
     - iipyper: basic usage for iipyper
     - notepredictor: interactive MIDI apps with notepredictor and SuperCollider
     - bela: [Bela](https://bela.io) examples in C++, Pure Data and so on
+    - faust: [Faust](https://faustdoc.grame.fr/) examples
     - tidalcycles [TidalCycles](https://tidalcycles.org) examples
     - puredata: [Pure Data](https://puredata.info) examples
 <!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
