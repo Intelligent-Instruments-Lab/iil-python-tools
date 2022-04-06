@@ -6,6 +6,21 @@ from torch import nn
 import torch.distributions as D
 import torch.nn.functional as F
 
+def reweight_top_p(probs, top_p):
+    """given tensor of probabilities, apply top p / "nucleus" filtering"""
+    # NOTE: this is fudged slightly, it doesn't 'interpolate' the cutoff bin
+    desc_probs, idx = probs.sort(-1, descending=True)
+    iidx = idx.argsort(-1)
+    cumprob = desc_probs.cumsum(-1)
+    # first index where cumprob >= top_p is the last index we don't zero
+    to_zero = (cumprob >= top_p).roll(1, -1)
+    to_zero[...,0] = False
+    # unsort
+    to_zero = to_zero.gather(-1, iidx)
+    weighted_probs = torch.zeros_like(probs).where(to_zero, probs)
+    return weighted_probs / weighted_probs.sum(-1, keepdim=True)
+    
+
 class CensoredMixtureLogistic(nn.Module):
     def __init__(self, n, res=1e-2, lo='-inf', hi='inf', 
             sharp_bounds=(1e-4,2e3), init=None):
@@ -113,16 +128,22 @@ class CensoredMixtureLogistic(nn.Module):
 
     def cdf_components(self, loc, s, x):
         x_ = (x[...,None] - loc) * s
-        return x_.sigmoid()
+        return x_.sigmoid()        
 
-    def sample(self, h, truncate=None, shape=None, temp=None, bias=None):
+    # TODO: 'discrete_sample' method which would re-quantize and then allow
+    # e.g. nucleus sampling on the categorical distribution?
+    def sample(self, h, truncate=None, shape=None, 
+        weight_top_p=None, component_temp=None, bias=None):
         """
         Args:
             h: Tensor[...,n_params]
             truncate: Optional[Tuple[2]]. lower and upper bound for truncation.
             shape: Optional[int]. additional sample shape to be prepended to dims.
-            temp: Optional[float]. pseudo-temperature (temperature of each mixture 
-                component). default is 1. 0 would sample component location only,
+            weight_top_p: top_p ("nucleus") filtering for mixture weights.
+                default is 1 (no change to distribution). 0 would sample top
+                component (after truncation) only.
+            component_temp: Optional[float]. sampling temperature of each mixture 
+                component. default is 1. 0 would sample component location only,
                 ignoring sharpness.
             bias: applied outside of truncation but inside of clamping,
                 useful e.g. for latency correction when sampling delta-time
@@ -139,13 +160,14 @@ class CensoredMixtureLogistic(nn.Module):
             truncate = (-np.inf, np.inf)
         truncate = torch.tensor(truncate)
 
-        if temp is None:
-            temp = 1
+        if component_temp is None:
+            component_temp = 1
 
         if bias is None:
             bias = 0
 
         log_pi, loc, s = self.get_params(h)
+        s = s/component_temp
         scale = 1/s
 
         # cdfs: [...,bound,component]
@@ -153,6 +175,16 @@ class CensoredMixtureLogistic(nn.Module):
         # prob. mass of each component witin bounds
         trunc_probs = cdfs[...,1,:] - cdfs[...,0,:] # [...,component]
         probs = log_pi.exp() * trunc_probs # reweighted mixture component probs
+        if weight_top_p is not None:
+            # reweight with top_p
+            probs = reweight_top_p(probs, weight_top_p)
+
+        ## DEBUG
+        # print(loc)
+        # print(s)
+        # print(trunc_probs)
+        # print(probs)
+        #, log_pi.exp(), trunc_probs)
 
         c = D.Categorical(probs).sample((shape,))
         # move sample dimension first
@@ -166,7 +198,7 @@ class CensoredMixtureLogistic(nn.Module):
         u = u * (upper-lower) + lower
 
         # x = loc + scale * (u.log() - (1 - u).log())
-        x = loc + bias - scale * temp * (1/u - 1).log()
+        x = loc + bias - scale * (1/u - 1).log()
         x = x.clamp(self.lo, self.hi)
         return x[0] if unwrap else x
 

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixtureLogistic
+from .distributions import CensoredMixtureLogistic, reweight_top_p
 
 class SineEmbedding(nn.Module):
     def __init__(self, n, w0=1e-3, interval=1.08):
@@ -211,7 +211,9 @@ class NotePredictor(nn.Module):
         
     def get_samplers(self, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_temp=None):
+            pitch_top_p=None,
+            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_weight_top_p=None, time_component_temp=None,
+            min_vel=None, max_vel=None):
         """
         this method converts the many arguments to `predict` into functions for
         sampling each note modality (e.g. pitch, time, velocity)
@@ -227,7 +229,10 @@ class NotePredictor(nn.Module):
             elif pitch_topk is not None:
                 return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
             else:
-                return D.Categorical(logits=x).sample()
+                probs = x.softmax(-1)
+                if pitch_top_p is not None:
+                    probs = reweight_top_p(probs, pitch_top_p)
+                return D.Categorical(probs).sample()
 
         def sample_time(x):
             # TODO: respect trunc_time when sweep_time is True
@@ -247,12 +252,19 @@ class NotePredictor(nn.Module):
                     -np.inf if min_time is None else min_time,
                     np.inf if max_time is None else max_time)
                 return self.time_dist.sample(x, 
-                    truncate=trunc, temp=time_temp, bias=bias_time)
+                    truncate=trunc, bias=bias_time,
+                    component_temp=time_component_temp, weight_top_p=time_weight_top_p)
+
+        def sample_velocity(x):
+            trunc = (
+                -np.inf if min_vel is None else min_vel,
+                np.inf if max_vel is None else max_vel)
+            return self.vel_dist.sample(x, truncate=trunc)
 
         return (
             sample_pitch, 
             sample_time,
-            lambda x: self.vel_dist.sample(x),
+            sample_velocity,
         )
 
     @property
@@ -340,12 +352,14 @@ class NotePredictor(nn.Module):
                 )
         return r
     
-    # TODO: force
+    # TODO: remove pitch_topk and sweep_time?
     def predict(self, 
             pitch, time, vel, 
             fix_pitch=None, fix_time=None, fix_vel=None, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_temp=None):
+            sweep_time=False, min_time=None, max_time=None, bias_time=None, 
+            pitch_temp=None, rhythm_temp=None, timing_temp=None,
+            min_vel=None, max_vel=None):
         """
         consume the most recent note and return a prediction for the next note.
 
@@ -372,12 +386,15 @@ class NotePredictor(nn.Module):
             bias_time: add this delay to the time 
                 (after applying min/max but before clamping to 0).
                 may be useful for latency correction.
-            time_temp: if not None, apply pseudo-temperature to the time distribution.
-                i.e., scale the temperature of each mixture component.
-                this is not technically the same as changing the temperature of the whole
-                time distribution, but it can be useful if we assume each component
-                corresponds to a different rhythmic interval. then passing `time_temp=0`
-                would lead to more rhythmically steady, less random playing. 
+            pitch_temp: if not None, apply top_p sampling to pitch. 0 is
+                deterministic, 1 is 'natural' according to the model
+            rhythm_temp: if not None, apply top_p sampling to the weighting
+                of mixture components. this affects coarse rhythmic patterns; 0 is
+                deterministic, 1 is 'natural' according to the model
+            timing_temp: if not None, apply temperature sampling to the time
+                component. this affects fine timing; 0 is deterministic and precise,
+                1 is 'natural' according to the model.
+            min_vel, max_vel: if not None, truncate the velocity distribution
 
         Returns: dict of
             'pitch': int. predicted MIDI number of next note.
@@ -385,6 +402,9 @@ class NotePredictor(nn.Module):
             'velocity': float. unquantized predicted velocity of next note.
             '*_params': tensor. distrubution parameters for visualization purposes.
         """
+        if (index_pitch is not None) and (pitch_temp is not None):
+            print("warning: `index pitch` overrides `pitch_temp`")
+
         with torch.no_grad():
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
             time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
@@ -409,7 +429,10 @@ class NotePredictor(nn.Module):
                 self.projections,
                 self.get_samplers(
                     pitch_topk, index_pitch, allow_start, allow_end, 
-                    sweep_time, min_time, max_time, bias_time, time_temp),
+                    pitch_temp,
+                    sweep_time, min_time, max_time, bias_time, 
+                    rhythm_temp, timing_temp,
+                    min_vel, max_vel),
                 self.embeddings,
                 ))
 
@@ -431,10 +454,11 @@ class NotePredictor(nn.Module):
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     if (
-                        i==1 and (sweep_time 
-                            or (min_time is not None) or (max_time is not None)
-                            or (time_temp is not None)) or
-                        i==0 and pitch_topk
+                        i==0 and (pitch_topk or pitch_temp is not None) or
+                        i==1 and any(p is not None for p in (
+                            min_time, max_time, rhythm_temp, timing_temp)) or
+                        i==2 and any(p is not None for p in (
+                            min_vel, max_vel))
                         ):
                         cons_idx.append(i)
                     else:
@@ -449,7 +473,7 @@ class NotePredictor(nn.Module):
             iperm = np.argsort(perm) # inverse permutation back to canonical order
 
             md = ['pitch', 'time', 'vel']
-            print([md[i] for i in perm])
+            print('sampling order:', [md[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones

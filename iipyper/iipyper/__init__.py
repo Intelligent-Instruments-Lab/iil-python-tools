@@ -25,11 +25,9 @@ async def _run_async():
     # start OSC server
     for osc in OSC.instances:
         await osc.create_server(asyncio.get_event_loop())
-        # osc.create_client()
 
     for midi in MIDI.instances:
         asyncio.create_task(midi_coroutine(midi))
-        # asyncio.create_task(midi.get_coroutine())
 
     # start loop tasks
     if len(_loop_fns):
