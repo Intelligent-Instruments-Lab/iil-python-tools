@@ -363,7 +363,7 @@ class NotePredictor(nn.Module):
         """
         consume the most recent note and return a prediction for the next note.
 
-        various constraints can be enforced on the next note.
+        various constraints on the the next note can be requested.
 
         Args:
             pitch: int. MIDI number of current note.
@@ -400,7 +400,7 @@ class NotePredictor(nn.Module):
             'pitch': int. predicted MIDI number of next note.
             'time': float. predicted time to next note.
             'velocity': float. unquantized predicted velocity of next note.
-            '*_params': tensor. distrubution parameters for visualization purposes.
+            '*_params': tensor. distribution parameters for visualization purposes.
         """
         if (index_pitch is not None) and (pitch_temp is not None):
             print("warning: `index pitch` overrides `pitch_temp`")
