@@ -41,11 +41,12 @@ class MIDIDataset(Dataset):
         # delta t of first note?
         time = time * (1 + random.random()*self.speed*2 - self.speed)
         # dequantize
-        # TODO: use actual tactus from MIDI file
+        # TODO: use actual tactus from MIDI file?
         time = (
             time + (torch.rand_like(time)-0.5)*2e-3
             ).clamp(0., float('inf'))
 
+        # TODO: random velocity curve?
         velocity = (
             velocity + 
             (torch.rand_like(time)-0.5) * ((velocity>0) & (velocity<127)).float()

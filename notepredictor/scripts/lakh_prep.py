@@ -23,15 +23,16 @@ def process(fnames, min_len=64):
     s_per_tick = micros_per_beat / mid.ticks_per_beat / 1e6
 
     for i,tr in enumerate(mid.tracks):
-        seq = [m for m in tr if m.type=='note_on' and m.velocity]
+        seq = [m for m in tr if m.type=='note_on' or m.type=='note_off']
         if len(seq) < min_len:
             continue
         torch.save(dict(
             pitch=torch.LongTensor([m.note for m in seq]),
-            velocity=torch.LongTensor([m.velocity for m in seq]),
+            velocity=torch.LongTensor([
+                m.velocity if m.type=='note_on' else 0 for m in seq]),
             time=torch.Tensor([m.time for m in seq])*s_per_tick,
-            # src_track=i,
-            # tempo=micros_per_beat,
+            tempo=micros_per_beat,
+            ticks=mid.ticks_per_beat
         ), g.with_suffix(f'.{i}.pkl') )
 
 def main(data_path, dest_path, n_jobs=4):
