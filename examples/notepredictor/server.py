@@ -39,7 +39,7 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
                 print('no model loaded')
             else:
                 r = predictor.predict(**kw)
-                return '/prediction', r['pitch'], r['time'], r['velocity']
+                return '/prediction', r['pitch'], r['time'], r['velocity'], r['step']
 
         elif cmd=="reset":
             if predictor is None:

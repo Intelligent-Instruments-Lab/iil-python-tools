@@ -201,6 +201,7 @@ class NotePredictor(nn.Module):
         # persistent RNN state for inference
         for n,t in zip(self.cell_state_names(), self.initial_state):
             self.register_buffer(n, t.clone())
+        self.step = 0
 
     def cell_state_names(self):
         return tuple(f'cell_state_{i}' for i in range(len(self.initial_state)))
@@ -515,7 +516,10 @@ class NotePredictor(nn.Module):
                 pred_pitch = pred_pitch.item()
                 pred_time = pred_time.item()
                 pred_vel = pred_vel.item()
+                
+            self.step += 1
             return {
+                'step': self.step,
                 'pitch': pred_pitch, 
                 'time': pred_time,
                 'velocity': pred_vel,
@@ -531,6 +535,7 @@ class NotePredictor(nn.Module):
             start: if True, send a start token through the model with dt=0
                    but discard the prediction
         """
+        self.step = 0
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
         if start:
