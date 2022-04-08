@@ -51,13 +51,13 @@ OSCdef(\return, {
 }, '/prediction', nil);
 t = Process.elapsedTime;
 b.sendMsg("/predictor/predict",
-    \pitch, 60+12.rand, \time, 0, \vel, 0,
+    \inst, 0, \pitch, 60+12.rand, \time, 0, \vel, 0,
     \pitch_temp, 0.5, \rhythm_temp, 0.5, \timing_temp, 0.1
 );
 )
 
 // set the delay for more precise timing
-~delay = 0.016;
+~delay = 0.02;
 
 // duet with the model
 // feeds the model's predictions back to it as well as player input
@@ -94,13 +94,14 @@ MIDIdef.noteOff(\input_off, {
     arg val, num, chan, src;
     var t2 = Process.elapsedTime;
     var dt = t2-(t?(t2-~delay)); //time since last note
+    var inst = ~player_inst;
 
     // cancel any pending predictions
     SystemClock.clear;
     ~pending_predictions.postln;
     //get a new prediction in light of current note
     b.sendMsg("/predictor/predict",
-        \pitch, num, \time, dt, \vel, 0,
+        \inst, inst, \pitch, num, \time, dt, \vel, 0,
         \allow_start, false, \allow_end, false,
         \pitch_temp, 0.5, \rhythm_temp, 0.5, \timing_temp, 0.1,
         \min_time, ~delay, \max_time, 5
@@ -113,7 +114,7 @@ MIDIdef.noteOff(\input_off, {
     ~synths[num] = nil;
 
     // post the current note
-    [\player, dt, num, 0].postln;
+    [\player, dt, inst, num, 0].postln;
 
     // mark time of current note
     t = t2;
@@ -128,13 +129,14 @@ MIDIdef.noteOn(\input_on, {
     arg val, num, chan, src;
     var t2 = Process.elapsedTime;
     var dt = t2-(t?(t2-~delay)); //time since last note
+    var inst = ~player_inst;
 
     // cancel any pending predictions
     SystemClock.clear;
     ~pending_predictions.postln;
     //get a new prediction in light of current note
     b.sendMsg("/predictor/predict",
-        \pitch, num, \time, dt, \vel, val,
+        \inst, inst, \pitch, num, \time, dt, \vel, val,
         \allow_start, false, \allow_end, false,
         \pitch_temp, 0.5, \rhythm_temp, 0.5, \timing_temp, 0.1,
         \min_time, ~delay, \max_time, 5
@@ -150,7 +152,7 @@ MIDIdef.noteOn(\input_on, {
     ~synths[num] = Synth(\pluck, [\freq, num.midicps, \vel, val/127]);//.release(1);
 
     // post the current note
-    [\player, dt, num, val].postln;
+    [\player, dt, inst, num, val].postln;
 
     // mark time of current note
     t = t2;
@@ -165,10 +167,12 @@ MIDIdef.noteOn(\input_on, {
 // OSC return from python
 OSCdef(\return, {
     arg msg, time, addr, recvPort;
-    var num = msg[1]; // MIDI number of predicted note
-    var dt = msg[2]; // time to predicted note
-    var val = msg[3]; // velocity 0-127
-    var step = msg[4];
+    var inst = msg[1]; // instrument of predicted note
+    var pitch = msg[2]; // MIDI number of predicted note
+    var dt = msg[3]; // time to predicted note
+    var val = msg[4]; // velocity 0-127
+    var end = msg[5];
+    var step = msg[6];
 
     // time-to-next note gets 'censored' by the model
     // when over a threshold, in this case 10 seconds,
@@ -176,20 +180,20 @@ OSCdef(\return, {
     var censor = dt>=10.0;
 
     ~pending_predictions = ~pending_predictions-1;
-    [\step, step].postln;
+    // [\step, step].postln;
 
 
     censor.if{
         // if the predicted time is > 10 seconds, don't schedule it, just stop.
         \censor.postln;
-        // ~synths[num]!?(_.release(3.0));
+        // ~synths[pitch]!?(_.release(3.0));
     }{
         // schedule the predicted note
         SystemClock.sched(dt-~delay, {
             (~gate>0).if{
                 var t2 = Process.elapsedTime;
                 var dt_actual = t2 - t;
-                (num==129).if{
+                (end==1).if{
                     // 129 is the 'stop token',  meaning 'end-of-performance'
                     // in this case don't schedule a note, and reset the model
                     // b.sendMsg("/predictor/reset");
@@ -204,40 +208,36 @@ OSCdef(\return, {
                     // (there shouldn't be any, but might
                     // be if there was a lot of fast MIDI input)
                     SystemClock.clear;
-                    ~pending_predictions.postln;
+                    // ~pending_predictions.postln;
                     // feed model its own prediction as input
                     b.sendMsg("/predictor/predict",
-                        \pitch, num, \time, dt_actual, \vel, val,
+                        \inst, inst, \pitch, pitch, \time, dt_actual, \vel, val,
                         \allow_start, false, \allow_end, true,
                         \pitch_temp, 0.7, \rhythm_temp, 0.7, \timing_temp, 0.1,
-                        \min_time, ~delay*2, \max_time, 5,
-                        // \min_vel, 10
-                        // \fix_time, ((~step+1)%3==0).if{0.6}{0}  // triads
-                        // \fix_time, (~step%8)*0.1 // specific rhythm
-
+                        \min_time, ~delay*0, \max_time, 5,
                     );
                     ~pending_predictions = ~pending_predictions+1;
 
                     // play the current note
-                    ~synths[num]!?(_.release(0.05));
+                    ~synths[pitch]!?(_.release(0.05));
                     (val > 0).if{
-                        ~synths[num] = Synth(\pluck, [\freq, num.midicps, \vel, val/127])
+                        ~synths[pitch] = Synth(\pluck, [\freq, pitch.midicps, \vel, val/127])
                     }{
-                        ~synths[num] = nil
+                        ~synths[pitch] = nil
                     };
                     // post the current note
-                    [\model, dt, num, val].postln;
+                    [\model, step, dt, inst, pitch, val, end].postln;
                     // mark the actual time of current note
                     t = t2;
                     ~machine_t = t;
                     // crudely draw note on piano GUI
                     ~gui.if{
-                        AppClock.sched(0,{k.keyDown(num)});
-                        AppClock.sched(0.2,{k.keyUp(num)});
+                        AppClock.sched(0,{k.keyDown(pitch)});
+                        AppClock.sched(0.2,{k.keyUp(pitch)});
                     }
                 };
                 ~step = ~step+1;
-                [\late, dt_actual-dt].postln;
+                // [\late, dt_actual-dt].postln;
             }
     })};
 
@@ -249,7 +249,8 @@ OSCdef(\return, {
 SystemClock.clear;
 ~synths.do(_.release(1.0));
 b.sendMsg("/predictor/reset");
-{MIDIdef.all[\input].func.value(99, 60)}.defer(0.5);
+~player_inst = 83;
+{MIDIdef.all[\input_on].func.value(99, 60)}.defer(0.5);
 SystemClock.clear;
 )
 // b.sendMsg("/predictor/predict", \pitch, 70, \time, 0, \vel, 64);

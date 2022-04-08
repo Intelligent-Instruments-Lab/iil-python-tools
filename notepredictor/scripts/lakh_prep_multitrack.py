@@ -1,6 +1,7 @@
 from pathlib import Path
 from multiprocessing import Pool
 import functools as ft
+import random
 
 from tqdm import tqdm
 import fire
@@ -19,18 +20,27 @@ def process(fnames):
     for inst in mid.instruments:
         inst.remove_invalid_notes()
         program = inst.program + 128*inst.is_drum
+        # NOTE: this will sort concurrent events by pitch
+        # which will introduce some bias when interacting with the model?
+        # e.g. if user plays a note, it will never be harmonized below (or only)
+        # with inexact timing, less frequently
+        # similarly the pitch order would correlate with instrument, i.e. bass 
+        # would usually play first
+        # if anything descending pitch might sound better
+        # could randomize -- even better would be to randomize in dataloader
+        # might be expensive though
         note_ons = [(n.start, n.pitch, n.velocity, program) for n in inst.notes]
         note_offs = [(n.end, n.pitch, 0, program) for n in inst.notes]
         inst_events.extend(note_ons+note_offs)
     if len(inst_events) < 64:
         return
     time, pitch, vel, prog = zip(*sorted(inst_events))
-    delta = torch.tensor([0, *time]).diff(1)
+    delta = torch.FloatTensor([0, *time]).diff(1)
     torch.save(dict(
         time=delta, 
-        pitch=torch.tensor(pitch), 
-        velocity=torch.tensor(vel),
-        program=torch.tensor(prog)
+        pitch=torch.LongTensor(pitch), 
+        velocity=torch.LongTensor(vel),
+        program=torch.LongTensor(prog)
     ), g.with_suffix('.pkl'))
 
 def main(data_path, dest_path, n_jobs=4):
