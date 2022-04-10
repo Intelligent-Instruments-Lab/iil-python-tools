@@ -95,9 +95,13 @@ class MIDIDataset(Dataset):
             velocity.new_zeros((1,)),
             velocity,
             velocity.new_zeros((pad,))))
-        # end signal: nonzero for last event
+        # end signal: nonzero for last event + padding
         end = torch.zeros_like(program)
-        end[-1] = 1
+        end[-pad-1:] = 1
+
+        mask = torch.zeros_like(program)
+        if pad > 0:
+            mask[-pad:] = 1
 
         # random slice
         i = random.randint(0, len(pitch)-self.batch_len)
@@ -106,8 +110,10 @@ class MIDIDataset(Dataset):
         time = time[i:i+self.batch_len]
         velocity = velocity[i:i+self.batch_len]
         end = end[i:i+self.batch_len]
+        mask = mask[i:i+self.batch_len]
 
         return {
+            'mask':mask,
             'end':end,
             'instrument':program,
             'pitch':pitch,

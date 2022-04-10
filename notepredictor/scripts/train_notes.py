@@ -140,6 +140,7 @@ class Trainer:
         return r
 
     def get_loss_components(self, result):
+        # TODO: masking
         return {
             'instrument_nll': -result['instrument_log_probs'].mean(),
             'pitch_nll': -result['pitch_log_probs'].mean(),

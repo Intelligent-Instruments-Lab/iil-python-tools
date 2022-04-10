@@ -17,6 +17,66 @@
 // TODO: pitch blacklist option
 // use case: forbid model from releasing a note held by the player
 
+MIDIClient.init
+MIDIClient.destinations
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1");
+~m2 = MIDIOut.newByName("IAC Driver", "IAC Bus 2");
+/*
+~m1.noteOn(0, 60, 127)
+~m2.noteOn(0, 60, 127)
+~m1.noteOff(0, 60, 64)
+~m2.noteOff(0, 60, 64)*/
+
+(
+~prog2portchan = { arg prog;
+    case
+    {prog==0}{"can't convert start token".postln}
+    {prog<=128}{
+        var group = (prog-1 /8).asInteger;
+        var idx = (prog-1 %8).asInteger;
+        var port = switch(group)
+        { 0}{(idx<6).if{~m1}{~m2}} //piano
+        { 1}{((idx<3)||(idx==5)).if{~m1}{~m2}} //chromatic perc
+        { 2}{(idx<4).if{~m1}{~m2}} //organ
+        { 3}{(idx<5).if{~m1}{~m2}} //guitar
+        { 4}{(idx<4).if{~m2}{~m1}} //bass
+        { 5}{(idx<5).if{~m1}{~m2}} //strings
+        { 6}{(idx<4).if{~m1}{~m2}} //ensemble
+        { 7}{(idx<3).if{~m1}{~m2}} //brass
+        { 8}{(idx<4).if{~m1}{~m2}} //reed
+        { 9}{(idx<3).if{~m1}{~m2}} //pipe
+        {10}{(idx%2==0).if{~m1}{~m2}} //synth lead
+        {11}{(idx<4).if{~m1}{~m2}} //synth pad
+        {12}{~m1} //synth fx
+        {13}{case //'ethnic'
+            {idx<=3}{~m1}
+            {idx==4}{~m2}
+            {idx==5}{group=2;~m2}
+            {idx==6}{group=5;~m1}
+            {idx==7}{group=8;~m2}
+        }
+        {14}{~m1} //percussive
+        {15}{~m1} //sound fx
+        ;
+        // \melody.postln;
+        (port:port, chan:group)
+    }{(prog<=256)||(prog>=265)}{
+        // \drum.postln;
+        (port:~m2, chan:12)
+    }{prog-257 < 8}{
+        // \anon.postln;
+        (port:~m1, chan:0)
+    }
+};
+~release_all = {arg vel=0;
+    [~m1, ~m2].do{arg port; 128.do{arg note; 16.do{arg chan; port.noteOff(chan, note, vel)}}}
+};
+)
+
+/*(
+~prog2portchan.(257)[\chan]
+)*/
+
 (
 ~gui = false;
 MIDIIn.connectAll;
@@ -95,6 +155,7 @@ MIDIdef.noteOff(\input_off, {
     var t2 = Process.elapsedTime;
     var dt = t2-(t?(t2-~delay)); //time since last note
     var inst = ~player_inst;
+    var port_chan = ~prog2portchan.(inst);
 
     // cancel any pending predictions
     SystemClock.clear;
@@ -112,6 +173,8 @@ MIDIdef.noteOff(\input_off, {
     // release the previous note
     ~synths[num]!?(_.release(0.05));
     ~synths[num] = nil;
+    // send MIDI
+    port_chan[\port].noteOff(port_chan[\chan], num);
 
     // post the current note
     [\player, dt, inst, num, 0].postln;
@@ -130,6 +193,8 @@ MIDIdef.noteOn(\input_on, {
     var t2 = Process.elapsedTime;
     var dt = t2-(t?(t2-~delay)); //time since last note
     var inst = ~player_inst;
+    var port_chan = ~prog2portchan.(inst);
+
 
     // cancel any pending predictions
     SystemClock.clear;
@@ -145,11 +210,13 @@ MIDIdef.noteOn(\input_on, {
     ~pending_predictions = ~pending_predictions+1;
 
 
-    // release the previous note
+    // release the previous note (if not properly released by noteoff)
     ~synths[num]!?(_.release(0.05));
 
     // play the current note
     ~synths[num] = Synth(\pluck, [\freq, num.midicps, \vel, val/127]);//.release(1);
+    // send MIDI
+    port_chan[\port].noteOn(port_chan[\chan], num, val);
 
     // post the current note
     [\player, dt, inst, num, val].postln;
@@ -170,9 +237,11 @@ OSCdef(\return, {
     var inst = msg[1]; // instrument of predicted note
     var pitch = msg[2]; // MIDI number of predicted note
     var dt = msg[3]; // time to predicted note
-    var val = msg[4]; // velocity 0-127
+    var vel = msg[4]; // velocity 0-127
     var end = msg[5];
     var step = msg[6];
+    var port_chan = ~prog2portchan.(inst);
+
 
     // time-to-next note gets 'censored' by the model
     // when over a threshold, in this case 10 seconds,
@@ -199,6 +268,7 @@ OSCdef(\return, {
                     // b.sendMsg("/predictor/reset");
                     //release the last note
                     ~synths.do(_.release(1.0));
+                    ~release_all.(127);
                     // unset time so next note will have dt=0
                     // t = nil;
                     // \reset.postln
@@ -211,22 +281,30 @@ OSCdef(\return, {
                     // ~pending_predictions.postln;
                     // feed model its own prediction as input
                     b.sendMsg("/predictor/predict",
-                        \inst, inst, \pitch, pitch, \time, dt_actual, \vel, val,
+                        \inst, inst, \pitch, pitch, \time, dt_actual, \vel, vel,
                         \allow_start, false, \allow_end, true,
-                        \pitch_temp, 0.7, \rhythm_temp, 0.7, \timing_temp, 0.1,
-                        \min_time, ~delay*0, \max_time, 5,
+                        \instrument_temp, 1, \pitch_temp, 0.9, \rhythm_temp, 0.7, \timing_temp, 0.05,
+                        // \instrument_temp, 1, \pitch_temp, 1, \rhythm_temp, 1, \timing_temp, 1,
+                        \min_time, ~delay,
+                        \max_time, 5,
+
                     );
                     ~pending_predictions = ~pending_predictions+1;
 
                     // play the current note
                     ~synths[pitch]!?(_.release(0.05));
-                    (val > 0).if{
-                        ~synths[pitch] = Synth(\pluck, [\freq, pitch.midicps, \vel, val/127])
+                    // send MIDI
+                    port_chan[\port].noteOff(port_chan[\chan], pitch, 64);
+                    (vel > 0).if{
+                        ~synths[pitch] = Synth(\pluck, [
+                            \freq, pitch.midicps, \vel, vel/127]);
+                        // send MIDI
+                        port_chan[\port].noteOn(port_chan[\chan], pitch, vel)
                     }{
-                        ~synths[pitch] = nil
+                        ~synths[pitch] = nil;
                     };
                     // post the current note
-                    [\model, step, dt, inst, pitch, val, end].postln;
+                    [\model, step, dt, inst, pitch, vel, end].postln;
                     // mark the actual time of current note
                     t = t2;
                     ~machine_t = t;
@@ -248,9 +326,12 @@ OSCdef(\return, {
 // send a note manually if you don't have a MIDI controller:
 SystemClock.clear;
 ~synths.do(_.release(1.0));
+~release_all.(0);
 b.sendMsg("/predictor/reset");
-~player_inst = 83;
-{MIDIdef.all[\input_on].func.value(99, 60)}.defer(0.5);
+// ~player_inst = 272;
+// {MIDIdef.all[\input_on].func.value(99, 83)}.defer(0.5);
+~player_inst = 128.rand+1;
+{MIDIdef.all[\input_on].func.value(128.rand, 128.rand)}.defer(0.1);
 SystemClock.clear;
 )
 // b.sendMsg("/predictor/predict", \pitch, 70, \time, 0, \vel, 64);
