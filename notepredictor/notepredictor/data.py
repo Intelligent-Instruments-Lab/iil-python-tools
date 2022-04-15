@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class MIDIDataset(Dataset):
-    def __init__(self, data_dir, batch_len, transpose=2, speed=0.1, glob='**/*.pkl'):
+    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl'):
         #, clamp_time=(-,10)):
         """
         """
@@ -56,15 +56,13 @@ class MIDIDataset(Dataset):
         transpose = random.randint(-transpose_down, transpose_up)
         pitch = pitch + transpose
 
-        # random speed
-        # delta t of first note?
-        time = time.float()
+
+        time_margin = 1e-3 # hardcoded since it should match prep script
+
+        # dequantize: add noise up to +/- margin
+        time = time + (torch.rand_like(time)*2-1)*time_margin
+        # random augment tempo
         time = time * (1 + random.random()*self.speed*2 - self.speed)
-        # dequantize
-        # TODO: use actual tactus from MIDI file?
-        time = (
-            time + (torch.rand_like(time)-0.5)*2e-3
-            ).clamp(0., float('inf'))
 
         # dequantize velocity
         velocity = velocity.float()
@@ -77,8 +75,18 @@ class MIDIDataset(Dataset):
         velocity = velocity ** (2**(torch.randn((1,))/3))
         velocity *= 127
 
+        # sort (using argsort on time and indexing the rest)
+        # compute delta time
+        time, idx = time.sort()
+        time = torch.cat((time.new_zeros((1,)), time)).diff(1)
+        program = program[idx]
+        pitch = pitch[idx]
+        velocity = velocity[idx]
+
         # pad with start tokens, zeros
-        pad = max(0, self.batch_len-len(pitch))
+        # always pad with batch_len so that end tokens don't appear in a biased
+        # location
+        pad = self.batch_len-1#max(0, self.batch_len-len(pitch))
         program = torch.cat((
             program.new_full((1,), self.prog_start_token),
             program,
@@ -95,13 +103,13 @@ class MIDIDataset(Dataset):
             velocity.new_zeros((1,)),
             velocity,
             velocity.new_zeros((pad,))))
-        # end signal: nonzero for last event + padding
+        # end signal: nonzero for last event
         end = torch.zeros_like(program)
         end[-pad-1:] = 1
-
-        mask = torch.zeros_like(program)
+        # compute binary mask for the loss
+        mask = torch.ones_like(program, dtype=torch.bool)
         if pad > 0:
-            mask[-pad:] = 1
+            mask[-pad:] = False
 
         # random slice
         i = random.randint(0, len(pitch)-self.batch_len)

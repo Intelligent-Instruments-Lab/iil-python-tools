@@ -23,7 +23,6 @@ class Trainer:
         log_dir,
         data_dir,
         model = None, # dict of model constructor overrides
-        # clamp_time = (0,10), # given to trainer because it needs to go to dataset+model
         batch_size = 128,
         batch_len = 64,
         lr = 3e-4,
@@ -73,7 +72,7 @@ class Trainer:
 
         # Trainer state
         self.iteration = 0
-        self.exposure = 0
+        self.exposure = 0 # TODO: measure in events, no batch items
         self.epoch = 0
 
         # construct model from arguments 
@@ -139,14 +138,15 @@ class Trainer:
                 self.model.parameters(), self.grad_clip, error_if_nonfinite=True)
         return r
 
-    def get_loss_components(self, result):
-        # TODO: masking
+    def get_loss_components(self, result, mask):
+        def reduce(k):
+            return result[k].masked_select(mask).mean()
         return {
-            'instrument_nll': -result['instrument_log_probs'].mean(),
-            'pitch_nll': -result['pitch_log_probs'].mean(),
-            'time_nll': -result['time_log_probs'].mean(),
-            'velocity_nll': -result['velocity_log_probs'].mean(),
-            'end_nll': -result['end_log_probs'].mean()
+            'instrument_nll': -reduce('instrument_log_probs'),
+            'pitch_nll': -reduce('pitch_log_probs'),
+            'time_nll': -reduce('time_log_probs'),
+            'velocity_nll': -reduce('velocity_log_probs'),
+            'end_nll': -reduce('end_log_probs'),
         }
 
     def train(self):
@@ -165,6 +165,7 @@ class Trainer:
             metrics = defaultdict(float)
             self.model.eval()
             for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
+                mask = batch['mask'].to(self.device, non_blocking=True)[...,1:]
                 end = batch['end'].to(self.device, non_blocking=True)
                 inst = batch['instrument'].to(self.device, non_blocking=True)
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
@@ -173,18 +174,19 @@ class Trainer:
                 with torch.no_grad():
                     result = self.model(
                         inst, pitch, time, vel, end, validation=True)
-                    losses = {k:v.item() for k,v in self.get_loss_components(result).items()}
+                    losses = {k:v.item() for k,v in self.get_loss_components(
+                        result, mask).items()}
                     metrics['loss'] += sum(losses.values())
                     for k,v in losses.items():
                         metrics[k] += v
                     metrics['instrument_acc'] += (result['instrument_log_probs']
-                        .exp().mean().item())
+                        .masked_select(mask).exp().mean().item())
                     metrics['pitch_acc'] += (result['pitch_log_probs']
-                        .exp().mean().item())
+                        .masked_select(mask).exp().mean().item())
                     metrics['time_acc_30ms'] += (result['time_acc_30ms']
-                        .mean().item())
+                        .masked_select(mask).mean().item())
                     metrics['velocity_acc'] += (result['velocity_log_probs']
-                        .exp().mean().item())
+                        .masked_select(mask).exp().mean().item())
             self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
 
         epoch_size = self.epoch_size or len(train_loader)
@@ -199,7 +201,7 @@ class Trainer:
             self.model.train()
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
-
+                mask = batch['mask'].to(self.device, non_blocking=True)
                 end = batch['end'].to(self.device, non_blocking=True)
                 inst = batch['instrument'].to(self.device, non_blocking=True)
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
@@ -207,21 +209,25 @@ class Trainer:
                 vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
-                self.exposure += self.batch_size
-
+                self.exposure += self.batch_size # * self.batch_len
                 logs = {}
 
+                ### forward+backward+optimizer step ###
                 self.opt.zero_grad()
                 result = self.model(inst, pitch, time, vel, end)
-                losses = self.get_loss_components(result)
+                losses = self.get_loss_components(result, mask[...,1:])
                 loss = sum(losses.values())
                 loss.backward()
                 logs |= self.process_grad()
                 self.opt.step()
+                ########
 
+                # log loss components
                 logs |= {k:v.item() for k,v in losses.items()}
-                logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
+                # log total loss
                 logs |= {'loss':loss.item()}
+                # log any other returned scalars
+                logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
                 self.log('train', logs)
 
             validate()
