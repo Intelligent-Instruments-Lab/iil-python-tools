@@ -20,7 +20,8 @@
 MIDIClient.init
 MIDIClient.destinations
 ~m1 = MIDIOut.newByName("IAC Driver", "Bus 1");
-~m2 = MIDIOut.newByName("IAC Driver", "IAC Bus 2");
+~m2 = MIDIOut.newByName("IAC Driver", "Bus 2");
+~m3 = MIDIOut.newByName("IAC Driver", "Bus 3");
 /*
 ~m1.noteOn(0, 60, 127)
 ~m2.noteOn(0, 60, 127)
@@ -35,7 +36,11 @@ MIDIClient.destinations
         var group = (prog-1 /8).asInteger;
         var idx = (prog-1 %8).asInteger;
         var port = switch(group)
-        { 0}{(idx<6).if{~m1}{~m2}} //piano
+        { 0}{case
+            {idx<4}{~m1} //acoustic
+            {idx<6}{~m2} //electric
+            {true}{~m3} //harpsichord
+        } //piano
         { 1}{((idx<3)||(idx==5)).if{~m1}{~m2}} //chromatic perc
         { 2}{(idx<4).if{~m1}{~m2}} //organ
         { 3}{(idx<5).if{~m1}{~m2}} //guitar
@@ -69,7 +74,7 @@ MIDIClient.destinations
     }
 };
 ~release_all = {arg vel=0;
-    [~m1, ~m2].do{arg port; 128.do{arg note; 16.do{arg chan; port.noteOff(chan, note, vel)}}}
+    [~m1, ~m2, ~m3].do{arg port; 128.do{arg note; 16.do{arg chan; port.noteOff(chan, note, vel)}}}
 };
 )
 
@@ -202,6 +207,7 @@ MIDIdef.noteOn(\input_on, {
     //get a new prediction in light of current note
     b.sendMsg("/predictor/predict",
         \inst, inst, \pitch, num, \time, dt, \vel, val,
+        // \fix_instrument, ~player_inst,
         \allow_start, false, \allow_end, false,
         \pitch_temp, 0.5, \rhythm_temp, 0.5, \timing_temp, 0.1,
         \min_time, ~delay, \max_time, 5
@@ -283,9 +289,12 @@ OSCdef(\return, {
                     b.sendMsg("/predictor/predict",
                         \inst, inst, \pitch, pitch, \time, dt_actual, \vel, vel,
                         \allow_start, false, \allow_end, true,
-                        \instrument_temp, 1, \pitch_temp, 0.9, \rhythm_temp, 0.7, \timing_temp, 0.05,
+                        // \fix_instrument, ~player_inst,
+                        // \fix_time, 2.rand*0.1+~delay,
+                        \instrument_temp, 1, \pitch_temp, 0.9,
+                        \rhythm_temp, 1, \timing_temp, 0.05,
                         // \instrument_temp, 1, \pitch_temp, 1, \rhythm_temp, 1, \timing_temp, 1,
-                        \min_time, ~delay,
+                        // \min_time, ~delay,
                         \max_time, 5,
 
                     );

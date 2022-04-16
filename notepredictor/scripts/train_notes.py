@@ -25,6 +25,8 @@ class Trainer:
         model = None, # dict of model constructor overrides
         batch_size = 128,
         batch_len = 64,
+        batch_len_schedule = None,
+        batch_len_max = 512,
         lr = 3e-4,
         adam_betas = (0.9, 0.999),
         adam_eps = 1e-08, 
@@ -209,7 +211,7 @@ class Trainer:
                 vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
-                self.exposure += self.batch_size # * self.batch_len
+                self.exposure += self.batch_size * self.batch_len
                 logs = {}
 
                 ### forward+backward+optimizer step ###
@@ -231,6 +233,11 @@ class Trainer:
                 self.log('train', logs)
 
             validate()
+
+            if self.batch_len_schedule is not None:
+                self.batch_len = min(
+                    self.batch_len_max, self.batch_len+self.batch_len_schedule)
+                self.dataset.batch_len = self.batch_len
 
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 

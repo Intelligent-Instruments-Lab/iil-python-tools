@@ -204,11 +204,11 @@ class NotePredictor(nn.Module):
                 p.weight.mul_(1e-2)
             self.end_proj.weight.mul(1e-2)
 
-        # IDEA: instead of this, combine current embeddings (independently) with h via MLPs
-        # stacked along a new final dim
-        # matmul by mask, which is easier (?) to vary per batch/time
+        # IDEA: instead of this, combine current embeddings (independently) with h by
+        # projecting to h size, stacking with h along a new final dim,
+        # matmul by n+1 x n mask, which is easier (?) to vary per batch/time
         # (compared to permute-and-cumsum)
-        # then tanh, unbind and more independent MLPs -> dist params
+        # then tanh, unbind and independent MLPs -> dist params
         self.xformer = ModalityTransformer(emb_size, ar_hidden, ar_heads, ar_layers)
 
         # persistent RNN state for inference
@@ -260,14 +260,13 @@ class NotePredictor(nn.Module):
             t.expand(self.rnn.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
-        h = h[:,:-1] # skip last time position
 
         # fit all note factorizations (e.g. pitch->time->vel vs vel->time->pitch)
         # TODO: perm each batch item independently?
         # get a random ordering for note modalities:
         perm = torch.randperm(self.note_dim)
         # chunk RNN state into Transformer inputs
-        hs = list(self.h_proj(h).chunk(self.note_dim+1, -1))
+        hs = list(self.h_proj(h[:,:-1]).chunk(self.note_dim+1, -1)) # skip last time position
         h_ctx = hs[0]
         h_tgt = [hs[i+1] for i in perm]
         # embed ground truth values for teacher-forcing
@@ -299,10 +298,11 @@ class NotePredictor(nn.Module):
         vel_log_probs = vel_result.pop('log_prob')
 
         # end prediction
-        # skip the last position for convenience (so masking is the same)
-        end_params = self.end_proj(h)
+        # skip the first position for convenience 
+        # (so masking is the same for end as for note parts)
+        end_params = self.end_proj(h[:,1:])
         end_logits = F.log_softmax(end_params, -1)
-        end_log_probs = end_logits.gather(-1, ends[:,:-1,None])[...,0]
+        end_log_probs = end_logits.gather(-1, ends[:,1:,None])[...,0]
 
         r = {
             'end_log_probs': end_log_probs,
@@ -553,6 +553,7 @@ class NotePredictor(nn.Module):
             pred_vel = predicted[iperm[3]]
 
             end_params = self.end_proj(h)
+            print(end_params)
             end = D.Categorical(logits=end_params).sample()
             if not allow_end:
                 end[:] = 0
