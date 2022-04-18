@@ -49,95 +49,95 @@ class MixEmbedding(nn.Module):
         x = x[...,None]
         return self.hi * x + self.lo * (1-x)
 
-# class SelfGated(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-
-#     def forward(self, x):
-#         a, b = x.chunk(2, -1)
-#         return a * b.sigmoid()
-
-# class SelfGatedMLP(nn.Module):
-#     def __init__(self, input, hidden, output, layers, dropout=0):
-#         super().__init__()
-#         h = input
-#         def get_dropout():
-#             if dropout > 0:
-#                 return (nn.Dropout(dropout),)
-#             else:
-#                 return tuple()
-#         self.net = []
-#         for _ in range(layers):
-#             self.net.append(nn.Sequential(
-#                 *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
-#             h = hidden
-#         self.net.append(nn.Linear(hidden, output))
-#         self.net = nn.Sequential(*self.net)
-
-#         with torch.no_grad():
-#             self.net[-1].weight.mul_(1e-2)
-
-#     def forward(self, x):
-#         return self.net(x)
-
-class ModalityTransformer(nn.Module):
-    """
-    Model joint distribution of note modalities (e.g. pitch, time, velocity).
-
-    This is an autoregressive Transformer model for the *internal* structure of notes.
-    It is *not* autoregressive in time, but in modality.
-    At training time, it executes in parallel over all timesteps and modalities, with
-    time dependencies provided via the RNN backbone.
-
-    At sampling time it is called serially, one modality at a time, 
-    repeatedly at each time step.
-
-    Inspired by XLNet: http://arxiv.org/abs/1906.08237
-    """
-    def __init__(self, input_size, hidden_size, heads=4, layers=1):
+class SelfGated(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.net = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(
-                input_size, heads, hidden_size, norm_first=False
-                ), layers)
 
-    def forward(self, ctx, h_ctx, h_tgt):
-        """
-        Args:
-            ctx: list of Tensor[batch x time x input_size], length note_dim-1
-                these are the embedded ground truth values
-            h_ctx: Tensor[batch x time x input_size]
-                projection of RNN state (need something to attend to when ctx is empty)
-            h_tgt: list of Tensor[batch x time x input_size], length note_dim
-                these are projections of the RNN state for each target,
-                which the Transformer will map to distribution parameters.
-        """
-        # explicitly broadcast
-        h_ctx, *ctx = torch.broadcast_tensors(h_ctx, *ctx)
-        h_ctx, *h_tgt = torch.broadcast_tensors(h_ctx, *h_tgt)
+    def forward(self, x):
+        a, b = x.chunk(2, -1)
+        return a * b.sigmoid()
 
-        # h_tgt is 'target' w.r.t TransformerDecoder
-        # h_ctx and context are 'memory'
-        batch_size = h_ctx.shape[0]*h_ctx.shape[1]
-        # fold time into batch, stack modes
-        tgt = torch.stack([
-            item.reshape(batch_size,-1)
-            for item in h_tgt
-        ],0)
-        mem = torch.stack([
-            item.reshape(batch_size,-1)
-            for item in [h_ctx, *ctx]
-        ],0)
-        # now "time"(mode) x "batch"(+time) x channel
+class SelfGatedMLP(nn.Module):
+    def __init__(self, input, hidden, output, layers, dropout=0):
+        super().__init__()
+        h = input
+        def get_dropout():
+            if dropout > 0:
+                return (nn.Dropout(dropout),)
+            else:
+                return tuple()
+        self.net = []
+        for _ in range(layers):
+            self.net.append(nn.Sequential(
+                *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
+            h = hidden
+        self.net.append(nn.Linear(hidden, output))
+        self.net = nn.Sequential(*self.net)
 
-        # generate a mask
-        # this is both the target and memory mask
-        # masking is such that each target can only depend on "previous" context
-        n = len(h_tgt)
-        mask = ~tgt.new_ones((n,n), dtype=bool).tril()
+        with torch.no_grad():
+            self.net[-1].weight.mul_(1e-2)
 
-        x = self.net(tgt, mem, mask, mask)
-        return list(x.reshape(n, *h_ctx.shape).unbind(0))
+    def forward(self, x):
+        return self.net(x)
+
+# class ModalityTransformer(nn.Module):
+#     """
+#     Model joint distribution of note modalities (e.g. pitch, time, velocity).
+
+#     This is an autoregressive Transformer model for the *internal* structure of notes.
+#     It is *not* autoregressive in time, but in modality.
+#     At training time, it executes in parallel over all timesteps and modalities, with
+#     time dependencies provided via the RNN backbone.
+
+#     At sampling time it is called serially, one modality at a time, 
+#     repeatedly at each time step.
+
+#     Inspired by XLNet: http://arxiv.org/abs/1906.08237
+#     """
+#     def __init__(self, input_size, hidden_size, heads=4, layers=1):
+#         super().__init__()
+#         self.net = nn.TransformerDecoder(
+#             nn.TransformerDecoderLayer(
+#                 input_size, heads, hidden_size, norm_first=False
+#                 ), layers)
+
+#     def forward(self, ctx, h_ctx, h_tgt):
+#         """
+#         Args:
+#             ctx: list of Tensor[batch x time x input_size], length note_dim-1
+#                 these are the embedded ground truth values
+#             h_ctx: Tensor[batch x time x input_size]
+#                 projection of RNN state (need something to attend to when ctx is empty)
+#             h_tgt: list of Tensor[batch x time x input_size], length note_dim
+#                 these are projections of the RNN state for each target,
+#                 which the Transformer will map to distribution parameters.
+#         """
+#         # explicitly broadcast
+#         h_ctx, *ctx = torch.broadcast_tensors(h_ctx, *ctx)
+#         h_ctx, *h_tgt = torch.broadcast_tensors(h_ctx, *h_tgt)
+
+#         # h_tgt is 'target' w.r.t TransformerDecoder
+#         # h_ctx and context are 'memory'
+#         batch_size = h_ctx.shape[0]*h_ctx.shape[1]
+#         # fold time into batch, stack modes
+#         tgt = torch.stack([
+#             item.reshape(batch_size,-1)
+#             for item in h_tgt
+#         ],0)
+#         mem = torch.stack([
+#             item.reshape(batch_size,-1)
+#             for item in [h_ctx, *ctx]
+#         ],0)
+#         # now "time"(mode) x "batch"(+time) x channel
+
+#         # generate a mask
+#         # this is both the target and memory mask
+#         # masking is such that each target can only depend on "previous" context
+#         n = len(h_tgt)
+#         mask = ~tgt.new_ones((n,n), dtype=bool).tril()
+
+#         x = self.net(tgt, mem, mask, mask)
+#         return list(x.reshape(n, *h_ctx.shape).unbind(0))
 
 
 class NotePredictor(nn.Module):
@@ -145,7 +145,7 @@ class NotePredictor(nn.Module):
     def __init__(self, 
             emb_size=256, 
             rnn_hidden=2048, rnn_layers=1, kind='gru', 
-            ar_hidden=2048, ar_layers=1, ar_heads=4,
+            mlp_layers=0,
             dropout=0.1, 
             num_pitches=128, 
             num_instruments=272,
@@ -178,7 +178,7 @@ class NotePredictor(nn.Module):
 
         # RNN backbone
         self.rnn = GenericRNN(kind, 
-            self.note_dim*emb_size, rnn_hidden, 
+            emb_size, rnn_hidden, 
             num_layers=rnn_layers, batch_first=True, dropout=dropout)
 
         # learnable initial RNN state
@@ -189,27 +189,30 @@ class NotePredictor(nn.Module):
         ])
 
         # projection from RNN state to distribution parameters
-        self.h_proj = nn.Linear(rnn_hidden, emb_size*(1+self.note_dim))
+        self.h_proj = nn.Linear(rnn_hidden, emb_size)
+        # self.projections = nn.ModuleList([
+        #     nn.Linear(emb_size, self.instrument_domain),
+        #     nn.Linear(emb_size, self.pitch_domain),
+        #     nn.Linear(emb_size, self.time_dist.n_params, bias=False),
+        #     nn.Linear(emb_size, self.vel_dist.n_params, bias=False)
+        # ])
         self.projections = nn.ModuleList([
-            nn.Linear(emb_size, self.instrument_domain),
-            nn.Linear(emb_size, self.pitch_domain),
-            nn.Linear(emb_size, self.time_dist.n_params, bias=False),
-            nn.Linear(emb_size, self.vel_dist.n_params, bias=False)
+            SelfGatedMLP(
+                emb_size, emb_size, self.instrument_domain, mlp_layers, dropout),
+            SelfGatedMLP(
+                emb_size, emb_size, self.pitch_domain, mlp_layers, dropout),
+            SelfGatedMLP(
+                emb_size, emb_size, self.time_dist.n_params, mlp_layers, dropout),
+            SelfGatedMLP(
+                emb_size, emb_size, self.vel_dist.n_params, mlp_layers, dropout),
         ])
 
         self.end_proj = nn.Linear(rnn_hidden, 2)
 
         with torch.no_grad():
             for p in self.projections:
-                p.weight.mul_(1e-2)
+                p.net[-1].weight.mul_(1e-2)
             self.end_proj.weight.mul(1e-2)
-
-        # IDEA: instead of this, combine current embeddings (independently) with h by
-        # projecting to h size, stacking with h along a new final dim,
-        # matmul by n+1 x n mask, which is easier (?) to vary per batch/time
-        # (compared to permute-and-cumsum)
-        # then tanh, unbind and independent MLPs -> dist params
-        self.xformer = ModalityTransformer(emb_size, ar_hidden, ar_heads, ar_layers)
 
         # persistent RNN state for inference
         for n,t in zip(self.cell_state_names(), self.initial_state):
@@ -254,28 +257,29 @@ class NotePredictor(nn.Module):
         embs = (inst_emb, pitch_emb, time_emb, vel_emb)
 
         # feed to RNN backbone
-        x = torch.cat(embs, -1)
+        x = sum(embs)
         ## broadcast initial state to batch size
         initial_state = tuple(
             t.expand(self.rnn.num_layers, x.shape[0], -1).contiguous() # 1 x batch x hidden
             for t in self.initial_state)
         h, _ = self.rnn(x, initial_state) #batch, time, hidden_size
 
-        # fit all note factorizations (e.g. pitch->time->vel vs vel->time->pitch)
-        # TODO: perm each batch item independently?
-        # get a random ordering for note modalities:
-        perm = torch.randperm(self.note_dim)
-        # chunk RNN state into Transformer inputs
-        hs = list(self.h_proj(h[:,:-1]).chunk(self.note_dim+1, -1)) # skip last time position
-        h_ctx = hs[0]
-        h_tgt = [hs[i+1] for i in perm]
-        # embed ground truth values for teacher-forcing
-        embs = [embs[i][:,1:] for i in perm[:-1]]
-        # run through Transformer to conditional hidden states
-        mode_hs = self.xformer(embs, h_ctx, h_tgt)
-        # permute back to canonical order
-        mode_hs = [mode_hs[i] for i in perm.argsort()]
+        # fit all note factorizations 
+        # e.g. inst->pitch->time->vel vs vel->time->inst->pitch
+        trim_h = h[:,:-1]
+        # always include hidden state, never include same modality,
+        # other dependencies are random per time and position
+        n = self.note_dim
+        tr = torch.randint(2, (*trim_h.shape[:2],n,n), dtype=torch.bool, device=h.device)
+        tr &= ~torch.eye(n,n, dtype=torch.bool, device=h.device)
+        ar_mask = torch.cat((tr.new_ones(*trim_h.shape[:2],1,n), tr), -2).float()
 
+        to_mask = torch.stack((
+            self.h_proj(trim_h),
+            *(emb[:,1:] for emb in embs)
+        ), -1)
+        mode_hs = (to_mask @ ar_mask).tanh().unbind(-1)
+        
         # final projections to raw distribution parameters
         inst_params, pitch_params, time_params, vel_params = [
             proj(h) for proj,h in zip(self.projections, mode_hs)]
@@ -328,7 +332,7 @@ class NotePredictor(nn.Module):
     # TODO: remove allow_end here
     # allow_start should just be False
     def get_samplers(self, 
-            instrument_top_p=None,
+            instrument_top_p=None, exclude_instrument=None,
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
             pitch_top_p=None,
             sweep_time=False, min_time=None, max_time=None, bias_time=None, time_weight_top_p=None, time_component_temp=None,
@@ -341,6 +345,8 @@ class NotePredictor(nn.Module):
         def sample_instrument(x):
             if not allow_start:
                 x[...,self.instrument_start_token] = -np.inf
+            if exclude_instrument is not None:
+                x[...,exclude_instrument] = -np.inf
             probs = x.softmax(-1)
             if instrument_top_p is not None:
                 probs = reweight_top_p(probs, instrument_top_p)
@@ -399,6 +405,7 @@ class NotePredictor(nn.Module):
             fix_instrument=None, fix_pitch=None, fix_time=None, fix_vel=None, 
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
             sweep_time=False, min_time=None, max_time=None, bias_time=None, 
+            exclude_instrument=None,
             instrument_temp=None, pitch_temp=None, rhythm_temp=None, timing_temp=None,
             min_vel=None, max_vel=None):
         """
@@ -427,6 +434,7 @@ class NotePredictor(nn.Module):
             bias_time: add this delay to the time 
                 (after applying min/max but before clamping to 0).
                 may be useful for latency correction.
+            exclude_instrument: instrument id to exclude from sampling.
             instrument_temp: if not None, apply top_p sampling to instrument. 0 is
                 deterministic, 1 is 'natural' according to the model
             pitch_temp: if not None, apply top_p sampling to pitch. 0 is
@@ -448,7 +456,7 @@ class NotePredictor(nn.Module):
         if (index_pitch is not None) and (pitch_temp is not None):
             print("warning: `index pitch` overrides `pitch_temp`")
 
-        with torch.no_grad():
+        with torch.inference_mode():
             inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
             time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
@@ -460,20 +468,20 @@ class NotePredictor(nn.Module):
                 self.time_emb(time),# 1, 1, emb_size
                 self.vel_emb(vel)# 1, 1, emb_size
             ]
-            x = torch.cat(embs, -1)
+            x = sum(embs)
             
             h, new_state = self.rnn(x, self.cell_state)
             for t,new_t in zip(self.cell_state, new_state):
                 t[:] = new_t
 
-            h_parts = self.h_proj(h).chunk(self.note_dim+1, -1)
-            h_ctx = h_parts[0]
-            h_tgt = h_parts[1:]
+            # h_parts = self.h_proj(h).chunk(self.note_dim+1, -1)
+            # h_ctx = h_parts[0]
+            # h_tgt = h_parts[1:]
 
             modalities = list(zip(
                 self.projections,
                 self.get_samplers(
-                    instrument_temp,
+                    instrument_temp, exclude_instrument,
                     pitch_topk, index_pitch, allow_start, allow_end, 
                     pitch_temp,
                     sweep_time, min_time, max_time, bias_time, 
@@ -482,7 +490,7 @@ class NotePredictor(nn.Module):
                 self.embeddings,
                 ))
 
-            context = [] # embedded outputs for autoregressive prediction
+            context = [self.h_proj(h)] # embedded outputs for autoregressive prediction
             predicted = [] # raw outputs
             params = [] # distribution parameters for visualization
 
@@ -500,7 +508,8 @@ class NotePredictor(nn.Module):
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     if (
-                        i==0 and (instrument_temp is not None) or
+                        i==0 and any(p is not None for p in (
+                            instrument_temp, exclude_instrument)) or
                         i==1 and (pitch_topk or pitch_temp is not None) or
                         i==2 and any(p is not None for p in (
                             min_time, max_time, rhythm_temp, timing_temp)) or
@@ -532,19 +541,22 @@ class NotePredictor(nn.Module):
             # range, in which case truncate;
             # temperature?
             
-            perm_h_tgt = [h_tgt[i] for i in perm]
+            running_ctx = sum(context)
+            # print(running_ctx)
+            # perm_h_tgt = [h_tgt[i] for i in perm]
             while len(undet_idx):
                 i = undet_idx.pop(0) # index of modality to determine
-                j = len(det_idx) # number already determined
+                # j = len(det_idx) # number already determined
                 project, sample, embed = modalities[i]
                 # determine value for the next modality
-                hidden = self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
+                hidden = running_ctx.tanh() #self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
                 params.append(project(hidden))
                 pred = sample(params[-1])
                 predicted.append(pred)
                 # prepare for next iteration
                 if len(undet_idx):
-                    context.append(embed(pred))
+                    # context.append(embed(pred))
+                    running_ctx += embed(pred)
                 det_idx.append(i)
 
             pred_inst = predicted[iperm[0]]
@@ -552,11 +564,12 @@ class NotePredictor(nn.Module):
             pred_time = predicted[iperm[2]]
             pred_vel = predicted[iperm[3]]
 
-            end_params = self.end_proj(h)
-            print(end_params)
-            end = D.Categorical(logits=end_params).sample()
-            if not allow_end:
-                end[:] = 0
+            if allow_end:
+                end_params = self.end_proj(h)
+                # print(end_params)
+                end = D.Categorical(logits=end_params).sample()
+            else:
+                end = torch.zeros(h.shape[:-1])
 
             if sweep_time or pitch_topk:
                 # return lists of predictions
