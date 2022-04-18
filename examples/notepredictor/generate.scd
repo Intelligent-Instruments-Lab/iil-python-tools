@@ -94,9 +94,9 @@ Server.default.options.outDevice_("Built-in Output");
 // Server.default.options.inDevice_("mic-buds");
 // Server.default.options.outDevice_("mic-buds");
 s.boot;
-~gui.if{
+/*~gui.if{
     k = MIDIKeyboard.new(bounds: Rect(0, 0, 500, 100), octaves:11, startnote:0)
-};
+};*/
 )
 
 (
@@ -148,7 +148,7 @@ b.sendMsg("/predictor/predict",
 ~player_held = false!128;
 
 ~pending_predictions = 0;
-~pending_notes = List[];
+~pending_events = List[];
 ~step = 0;
 
 t = nil;
@@ -167,7 +167,7 @@ b.sendMsg("/predictor/reset");
     }
 };
 
-~predict_note = {
+~predict_event = {
     arg inst, pitch, dt, vel;
     var kw = List[
         \inst, inst, \pitch, pitch, \time, dt, \vel, vel,
@@ -186,7 +186,7 @@ b.sendMsg("/predictor/reset");
 
 };
 
-~clear_pending_notes = {~pending_notes.do{arg pp; pp.stop}.clear};
+~clear_pending_events = {~pending_events.do{arg pe; pe.stop}.clear};
 
 // footswitch
 MIDIdef.program(\switch, {
@@ -214,10 +214,10 @@ MIDIdef.noteOff(\input_off, {
     var port_chan = ~prog2portchan.(inst);
 
     // cancel any pending predictions
-    ~clear_pending_notes.();
+    ~clear_pending_events.();
     // ~pending_predictions.postln;
     //get a new prediction in light of current note
-    ~predict_note.(inst, pitch, dt, 0);
+    ~predict_event.(inst, pitch, dt, 0);
 
     ~player_sound.if{
         // release the previous note
@@ -227,9 +227,6 @@ MIDIdef.noteOff(\input_off, {
         port_chan[\port].noteOff(port_chan[\chan], pitch);
     };
 
-    // post the current note
-    [\player, dt, inst, pitch, 0].postln;
-
     // mark time of current note
     t = t2;
     ~player_t = t;
@@ -237,6 +234,9 @@ MIDIdef.noteOff(\input_off, {
     ~step = ~step + 1;
 
     ~player_held[pitch] = false;
+
+    // post the current note
+    [\player, dt, inst, pitch, 0].postln;
 
 });
 MIDIdef.noteOn(\input_on, {
@@ -247,11 +247,11 @@ MIDIdef.noteOn(\input_on, {
     var port_chan = ~prog2portchan.(inst);
 
 
-    // cancel any pending predictions
-    ~clear_pending_notes.();
+    // cancel any pending events
+    ~clear_pending_events.();
     // ~pending_predictions.postln;
     //get a new prediction in light of current note
-    ~predict_note.(inst, pitch, dt, vel);
+    ~predict_event.(inst, pitch, dt, vel);
 
     ~player_sound.if{
         // release the previous note (if not properly released by noteoff)
@@ -266,9 +266,6 @@ MIDIdef.noteOn(\input_on, {
         port_chan[\port].noteOn(port_chan[\chan], pitch, vel);
     };
 
-    // post the current note
-    [\player, dt, inst, pitch, vel].postln;
-
     // mark time of current note
     t = t2;
     ~player_t = t;
@@ -277,6 +274,9 @@ MIDIdef.noteOn(\input_on, {
     // ~step = 0;
 
     ~player_held[pitch] = true;
+
+    // post the current note
+    [\player, dt, inst, pitch, vel].postln;
 });
 
 // OSC return from python
@@ -296,18 +296,22 @@ OSCdef(\return, {
     // meaning it just predicts 10s rather than any longer time
     var censor = dt>=10.0;
 
-    var gate_note = ~gate && (~duet && (inst==~player_inst)).not && censor.not && (~pending_predictions==1);
+    // there may be multiple outstanding queries to the model. when there are, it means
+    // the earlier prediction is already voided, so it should dropped here.
+    var gate_event = (
+        ~gate
+        // && (~duet && (inst==~player_inst)).not
+        && censor.not
+        && (~pending_predictions==1));
 
     ~pending_predictions = ~pending_predictions-1;
-    // [\step, step].postln;
 
-    gate_note.if{
+    gate_event.if{
         // cancel any pending notes
-        // (there shouldn't be any, but might
-        // be if there was a lot of fast MIDI input)
-        ~clear_pending_notes.();
+        // since they are voided by the new prediction
+        ~clear_pending_events.();
         // schedule the predicted note
-        ~pending_notes.add(Routine{
+        ~pending_events.add(Routine{
             var t2, dt_actual;
             (dt-~delay).sleep;
             (end==1).if{
@@ -325,7 +329,7 @@ OSCdef(\return, {
                 dt_actual = t2 - t;
 
                 // feed model its own prediction as input
-                ~predict_note.(inst, pitch, dt_actual, vel);
+                ~predict_event.(inst, pitch, dt_actual, vel);
 
                 // play the current note
                 ~synths[pitch]!?(_.release(0.05));
@@ -341,8 +345,6 @@ OSCdef(\return, {
                 }{
                     ~synths[pitch] = nil;
                 };
-                // post the current note
-                [\model, step, dt, inst, pitch, vel, end].postln;
                 // mark the actual time of current note
                 t = t2;
                 ~machine_t = t;
@@ -351,6 +353,8 @@ OSCdef(\return, {
                     AppClock.sched(0,{k.keyDown(pitch)});
                     AppClock.sched(0.2,{k.keyUp(pitch)});
                 }*/
+                // post the current note
+                [\model, step, dt, inst, pitch, vel, end].postln;
             };
             ~step = ~step+1;
             // [\late, dt_actual-dt].postln;
@@ -360,20 +364,21 @@ OSCdef(\return, {
 )
 
 (
+~gate = false;
 ~duet = false;
-~instrument_temp = 0.9;
+~instrument_temp = 0.95;
 ~pitch_temp = 0.9;
 ~rhythm_temp = 0.9;
 ~timing_temp = 0.05;
 // send a note manually if you don't have a MIDI controller:
-~clear_pending_notes.();
+~clear_pending_events.();
 ~synths.do(_.release(1.0));
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
 // ~player_inst = 128.rand+1;
 // {MIDIdef.all[\input_on].func.value(128.rand, 128.rand)}.defer(0.1);
 ~player_inst = 272;
-{MIDIdef.all[\input_on].func.value(128.rand, 60.rand+30)}.defer(0.1);
+{~gate = true; MIDIdef.all[\input_on].func.value(128.rand, 60.rand+30)}.defer(0.2);
 )
 
 (
@@ -381,10 +386,10 @@ b.sendMsg("/predictor/reset");
 ~gate = false;
 ~duet = true;
 ~instrument_temp = 0.9;
-~pitch_temp = 0.9;
+~pitch_temp = 1;
 ~rhythm_temp = 1;
 ~timing_temp = 0.05;
-~clear_pending_notes.();
+~clear_pending_events.();
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
 ~player_inst = 272;
@@ -405,12 +410,13 @@ b.sendMsg("/predictor/reset");
         0.02.sleep;
     }
 }.play(SystemClock);
-{ ~gate=true}.defer(3);
+{ ~gate=true }.defer(3);
 }.defer(0.5);
 )
 
 (
+~gate = false;
 ~seq!?(_.stop);
-~clear_pending_notes.();
+~clear_pending_events.();
 ~release_all.(0);
 )

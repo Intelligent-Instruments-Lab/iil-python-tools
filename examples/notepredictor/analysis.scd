@@ -34,7 +34,7 @@ SynthDef(\analyzer, {
 )
 
 (
-~clear_pending_notes.();
+~clear_pending_events.();
 b.sendMsg("/predictor/reset");
 ~release_all.(0);
 ~allow_end = false;
@@ -63,7 +63,7 @@ OSCdef(\analysis, {
 )
 
 (
-~clear_pending_notes.();
+~clear_pending_events.();
 ~release_all.(0);
 )
 

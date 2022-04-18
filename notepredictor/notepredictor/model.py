@@ -284,7 +284,7 @@ class NotePredictor(nn.Module):
         inst_params, pitch_params, time_params, vel_params = [
             proj(h) for proj,h in zip(self.projections, mode_hs)]
 
-        # get likelihoods of data for each modality
+        # get likelihood of data for each modality
         inst_logits = F.log_softmax(inst_params, -1)
         inst_targets = instruments[:,1:,None] #batch, time, 1
         inst_log_probs = inst_logits.gather(-1, inst_targets)[...,0]
@@ -500,7 +500,6 @@ class NotePredictor(nn.Module):
                     [fix_instrument, fix_pitch, fix_time, fix_vel],
                     [torch.long, torch.long, torch.float, torch.float])]
 
-            # permute h_tgt, embs, modalities
             # if any modalities are determined, embed them
             # sort constrained modalities before unconstrained
             # TODO: option to skip modalities
