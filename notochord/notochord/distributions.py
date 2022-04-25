@@ -38,7 +38,7 @@ class CensoredMixtureLogistic(nn.Module):
                 )))
         elif init=='velocity':
             self.bias = nn.Parameter(torch.cat((
-                torch.zeros(n), torch.linspace(1,126,n), torch.zeros(n)
+                torch.zeros(n), torch.linspace(0,127,n), torch.zeros(n)
                 )))
         else:
             self.bias = nn.Parameter(torch.cat((

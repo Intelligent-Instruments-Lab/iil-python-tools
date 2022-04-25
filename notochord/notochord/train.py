@@ -1,7 +1,6 @@
 from pathlib import Path
 import random
 from collections import defaultdict
-from collections.abc import Mapping
 import itertools as it
 
 from tqdm import tqdm
@@ -13,8 +12,8 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from notepredictor import NotePredictor, MIDIDataset
-from notepredictor.util import get_class_defaults
+from notochord import Notochord, MIDIDataset
+from notochord.util import deep_update, get_class_defaults, gen_masks
 
 class Trainer:
     def __init__(self, 
@@ -23,9 +22,10 @@ class Trainer:
         log_dir,
         data_dir,
         model = None, # dict of model constructor overrides
-        # clamp_time = (0,10), # given to trainer because it needs to go to dataset+model
         batch_size = 128,
         batch_len = 64,
+        batch_len_schedule = None,
+        batch_len_max = 512,
         lr = 3e-4,
         adam_betas = (0.9, 0.999),
         adam_eps = 1e-08, 
@@ -43,13 +43,14 @@ class Trainer:
         self.kw = kw
 
         # get model defaults from model class
-        model_cls = NotePredictor
+        model_cls = Notochord
         if model is None: model = {}
         assert isinstance(model, dict), """
             model keywords are not a dict. check shell/fire syntax
             """
         kw['model'] = model = get_class_defaults(model_cls) | model
         model['num_pitches'] = 128
+        model['num_instruments'] = 272
         # model['time_bounds'] = clamp_time
 
         # assign all arguments to self by default
@@ -138,15 +139,61 @@ class Trainer:
                 self.model.parameters(), self.grad_clip, error_if_nonfinite=True)
         return r
 
-    def get_loss_components(self, result):
+    def get_loss_components(self, result, mask):
+        def reduce(k):
+            return result[k].masked_select(mask).mean()
         return {
-            'pitch_nll': -result['pitch_log_probs'].mean(),
-            'time_nll': -result['time_log_probs'].mean(),
-            'velocity_nll': -result['velocity_log_probs'].mean()
+            'instrument_nll': -reduce('instrument_log_probs'),
+            'pitch_nll': -reduce('pitch_log_probs'),
+            'time_nll': -reduce('time_log_probs'),
+            'velocity_nll': -reduce('velocity_log_probs'),
+            'end_nll': -reduce('end_log_probs'),
         }
 
+    def _validate(self, valid_loader, ar_mask=None):
+        """"""
+        metrics = defaultdict(float)
+        self.model.eval()
+        for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
+            mask = batch['mask'].to(self.device, non_blocking=True)[...,1:]
+            end = batch['end'].to(self.device, non_blocking=True)
+            inst = batch['instrument'].to(self.device, non_blocking=True)
+            pitch = batch['pitch'].to(self.device, non_blocking=True)
+            time = batch['time'].to(self.device, non_blocking=True)
+            vel = batch['velocity'].to(self.device, non_blocking=True)
+            with torch.no_grad():
+                result = self.model(
+                    inst, pitch, time, vel, end, 
+                    validation=True, ar_mask=ar_mask)
+                losses = {k:v.item() for k,v in self.get_loss_components(
+                    result, mask).items()}
+                metrics['loss'] += sum(losses.values())
+                for k,v in losses.items():
+                    metrics[k] += v
+                metrics['instrument_acc'] += (result['instrument_log_probs']
+                    .masked_select(mask).exp().mean().item())
+                metrics['pitch_acc'] += (result['pitch_log_probs']
+                    .masked_select(mask).exp().mean().item())
+                metrics['time_acc_30ms'] += (result['time_acc_30ms']
+                    .masked_select(mask).mean().item())
+                metrics['velocity_acc'] += (result['velocity_log_probs']
+                    .masked_select(mask).exp().mean().item())
+        return {k:v/len(valid_loader) for k,v in metrics.items()}
+
+    def test(self):
+        """Entry point to testing"""
+        # TODO: should make a test split before doing serious
+        # model comparison.
+        loader = DataLoader(
+            self.valid_dataset, self.batch_size,
+            shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
+
+        for perm, mask in gen_masks(self.model.note_dim):
+            r = self._validate(loader, ar_mask=mask)
+            print(perm, r)
+
     def train(self):
-        """TODO: train docstring"""
+        """Entry point to model training"""
         self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
         train_loader = DataLoader(
@@ -157,28 +204,14 @@ class Trainer:
             shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         ##### validation loop
-        def validate():
-            metrics = defaultdict(float)
-            self.model.eval()
-            for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
-                pitch = batch['pitch'].to(self.device, non_blocking=True)
-                time = batch['time'].to(self.device, non_blocking=True)
-                vel = batch['velocity'].to(self.device, non_blocking=True)
-                with torch.no_grad():
-                    result = self.model(pitch, time, vel, validation=True)
-                    losses = {k:v.item() for k,v in self.get_loss_components(result).items()}
-                    metrics['loss'] += sum(losses.values())
-                    for k,v in losses.items():
-                        metrics[k] += v
-                    metrics['pitch_acc'] += result['pitch_log_probs'].exp().mean().item()
-                    metrics['time_acc_30ms'] += result['time_acc_30ms'].mean().item()
-                    metrics['velocity_acc'] += result['velocity_log_probs'].exp().mean().item()
-            self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
+        def run_validation():
+            metrics = self._validate(valid_loader)
+            self.log('valid', metrics)
 
         epoch_size = self.epoch_size or len(train_loader)
 
         # validate at initialization
-        validate()
+        run_validation()
 
         while True:
             self.epoch += 1
@@ -187,47 +220,48 @@ class Trainer:
             self.model.train()
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
-
+                mask = batch['mask'].to(self.device, non_blocking=True)
+                end = batch['end'].to(self.device, non_blocking=True)
+                inst = batch['instrument'].to(self.device, non_blocking=True)
                 pitch = batch['pitch'].to(self.device, non_blocking=True)
                 time = batch['time'].to(self.device, non_blocking=True)
                 vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
-                self.exposure += self.batch_size
-
+                self.exposure += self.batch_size * self.batch_len
                 logs = {}
 
+                ### forward+backward+optimizer step ###
                 self.opt.zero_grad()
-                result = self.model(pitch, time, vel)
-                losses = self.get_loss_components(result)
+                result = self.model(inst, pitch, time, vel, end)
+                losses = self.get_loss_components(result, mask[...,1:])
                 loss = sum(losses.values())
                 loss.backward()
                 logs |= self.process_grad()
                 self.opt.step()
+                ########
 
+                # log loss components
                 logs |= {k:v.item() for k,v in losses.items()}
-                logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
+                # log total loss
                 logs |= {'loss':loss.item()}
+                # log any other returned scalars
+                logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
                 self.log('train', logs)
 
-            validate()
+            run_validation()
+
+            if self.batch_len_schedule is not None:
+                self.batch_len = min(
+                    self.batch_len_max, self.batch_len+self.batch_len_schedule)
+                self.dataset.batch_len = self.batch_len
 
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
-
-def deep_update(a, b):
-    """
-    in-place update a with contents of b, recursively for nested Mapping objects.
-    """
-    for k in b:
-        if isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
-            deep_update(a[k], b[k])
-        else:
-            a[k] = b[k]
 
 class Resumable:
     def __init__(self, checkpoint=None, **kw):
         if checkpoint is not None:
-            d = torch.load(checkpoint)
+            d = torch.load(checkpoint, map_location=torch.device('cpu'))
             # merges sub dicts, e.g. model hyperparameters
             deep_update(d['kw'], kw)
             self._trainer = Trainer(**d['kw'])
@@ -237,6 +271,9 @@ class Resumable:
 
     def train(self):
         self._trainer.train()
+
+    def test(self):
+        self._trainer.test()
 
 Resumable.__doc__ = Trainer.__init__.__doc__
 Resumable.train.__doc__ = Trainer.train.__doc__

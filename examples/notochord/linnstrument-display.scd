@@ -1,4 +1,4 @@
-// in this example, the most likely next pitches (according to NotePredictor)
+// in this example, the most likely next pitches (according to Notochord)
 // are drawn on the Linnstrument as you play
 
 (

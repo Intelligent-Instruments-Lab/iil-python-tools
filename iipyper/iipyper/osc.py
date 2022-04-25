@@ -159,7 +159,7 @@ class OSC():
                     address: full OSC address
                     *args: content of OSC message
                 """
-                print('handler:', client, address)
+                # print('handler:', client, address)
                 if use_kwargs:
                     kwargs = {k:v for k,v in zip(args[::2], args[1::2])}
                     args = []
