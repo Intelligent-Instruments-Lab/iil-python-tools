@@ -262,6 +262,12 @@ class Resumable:
     def __init__(self, checkpoint=None, **kw):
         if checkpoint is not None:
             d = torch.load(checkpoint, map_location=torch.device('cpu'))
+            print(f'loaded checkpoint {checkpoint}')
+            if d['kw'].get('batch_len_schedule') is not None: print("""
+            warning: checkpoints don't track `batch_len`. 
+            be sure to manually set batch_len if resuming a run 
+            using `batch_len_schedule`
+            """)
             # merges sub dicts, e.g. model hyperparameters
             deep_update(d['kw'], kw)
             self._trainer = Trainer(**d['kw'])
