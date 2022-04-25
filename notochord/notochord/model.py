@@ -11,17 +11,24 @@ from .rnn import GenericRNN
 from .distributions import CensoredMixtureLogistic, reweight_top_p
 
 class SineEmbedding(nn.Module):
-    def __init__(self, n, w0=1e-3, interval=1.08):
+    def __init__(self, n, hidden, w0=1e-3, w1=10, scale='log'):
         """
         Args:
-            n (int): number of channels
-            w0 (float): minimum wavelength in seconds
-            interval (float): increase in frequency / decrease in wavelength per channel
+            n (int): number of sinusoids
+            hidden (int): embedding size
+            w0 (float): minimum wavelength
+            w1 (float): maximum wavelength
+            scale (str): if 'log', more wavelengths close to w0
         """
         super().__init__()
-        self.n = n
-        self.register_buffer('fs', interval**(-torch.arange(n)) / w0 * 2 * math.pi)
-        self.proj = nn.Linear(n,n)
+        if scale=='log':
+            w0 = np.log(w0)
+            w1 = np.log(w1)
+        ws = torch.linspace(w0, w1, n)
+        if scale=='log':
+            ws = ws.exp()
+        self.register_buffer('fs', 2 * math.pi / ws)
+        self.proj = nn.Linear(n,hidden)
 
     def forward(self, x):
         x = x[...,None] * self.fs
@@ -58,18 +65,21 @@ class SelfGated(nn.Module):
         return a * b.sigmoid()
 
 class SelfGatedMLP(nn.Module):
-    def __init__(self, input, hidden, output, layers, dropout=0):
+    def __init__(self, input, hidden, output, layers, dropout=0, norm=None):
         super().__init__()
         h = input
         def get_dropout():
             if dropout > 0:
                 return (nn.Dropout(dropout),)
-            else:
-                return tuple()
+            return tuple()
+        def get_norm():
+            if norm=='layer':
+                return (nn.LayerNorm(hidden),)
+            return tuple()
         self.net = []
         for _ in range(layers):
             self.net.append(nn.Sequential(
-                *get_dropout(), nn.Linear(h, hidden*2), SelfGated()))
+                *get_dropout(), nn.Linear(h, hidden*2), SelfGated(), *get_norm()))
             h = hidden
         self.net.append(nn.Linear(hidden, output))
         self.net = nn.Sequential(*self.net)
@@ -140,15 +150,16 @@ class SelfGatedMLP(nn.Module):
 #         return list(x.reshape(n, *h_ctx.shape).unbind(0))
 
 
-class NotePredictor(nn.Module):
+class Notochord(nn.Module):
     # note: use named arguments only for benefit of training script
     def __init__(self, 
             emb_size=256, 
             rnn_hidden=2048, rnn_layers=1, kind='gru', 
             mlp_layers=0,
-            dropout=0.1, 
+            dropout=0.1, norm=None,
             num_pitches=128, 
             num_instruments=272,
+            time_sines=128, vel_sines=128,
             time_bounds=(0,10), time_components=32, time_res=1e-2,
             vel_components=16
             ):
@@ -173,8 +184,9 @@ class NotePredictor(nn.Module):
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
         self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
-        self.time_emb = SineEmbedding(emb_size)
-        self.vel_emb = MixEmbedding(emb_size, (0, 127))
+        self.time_emb = SineEmbedding(time_sines, emb_size, 1e-3, 30, scale='log')
+        # self.vel_emb = MixEmbedding(emb_size, (0, 127))
+        self.vel_emb = SineEmbedding(vel_sines, emb_size, 2, 512, scale='lin')
 
         # RNN backbone
         self.rnn = GenericRNN(kind, 
@@ -189,7 +201,11 @@ class NotePredictor(nn.Module):
         ])
 
         # projection from RNN state to distribution parameters
-        self.h_proj = nn.Linear(rnn_hidden, emb_size)
+        h_proj = []
+        if dropout:
+            h_proj.append(nn.Dropout(dropout))
+        h_proj.append(nn.Linear(rnn_hidden, emb_size))
+        self.h_proj = nn.Sequential(*h_proj)
         # self.projections = nn.ModuleList([
         #     nn.Linear(emb_size, self.instrument_domain),
         #     nn.Linear(emb_size, self.pitch_domain),
@@ -198,13 +214,17 @@ class NotePredictor(nn.Module):
         # ])
         self.projections = nn.ModuleList([
             SelfGatedMLP(
-                emb_size, emb_size, self.instrument_domain, mlp_layers, dropout),
+                emb_size, emb_size, self.instrument_domain, 
+                mlp_layers, dropout, norm),
             SelfGatedMLP(
-                emb_size, emb_size, self.pitch_domain, mlp_layers, dropout),
+                emb_size, emb_size, self.pitch_domain, 
+                mlp_layers, dropout, norm),
             SelfGatedMLP(
-                emb_size, emb_size, self.time_dist.n_params, mlp_layers, dropout),
+                emb_size, emb_size, self.time_dist.n_params,
+                mlp_layers, dropout, norm),
             SelfGatedMLP(
-                emb_size, emb_size, self.vel_dist.n_params, mlp_layers, dropout),
+                emb_size, emb_size, self.vel_dist.n_params, 
+                mlp_layers, dropout, norm),
         ])
 
         self.end_proj = nn.Linear(rnn_hidden, 2)
@@ -235,7 +255,8 @@ class NotePredictor(nn.Module):
             self.vel_emb
         )
         
-    def forward(self, instruments, pitches, times, velocities, ends, validation=False):
+    def forward(self, instruments, pitches, times, velocities, ends,
+            validation=False, ar_mask=None):
         """
         teacher-forced probabilistic loss and diagnostics for training.
 
@@ -245,6 +266,9 @@ class NotePredictor(nn.Module):
             times: FloatTensor[batch, time]
             velocities: FloatTensor[batch, time]
             ends: LongTensor[batch, time]
+            validation: bool (computes some extra diagnostics)
+            ar_mask: Optional[Tensor[note_dim x note_dim]] if None, generate random
+                masks for training
         """
         batch_size, batch_len = pitches.shape
 
@@ -270,9 +294,13 @@ class NotePredictor(nn.Module):
         # always include hidden state, never include same modality,
         # other dependencies are random per time and position
         n = self.note_dim
-        tr = torch.randint(2, (*trim_h.shape[:2],n,n), dtype=torch.bool, device=h.device)
-        tr &= ~torch.eye(n,n, dtype=torch.bool, device=h.device)
-        ar_mask = torch.cat((tr.new_ones(*trim_h.shape[:2],1,n), tr), -2).float()
+        if ar_mask is None:
+            # random binary mask
+            ar_mask = torch.randint(2, (*trim_h.shape[:2],n,n), dtype=torch.bool, device=h.device)
+            # zero diagonal
+            ar_mask &= ~torch.eye(n,n, dtype=torch.bool, device=h.device)
+        # include hidden state
+        ar_mask = torch.cat((ar_mask.new_ones(*ar_mask.shape[:-2],1,n), ar_mask), -2).float()
 
         to_mask = torch.stack((
             self.h_proj(trim_h),
@@ -334,7 +362,7 @@ class NotePredictor(nn.Module):
     def get_samplers(self, 
             instrument_top_p=None, exclude_instrument=None,
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            pitch_top_p=None,
+            pitch_top_p=None, velocity_temp=None,
             sweep_time=False, min_time=None, max_time=None, bias_time=None, time_weight_top_p=None, time_component_temp=None,
             min_vel=None, max_vel=None):
         """
@@ -390,7 +418,7 @@ class NotePredictor(nn.Module):
             trunc = (
                 -np.inf if min_vel is None else min_vel,
                 np.inf if max_vel is None else max_vel)
-            return self.vel_dist.sample(x, truncate=trunc)
+            return self.vel_dist.sample(x, component_temp=velocity_temp, truncate=trunc)
 
         return (
             sample_instrument,
@@ -406,7 +434,8 @@ class NotePredictor(nn.Module):
             pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
             sweep_time=False, min_time=None, max_time=None, bias_time=None, 
             exclude_instrument=None,
-            instrument_temp=None, pitch_temp=None, rhythm_temp=None, timing_temp=None,
+            instrument_temp=None, pitch_temp=None, velocity_temp=None,
+            rhythm_temp=None, timing_temp=None,
             min_vel=None, max_vel=None):
         """
         consume the most recent note and return a prediction for the next note.
@@ -439,6 +468,8 @@ class NotePredictor(nn.Module):
                 deterministic, 1 is 'natural' according to the model
             pitch_temp: if not None, apply top_p sampling to pitch. 0 is
                 deterministic, 1 is 'natural' according to the model
+            velocity_temp: if not None, apply temperature sampling to the velocity
+                component.
             rhythm_temp: if not None, apply top_p sampling to the weighting
                 of mixture components. this affects coarse rhythmic patterns; 0 is
                 deterministic, 1 is 'natural' according to the model
@@ -484,6 +515,7 @@ class NotePredictor(nn.Module):
                     instrument_temp, exclude_instrument,
                     pitch_topk, index_pitch, allow_start, allow_end, 
                     pitch_temp,
+                    velocity_temp,
                     sweep_time, min_time, max_time, bias_time, 
                     rhythm_temp, timing_temp,
                     min_vel, max_vel),
@@ -513,7 +545,7 @@ class NotePredictor(nn.Module):
                         i==2 and any(p is not None for p in (
                             min_time, max_time, rhythm_temp, timing_temp)) or
                         i==3 and any(p is not None for p in (
-                            min_vel, max_vel))
+                            min_vel, max_vel, velocity_temp))
                         ):
                         cons_idx.append(i)
                     else:
@@ -544,6 +576,7 @@ class NotePredictor(nn.Module):
             # print(running_ctx)
             # perm_h_tgt = [h_tgt[i] for i in perm]
             while len(undet_idx):
+                # print(running_ctx.norm())
                 i = undet_idx.pop(0) # index of modality to determine
                 # j = len(det_idx) # number already determined
                 project, sample, embed = modalities[i]

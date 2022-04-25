@@ -8,7 +8,7 @@ Unless otherwise stated, these examples assume a set up of a Bela device connect
 - `cpp-osc-resonator`: controlling a resonant filter
 - `cpp-osc-resonators`: controlling a bank of resonant filters
 - `cpp-osc-gui-sliders`: Bela GUI with sliders controlled by `iipyper`
-- `cpp-osc-notepredictor-trill`: using Trill sensors to control `iipyper` `notepredictor` parameters
+- `cpp-osc-notochord-trill`: using Trill sensors to control `iipyper` `notochord` parameters
 
 ## Pure Data
 - `osc-receive`: receive OSC from `iipyper`

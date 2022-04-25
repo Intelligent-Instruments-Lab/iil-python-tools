@@ -1,5 +1,5 @@
 // in this example the Linnstrument displays an interface to perform pitches
-// by their likelihood under the NotePredictor model instead of by MIDI number
+// by their likelihood under the Notochord model instead of by MIDI number
 
 // the grid in the upper left gives control of pitches from
 // the single most likely (cyan) to least likely (pink).

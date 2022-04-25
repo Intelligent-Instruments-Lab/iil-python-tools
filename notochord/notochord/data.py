@@ -35,6 +35,15 @@ class MIDIDataset(Dataset):
 
         assert len(pitch) == len(time)
 
+        # random transpose avoiding out of range notes
+        transpose_down = min(self.transpose, pitch.min().item())
+        transpose_up = min(self.transpose, 127-pitch.max())
+        transpose = (
+            random.randint(-transpose_down, transpose_up) 
+            * (program<128) # don't transpose drums
+        )
+        pitch = pitch + transpose
+
         unique_melodic = program.masked_select(program<128).unique()
         unique_drum = program.masked_select(program>=128).unique()
 
@@ -47,15 +56,8 @@ class MIDIDataset(Dataset):
             if torch.rand((1,)) < 0.1:
                 r = torch.randint(self.n_anon, size=(1,))
                 program[program==pr] = r+256+self.n_anon
-        # shift from 0-index to general MIDI 1-index; use 0 for start token
+        # shift from 0-index to general MIDI 1-index; reserve 0 for start token
         program += 1
-
-        # random transpose avoiding out of range notes
-        transpose_down = min(self.transpose, pitch.min().item())
-        transpose_up = min(self.transpose, 127-pitch.max())
-        transpose = random.randint(-transpose_down, transpose_up)
-        pitch = pitch + transpose
-
 
         time_margin = 1e-3 # hardcoded since it should match prep script
 
@@ -71,9 +73,13 @@ class MIDIDataset(Dataset):
             (torch.rand_like(time)-0.5) * ((velocity>0) & (velocity<127)).float()
             ).clamp(0., 127.)
         # random velocity curve
-        velocity /= 127
-        velocity = velocity ** (2**(torch.randn((1,))/3))
-        velocity *= 127
+        # take care not to map any positive values closer to 0 than 1
+        to_curve = (velocity >= 0.5)
+        velocity[to_curve] -= 0.5
+        velocity[to_curve] /= 126.5
+        velocity[to_curve] = velocity[to_curve] ** (2**(torch.randn((1,))/3))
+        velocity[to_curve] *= 126.5
+        velocity[to_curve] += 0.5
 
         # sort (using argsort on time and indexing the rest)
         # compute delta time

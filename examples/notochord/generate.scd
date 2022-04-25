@@ -130,6 +130,7 @@ b.sendMsg("/predictor/predict",
 // duet with the model
 // feeds the model's predictions back to it as well as player input
 (
+~velocity_temp = 1;
 ~instrument_temp = 0.95;
 ~pitch_temp = 0.9;
 ~rhythm_temp = 1;
@@ -176,7 +177,8 @@ b.sendMsg("/predictor/reset");
     ~duet.if{kw.add(\exclude_instrument); kw.add(~player_inst)};
     ~global_kws.(kw, [
         \min_time, \max_time, \allow_end,
-        \instrument_temp, \pitch_temp, \rhythm_temp, \timing_temp
+        \instrument_temp, \pitch_temp, \rhythm_temp, \timing_temp,
+        \velocity_temp
     ]);
 
     // kw.postln;
@@ -208,16 +210,19 @@ MIDIdef.program(\switch, {
 // MIDI from controller
 MIDIdef.noteOff(\input_off, {
     arg vel, pitch, chan, src;
-    var t2 = Process.elapsedTime;
-    var dt = t2-(t?(t2-~delay)); //time since last note
+    var t2, dt;
     var inst = ~player_inst;
     var port_chan = ~prog2portchan.(inst);
+
+    // mark time of current note
+    t2 = Process.elapsedTime;
+    dt = t2-(t?(t2-~delay));
+    t = t2;
+    ~player_t = t;
 
     // cancel any pending predictions
     ~clear_pending_events.();
     // ~pending_predictions.postln;
-    //get a new prediction in light of current note
-    ~predict_event.(inst, pitch, dt, 0);
 
     ~player_sound.if{
         // release the previous note
@@ -227,9 +232,8 @@ MIDIdef.noteOff(\input_off, {
         port_chan[\port].noteOff(port_chan[\chan], pitch);
     };
 
-    // mark time of current note
-    t = t2;
-    ~player_t = t;
+    //get a new prediction in light of current note
+    ~predict_event.(inst, pitch, dt, 0);
 
     ~step = ~step + 1;
 
@@ -241,17 +245,19 @@ MIDIdef.noteOff(\input_off, {
 });
 MIDIdef.noteOn(\input_on, {
     arg vel, pitch, chan, src;
-    var t2 = Process.elapsedTime;
-    var dt = t2-(t?(t2-~delay)); //time since last note
+    var t2, dt;
     var inst = ~player_inst;
     var port_chan = ~prog2portchan.(inst);
 
+    // mark time of current note
+    t2 = Process.elapsedTime;
+    dt = t2-(t?(t2-~delay));
+    t = t2;
+    ~player_t = t;
 
     // cancel any pending events
     ~clear_pending_events.();
     // ~pending_predictions.postln;
-    //get a new prediction in light of current note
-    ~predict_event.(inst, pitch, dt, vel);
 
     ~player_sound.if{
         // release the previous note (if not properly released by noteoff)
@@ -266,12 +272,10 @@ MIDIdef.noteOn(\input_on, {
         port_chan[\port].noteOn(port_chan[\chan], pitch, vel);
     };
 
-    // mark time of current note
-    t = t2;
-    ~player_t = t;
+    //get a new prediction in light of current note
+    ~predict_event.(inst, pitch, dt, vel);
 
     ~step = ~step + 1;
-    // ~step = 0;
 
     ~player_held[pitch] = true;
 
@@ -290,127 +294,140 @@ OSCdef(\return, {
     var step = msg[6];
     var port_chan = ~prog2portchan.(inst);
 
-
     // time-to-next note gets 'censored' by the model
     // when over a threshold, in this case 10 seconds,
     // meaning it just predicts 10s rather than any longer time
     var censor = dt>=10.0;
 
     // there may be multiple outstanding queries to the model. when there are, it means
-    // the earlier prediction is already voided, so it should dropped here.
+    // the earlier prediction is already voided, so it should be dropped here.
     var gate_event = (
         ~gate
         // && (~duet && (inst==~player_inst)).not
         && censor.not
-        && (~pending_predictions==1));
+        && (~pending_predictions==1)
+        && (end==0)
+    );
 
     ~pending_predictions = ~pending_predictions-1;
-
     gate_event.if{
-        // cancel any pending notes
+        // cancel any pending events
         // since they are voided by the new prediction
         ~clear_pending_events.();
         // schedule the predicted note
         ~pending_events.add(Routine{
             var t2, dt_actual;
-            (dt-~delay).sleep;
-            (end==1).if{
-                // in this case don't schedule a note, and reset the model
-                // b.sendMsg("/predictor/reset");
-                //release the last note
-                ~synths.do(_.release(1.0));
-                ~release_all.(127);
-                // unset time so next note will have dt=0
-                // t = nil;
-                // \reset.postln
-                \end.postln;
-            }{
-                t2 = Process.elapsedTime;
-                dt_actual = t2 - t;
+            // wait until predicted time
+            // TODO: this could be made exact by passing timestamps thru OSC?
+            (dt-~delay).max(0).sleep;
 
-                // feed model its own prediction as input
-                ~predict_event.(inst, pitch, dt_actual, vel);
+            // get the actual time since last event
+            t2 = Process.elapsedTime;
+            dt_actual = t2 - t;
+            // mark the actual time of current note
+            t = t2;
+            ~machine_t = t;
 
-                // play the current note
-                ~synths[pitch]!?(_.release(0.05));
-                // send MIDI
-                port_chan[\port].noteOff(port_chan[\chan], pitch, 64);
-                (vel > 0).if{
-                    ~use_synth.if{
-                        ~synths[pitch] = Synth(\pluck, [
-                            \freq, pitch.midicps, \vel, vel/127]);
-                    };
-                    // send MIDI
-                    port_chan[\port].noteOn(port_chan[\chan], pitch, vel)
-                }{
-                    ~synths[pitch] = nil;
+            // play the current note
+            ~synths[pitch]!?(_.release(0.05));
+            // send MIDI
+            port_chan[\port].noteOff(port_chan[\chan], pitch, 64);
+            (vel > 0).if{
+                ~use_synth.if{
+                    ~synths[pitch] = Synth(\pluck, [
+                        \freq, pitch.midicps, \vel, vel/127]);
                 };
-                // mark the actual time of current note
-                t = t2;
-                ~machine_t = t;
-                // crudely draw note on piano GUI
-                /*~gui.if{
-                    AppClock.sched(0,{k.keyDown(pitch)});
-                    AppClock.sched(0.2,{k.keyUp(pitch)});
-                }*/
-                // post the current note
-                [\model, step, dt, inst, pitch, vel, end].postln;
+                // send MIDI
+                port_chan[\port].noteOn(port_chan[\chan], pitch, vel)
+            }{
+                ~synths[pitch] = nil;
             };
+
+            // feed model its own prediction as input
+            ~predict_event.(inst, pitch, dt_actual, vel);
+
+            // crudely draw note on piano GUI
+            /*~gui.if{
+            AppClock.sched(0,{k.keyDown(pitch)});
+            AppClock.sched(0.2,{k.keyUp(pitch)});
+            }*/
+            // post the current note
+            [\model, step, dt, inst, pitch, vel].postln;
+
             ~step = ~step+1;
             // [\late, dt_actual-dt].postln;
             nil;
-    }.play(SystemClock))};
+        }.play(SystemClock));
+    };
+    (end==1).if{
+        // b.sendMsg("/predictor/reset");
+        //release the last note
+        ~synths.do(_.release(1.0));
+        ~release_all.(127);
+        // unset time so next note will have dt=0
+        // t = nil;
+        // \reset.postln
+        \end.postln;
+    };
 }, "/prediction", nil);
 )
 
 (
+t = nil;
 ~gate = false;
 ~duet = false;
+~allow_end = true;
 ~instrument_temp = 0.95;
 ~pitch_temp = 0.9;
-~rhythm_temp = 0.9;
-~timing_temp = 0.05;
+~rhythm_temp = 1;
+~timing_temp = 0.1;
+~min_time = nil;//~delay;
+~velocity_temp = 0;
 // send a note manually if you don't have a MIDI controller:
 ~clear_pending_events.();
 ~synths.do(_.release(1.0));
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
-// ~player_inst = 128.rand+1;
-// {MIDIdef.all[\input_on].func.value(128.rand, 128.rand)}.defer(0.1);
-~player_inst = 272;
-{~gate = true; MIDIdef.all[\input_on].func.value(128.rand, 60.rand+30)}.defer(0.2);
+~player_inst = 128.rand+1;
+{~gate = true; MIDIdef.all[\input_on].func.value(127.rand+1, 128.rand)}.defer(0.2);
+// ~player_inst = 272;
+// {~gate = true; MIDIdef.all[\input_on].func.value(128.rand+1, 27.rand+60)}.defer(0.2);
 )
 
 (
+t = nil;
 ~seq!?(_.stop);
 ~gate = false;
 ~duet = true;
-~instrument_temp = 0.9;
+~allow_end = false;
+~instrument_temp = 1;
 ~pitch_temp = 1;
 ~rhythm_temp = 1;
-~timing_temp = 0.05;
+~timing_temp = 0.1;
+~velocity_temp = 1;
 ~clear_pending_events.();
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
 ~player_inst = 272;
+s = 2;
 {~seq = Routine{
     loop{
         MIDIdef.all[\input_on].func.value(100, 51);
         MIDIdef.all[\input_on].func.value(100, 36);
-        0.12.sleep;
+        (0.12*s).sleep;
         MIDIdef.all[\input_off].func.value(0, 51);
-        0.005.sleep;
+        (0.005*s).sleep;
         MIDIdef.all[\input_on].func.value(100, 51);
-        0.125.sleep;
+        (0.125*s).sleep;
         MIDIdef.all[\input_on].func.value(100, 46);
-        0.22.sleep;
+        (0.22*s).sleep;
         MIDIdef.all[\input_off].func.value(0, 36);
-        0.01.sleep;
+        (0.01*s).sleep;
         MIDIdef.all[\input_off].func.value(0, 46);
-        0.02.sleep;
+        (0.02*s).sleep;
     }
 }.play(SystemClock);
-{ ~gate=true }.defer(3);
+{ ~gate=true }.defer(4);
 }.defer(0.5);
 )
 

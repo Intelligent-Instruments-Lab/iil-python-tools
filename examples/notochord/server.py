@@ -5,7 +5,7 @@ Authors:
   Intelligent Instruments Lab 2022
 """
 
-from notepredictor import NotePredictor
+from notochord import Notochord
 
 from iipyper import OSC, run
 
@@ -13,7 +13,7 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
     osc = OSC(host, port)
 
     if checkpoint is not None:
-        predictor = NotePredictor.from_checkpoint(checkpoint)
+        predictor = Notochord.from_checkpoint(checkpoint)
         predictor.eval()
     else:
         predictor = None
@@ -31,7 +31,7 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
         if cmd=="load":
             # `nonlocal` is needed to assign to closed-over name
             nonlocal predictor
-            predictor = NotePredictor.from_checkpoint(**kw)
+            predictor = Notochord.from_checkpoint(**kw)
             predictor.eval()
 
         elif cmd=="predict":

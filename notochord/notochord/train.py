@@ -1,7 +1,6 @@
 from pathlib import Path
 import random
 from collections import defaultdict
-from collections.abc import Mapping
 import itertools as it
 
 from tqdm import tqdm
@@ -13,8 +12,8 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from notepredictor import NotePredictor, MIDIDataset
-from notepredictor.util import get_class_defaults
+from notochord import Notochord, MIDIDataset
+from notochord.util import deep_update, get_class_defaults, gen_masks
 
 class Trainer:
     def __init__(self, 
@@ -44,7 +43,7 @@ class Trainer:
         self.kw = kw
 
         # get model defaults from model class
-        model_cls = NotePredictor
+        model_cls = Notochord
         if model is None: model = {}
         assert isinstance(model, dict), """
             model keywords are not a dict. check shell/fire syntax
@@ -74,7 +73,7 @@ class Trainer:
 
         # Trainer state
         self.iteration = 0
-        self.exposure = 0 # TODO: measure in events, no batch items
+        self.exposure = 0
         self.epoch = 0
 
         # construct model from arguments 
@@ -151,8 +150,50 @@ class Trainer:
             'end_nll': -reduce('end_log_probs'),
         }
 
+    def _validate(self, valid_loader, ar_mask=None):
+        """"""
+        metrics = defaultdict(float)
+        self.model.eval()
+        for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
+            mask = batch['mask'].to(self.device, non_blocking=True)[...,1:]
+            end = batch['end'].to(self.device, non_blocking=True)
+            inst = batch['instrument'].to(self.device, non_blocking=True)
+            pitch = batch['pitch'].to(self.device, non_blocking=True)
+            time = batch['time'].to(self.device, non_blocking=True)
+            vel = batch['velocity'].to(self.device, non_blocking=True)
+            with torch.no_grad():
+                result = self.model(
+                    inst, pitch, time, vel, end, 
+                    validation=True, ar_mask=ar_mask)
+                losses = {k:v.item() for k,v in self.get_loss_components(
+                    result, mask).items()}
+                metrics['loss'] += sum(losses.values())
+                for k,v in losses.items():
+                    metrics[k] += v
+                metrics['instrument_acc'] += (result['instrument_log_probs']
+                    .masked_select(mask).exp().mean().item())
+                metrics['pitch_acc'] += (result['pitch_log_probs']
+                    .masked_select(mask).exp().mean().item())
+                metrics['time_acc_30ms'] += (result['time_acc_30ms']
+                    .masked_select(mask).mean().item())
+                metrics['velocity_acc'] += (result['velocity_log_probs']
+                    .masked_select(mask).exp().mean().item())
+        return {k:v/len(valid_loader) for k,v in metrics.items()}
+
+    def test(self):
+        """Entry point to testing"""
+        # TODO: should make a test split before doing serious
+        # model comparison.
+        loader = DataLoader(
+            self.valid_dataset, self.batch_size,
+            shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
+
+        for perm, mask in gen_masks(self.model.note_dim):
+            r = self._validate(loader, ar_mask=mask)
+            print(perm, r)
+
     def train(self):
-        """TODO: train docstring"""
+        """Entry point to model training"""
         self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
         train_loader = DataLoader(
@@ -163,38 +204,14 @@ class Trainer:
             shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         ##### validation loop
-        def validate():
-            metrics = defaultdict(float)
-            self.model.eval()
-            for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
-                mask = batch['mask'].to(self.device, non_blocking=True)[...,1:]
-                end = batch['end'].to(self.device, non_blocking=True)
-                inst = batch['instrument'].to(self.device, non_blocking=True)
-                pitch = batch['pitch'].to(self.device, non_blocking=True)
-                time = batch['time'].to(self.device, non_blocking=True)
-                vel = batch['velocity'].to(self.device, non_blocking=True)
-                with torch.no_grad():
-                    result = self.model(
-                        inst, pitch, time, vel, end, validation=True)
-                    losses = {k:v.item() for k,v in self.get_loss_components(
-                        result, mask).items()}
-                    metrics['loss'] += sum(losses.values())
-                    for k,v in losses.items():
-                        metrics[k] += v
-                    metrics['instrument_acc'] += (result['instrument_log_probs']
-                        .masked_select(mask).exp().mean().item())
-                    metrics['pitch_acc'] += (result['pitch_log_probs']
-                        .masked_select(mask).exp().mean().item())
-                    metrics['time_acc_30ms'] += (result['time_acc_30ms']
-                        .masked_select(mask).mean().item())
-                    metrics['velocity_acc'] += (result['velocity_log_probs']
-                        .masked_select(mask).exp().mean().item())
-            self.log('valid', {k:v/len(valid_loader) for k,v in metrics.items()})
+        def run_validation():
+            metrics = self._validate(valid_loader)
+            self.log('valid', metrics)
 
         epoch_size = self.epoch_size or len(train_loader)
 
         # validate at initialization
-        validate()
+        run_validation()
 
         while True:
             self.epoch += 1
@@ -232,7 +249,7 @@ class Trainer:
                 logs |= {k:v.item() for k,v in result.items() if v.numel()==1}
                 self.log('train', logs)
 
-            validate()
+            run_validation()
 
             if self.batch_len_schedule is not None:
                 self.batch_len = min(
@@ -241,20 +258,10 @@ class Trainer:
 
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
-def deep_update(a, b):
-    """
-    in-place update a with contents of b, recursively for nested Mapping objects.
-    """
-    for k in b:
-        if isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
-            deep_update(a[k], b[k])
-        else:
-            a[k] = b[k]
-
 class Resumable:
     def __init__(self, checkpoint=None, **kw):
         if checkpoint is not None:
-            d = torch.load(checkpoint)
+            d = torch.load(checkpoint, map_location=torch.device('cpu'))
             # merges sub dicts, e.g. model hyperparameters
             deep_update(d['kw'], kw)
             self._trainer = Trainer(**d['kw'])
@@ -264,6 +271,9 @@ class Resumable:
 
     def train(self):
         self._trainer.train()
+
+    def test(self):
+        self._trainer.test()
 
 Resumable.__doc__ = Trainer.__init__.__doc__
 Resumable.train.__doc__ = Trainer.train.__doc__
