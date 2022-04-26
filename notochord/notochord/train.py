@@ -228,6 +228,7 @@ class Trainer:
                 vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
+                # TODO: use mask instead of batch dims
                 self.exposure += self.batch_size * self.batch_len
                 logs = {}
 
