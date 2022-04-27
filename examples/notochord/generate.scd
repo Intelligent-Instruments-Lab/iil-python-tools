@@ -39,8 +39,6 @@ MIDIdef.noteOn(\input_on, {
     (Process.elapsedTime - perftime).postln;
 }, srcID:~controller);
 )
-
-
 (
 // mapp instruments to channels + buses for the Ableton set
 ~prog2portchan = { arg prog;
@@ -92,6 +90,8 @@ MIDIdef.noteOn(\input_on, {
         port.noteOff(chan, note, vel)}}}
 };
 )
+
+// ~m1.noteOn(12, 60, 64);
 
 /*(
 ~prog2portchan.(257)[\chan]
@@ -176,10 +176,12 @@ b.sendMsg("/predictor/reset");
         val.notNil.if{
             kw.add(name);
             // convert Collections to JSON strings
-            val.isKindOf(Collection).if{val = JSON.stringify(val)};
+            val.isKindOf(Collection).if{
+                val = "%JSON:"++JSON.stringify(val)};
             kw.add(val)}
     }
 };
+
 
 ~predict_event = {
     arg inst, pitch, dt, vel;
@@ -402,7 +404,7 @@ t = nil;
 ~timing_temp = nil;//0.1;
 ~min_time = nil;//~delay;
 ~velocity_temp = nil;//0;
-~include_pitch = nil;//(24..48)*2;
+~include_pitch = (24..48)*2;//nil
 ~clear_pending_events.();
 ~synths.do(_.release(1.0));
 ~release_all.(0);
