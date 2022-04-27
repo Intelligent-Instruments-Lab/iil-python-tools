@@ -20,8 +20,8 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
     else:
         predictor = None
  
-    @osc.kwargs('/predictor/*', json_keys=[
-        'include_pitch', 'exclude_pitch', 'include_instrument', 'exclude_instrument'])
+    @osc.kwargs('/predictor/*')#, json_keys=[
+        # 'include_pitch', 'exclude_pitch', 'include_instrument', 'exclude_instrument'])
     def _(address, **kw):
         """
         Handle OSC messages to Predictor

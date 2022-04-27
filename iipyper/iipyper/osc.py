@@ -35,15 +35,21 @@ from pythonosc.udp_client import SimpleUDPClient
 #         except osc_packet.ParseError:
 #             pass
 
-def do_json(d, k, route):
+def do_json(d, k, json_keys, route):
     v = d[k]
     if not isinstance(v, str): return
-    try:
-        d[k] = json.loads(v)
-    except (TypeError, json.JSONDecodeError) as e:
-        print(f"""
-        warning: JSON decode failed for {route} argument "{k}": {type(e)} {e}
-        """)
+    has_prefix = v.startswith('%JSON:')
+    if has_prefix:
+        v = v[6:]
+    if k in json_keys or has_prefix:
+        try:
+            d[k] = json.loads(v)
+        except (TypeError, json.JSONDecodeError) as e:
+            print(f"""
+            warning: JSON decode failed for {route} argument "{k}": 
+            value: {v}
+            {type(e)} {e}
+            """)
 
 class OSC():
     """
@@ -208,9 +214,8 @@ class OSC():
                 if use_kwargs:
                     kwargs = {k:v for k,v in zip(args[::2], args[1::2])}
                     # JSON conversions
-                    for k in json_keys:
-                        if k in kwargs: 
-                            do_json(kwargs, k, route)
+                    for k in kwargs: 
+                        do_json(kwargs, k, json_keys, route)
                     args = []
                 else:
                     kwargs = {}

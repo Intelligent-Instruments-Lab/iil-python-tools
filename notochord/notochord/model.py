@@ -450,49 +450,75 @@ class Notochord(nn.Module):
         various constraints on the the next note can be requested.
 
         Args:
+            inst: int. instrument id of current note (see return values)
             pitch: int. MIDI number of current note.
-            time: float. elapsed time in seconds since previous note.
-            vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
+            time: float. elapsed time in seconds between current and previous
+                note.
+            vel: float. (possibly dequantized) MIDI velocity from 0-127 
+                inclusive of the current note. hard 0 indicates a note-off event.
+
+            # hard constraints
             fix_*: same as above, but to fix a value for the predicted note.
                 sampled values will always condition on fixed values, so passing
-                `fix_time=0`, for example, will make a probabilistically-sound
-                prediction of a chord tone: "what is the next note given that it 
-                happens immediately after the last one?"
-            pitch_topk: Optional[int]. if not None, instead of sampling pitch, stack
-                the top k most likely pitches along the batch dimension
-            index_pitch: Optional[int]. if not None, deterministically take the nth
-                most likely pitch instead of sampling.
-            allow_end: if False, zero probaility for sampling the end token
-            sweep_time: if True, instead of sampling time, choose a diverse set of
-                times and stack along the batch dimension
+                `fix_instrument=1`, for example, will make the event appropriate
+                for the piano (instrument 1) to play.
+                
+            # partial constraints
+            allow_end: if False, zero probability of sampling the end marker
             min_time, max_time: if not None, truncate the time distribution
-            constrain_pitch: list of pitches to allow sampling, or None
             include_instrument: instrument id(s) to include in sampling.
                 (if not None, all others will be excluded)
             exclude_instrument: instrument id(s) to exclude from sampling.
-            instrument_temp: if not None, apply top_p sampling to instrument. 0 is
-                deterministic, 1 is 'natural' according to the model
             include_pitch: pitch(es) to include in sampling.
                 (if not None, all others will be excluded)
             exclude_pitch: pitch(es) to exclude from sampling.
+            min_vel, max_vel: if not None, truncate the velocity distribution
+
+            # sampling strategies
+            instrument_temp: if not None, apply top_p sampling to instrument. 0 is
+                deterministic, 1 is 'natural' according to the model
             pitch_temp: if not None, apply top_p sampling to pitch. 0 is
                 deterministic, 1 is 'natural' according to the model
             velocity_temp: if not None, apply temperature sampling to the velocity
                 component.
             rhythm_temp: if not None, apply top_p sampling to the weighting
-                of mixture components. this affects coarse rhythmic patterns; 0 is
-                deterministic, 1 is 'natural' according to the model
+                of mixture components. this affects coarse rhythmic patterns;
+                0 is deterministic, 1 is 'natural' according to the model
             timing_temp: if not None, apply temperature sampling to the time
-                component. this affects fine timing; 0 is deterministic and precise,
-                1 is 'natural' according to the model.
-            min_vel, max_vel: if not None, truncate the velocity distribution
+                component. this affects fine timing; 0 is deterministic and 
+                precise, 1 is 'natural' according to the model.
+            index_pitch: Optional[int]. if not None, deterministically take the
+                nth most likely pitch instead of sampling.
+
+            # multiple predictions
+            pitch_topk: Optional[int]. if not None, instead of sampling pitch, 
+                stack the top k most likely pitches along the batch dimension
+            sweep_time: if True, instead of sampling time, choose a diverse set of
+                times and stack along the batch dimension
 
         Returns: dict of
-            'pitch': int. predicted MIDI number of next note.
-            'time': float. predicted time to next note.
+            'end': int. value of 1 indicates the *current* event (the one 
+                passed as arguments to `predict`) was the last event, and the
+                predicted event should *not* be played. if `allow end` is false, 
+                this will always be 0.
+            'step': int. number of steps since calling `reset`.
+            'instrument': int. id of predicted instrument.
+                1-128 are General MIDI standard melodic instruments
+                129-256 are drumkits for MIDI programs 1-128
+                257-264 are 'anonymous' melodic instruments
+                265-272 are 'anonymous' drums
+            'pitch': int. predicted MIDI number of next note, 0-128.
+            'time': float. predicted time to next note in seconds.
             'velocity': float. unquantized predicted velocity of next note.
-            '*_params': tensor. distribution parameters for visualization purposes.
+                0-127; hard 0 indicates a note-off event.
+            '*_params': tensor. distribution parameters for visualization
+                purposes.
+
+            note: `instrument`, `pitch`, `time`, `velocity` may return lists,
+                when using `sweep_time` or `pitch_topk`. that part of the API 
+                is very experimental and likely to break.
         """
+        # validate options:
         if (index_pitch is not None) and (pitch_temp is not None):
             print("warning: `index pitch` overrides `pitch_temp`")
 
@@ -674,7 +700,8 @@ class Notochord(nn.Module):
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
         if start:
-            self.predict(self.instrument_start_token, self.pitch_start_token, 0., 0.)
+            self.predict(
+                self.instrument_start_token, self.pitch_start_token, 0., 0.)
 
     @classmethod
     def from_checkpoint(cls, path):
