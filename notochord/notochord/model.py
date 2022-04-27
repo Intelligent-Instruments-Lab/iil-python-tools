@@ -1,4 +1,5 @@
 import math
+from xml.etree.ElementInclude import include
 
 import numpy as np
 
@@ -9,6 +10,7 @@ import torch.distributions as D
 
 from .rnn import GenericRNN
 from .distributions import CensoredMixtureLogistic, reweight_top_p
+from .util import arg_to_set
 
 class SineEmbedding(nn.Module):
     def __init__(self, n, hidden, w0=1e-3, w1=10, scale='log'):
@@ -360,10 +362,11 @@ class Notochord(nn.Module):
     # TODO: remove allow_end here
     # allow_start should just be False
     def get_samplers(self, 
-            instrument_top_p=None, exclude_instrument=None,
-            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            pitch_top_p=None, velocity_temp=None,
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_weight_top_p=None, time_component_temp=None,
+            instrument_top_p=None, constrain_instrument=None,
+            pitch_topk=None, index_pitch=None, 
+            pitch_top_p=None, constrain_pitch=None,
+            velocity_temp=None,
+            sweep_time=False, min_time=None, max_time=None,time_weight_top_p=None, time_component_temp=None,
             min_vel=None, max_vel=None):
         """
         this method converts the many arguments to `predict` into functions for
@@ -371,18 +374,20 @@ class Notochord(nn.Module):
         """
 
         def sample_instrument(x):
-            if not allow_start:
-                x[...,self.instrument_start_token] = -np.inf
-            if exclude_instrument is not None:
-                x[...,exclude_instrument] = -np.inf
+            if constrain_instrument is not None:
+                preserve_x = x[...,constrain_instrument]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_instrument] = preserve_x
             probs = x.softmax(-1)
             if instrument_top_p is not None:
                 probs = reweight_top_p(probs, instrument_top_p)
             return D.Categorical(probs).sample()
 
         def sample_pitch(x):
-            if not allow_start:
-                x[...,self.pitch_start_token] = -np.inf
+            if constrain_pitch is not None:
+                preserve_x = x[...,constrain_pitch]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_pitch] = preserve_x
             if index_pitch is not None:
                 return x.argsort(-1, True)[...,index_pitch]
             elif pitch_topk is not None:
@@ -411,7 +416,7 @@ class Notochord(nn.Module):
                     -np.inf if min_time is None else min_time,
                     np.inf if max_time is None else max_time)
                 return self.time_dist.sample(x, 
-                    truncate=trunc, bias=bias_time,
+                    truncate=trunc,
                     component_temp=time_component_temp, weight_top_p=time_weight_top_p)
 
         def sample_velocity(x):
@@ -431,9 +436,11 @@ class Notochord(nn.Module):
     def predict(self, 
             inst, pitch, time, vel, 
             fix_instrument=None, fix_pitch=None, fix_time=None, fix_vel=None, 
-            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, 
-            exclude_instrument=None,
+            pitch_topk=None, index_pitch=None,
+            allow_end=False,
+            sweep_time=False, min_time=None, max_time=None,
+            include_instrument=None, exclude_instrument=None,
+            include_pitch=None, exclude_pitch=None,
             instrument_temp=None, pitch_temp=None, velocity_temp=None,
             rhythm_temp=None, timing_temp=None,
             min_vel=None, max_vel=None):
@@ -455,17 +462,19 @@ class Notochord(nn.Module):
                 the top k most likely pitches along the batch dimension
             index_pitch: Optional[int]. if not None, deterministically take the nth
                 most likely pitch instead of sampling.
-            allow_start: if False, zero probability for sampling the start token
             allow_end: if False, zero probaility for sampling the end token
             sweep_time: if True, instead of sampling time, choose a diverse set of
                 times and stack along the batch dimension
             min_time, max_time: if not None, truncate the time distribution
-            bias_time: add this delay to the time 
-                (after applying min/max but before clamping to 0).
-                may be useful for latency correction.
-            exclude_instrument: instrument id to exclude from sampling.
+            constrain_pitch: list of pitches to allow sampling, or None
+            include_instrument: instrument id(s) to include in sampling.
+                (if not None, all others will be excluded)
+            exclude_instrument: instrument id(s) to exclude from sampling.
             instrument_temp: if not None, apply top_p sampling to instrument. 0 is
                 deterministic, 1 is 'natural' according to the model
+            include_pitch: pitch(es) to include in sampling.
+                (if not None, all others will be excluded)
+            exclude_pitch: pitch(es) to exclude from sampling.
             pitch_temp: if not None, apply top_p sampling to pitch. 0 is
                 deterministic, 1 is 'natural' according to the model
             velocity_temp: if not None, apply temperature sampling to the velocity
@@ -500,7 +509,20 @@ class Notochord(nn.Module):
                 self.vel_emb(vel)# 1, 1, emb_size
             ]
             x = sum(embs)
-            
+
+            inst_intervention = any(p is not None for p in (
+                instrument_temp, include_instrument, exclude_instrument))
+
+            pitch_intervention = (pitch_topk or any(p is not None for p in (
+                pitch_temp, include_pitch, exclude_pitch)))
+
+            time_intervention = any(p is not None for p in (
+                min_time, max_time, rhythm_temp, timing_temp))
+
+            vel_intervention = any(p is not None for p in (
+                min_vel, max_vel, velocity_temp))
+
+
             h, new_state = self.rnn(x, self.cell_state)
             for t,new_t in zip(self.cell_state, new_state):
                 t[:] = new_t
@@ -509,14 +531,26 @@ class Notochord(nn.Module):
             # h_ctx = h_parts[0]
             # h_tgt = h_parts[1:]
 
+            constrain_instrument = list((
+                set(range(self.instrument_domain)) - {self.instrument_start_token}
+                if include_instrument is None 
+                else arg_to_set(include_instrument)
+            ) - arg_to_set(exclude_instrument))
+           
+            constrain_pitch = list((
+                set(range(self.pitch_domain)) - {self.pitch_start_token}
+                if include_pitch is None 
+                else arg_to_set(include_pitch)
+            ) - arg_to_set(exclude_pitch))
+
             modalities = list(zip(
                 self.projections,
                 self.get_samplers(
-                    instrument_temp, exclude_instrument,
-                    pitch_topk, index_pitch, allow_start, allow_end, 
-                    pitch_temp,
+                    instrument_temp, constrain_instrument,
+                    pitch_topk, index_pitch,
+                    pitch_temp, constrain_pitch,
                     velocity_temp,
-                    sweep_time, min_time, max_time, bias_time, 
+                    sweep_time, min_time, max_time,
                     rhythm_temp, timing_temp,
                     min_vel, max_vel),
                 self.embeddings,
@@ -539,14 +573,10 @@ class Notochord(nn.Module):
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     if (
-                        i==0 and any(p is not None for p in (
-                            instrument_temp, exclude_instrument)) or
-                        i==1 and (pitch_topk or pitch_temp is not None) or
-                        i==2 and any(p is not None for p in (
-                            min_time, max_time, rhythm_temp, timing_temp)) or
-                        i==3 and any(p is not None for p in (
-                            min_vel, max_vel, velocity_temp))
-                        ):
+                        i==0 and inst_intervention or
+                        i==1 and pitch_intervention or
+                        i==2 and time_intervention or
+                        i==3 and vel_intervention):
                         cons_idx.append(i)
                     else:
                         uncons_idx.append(i)

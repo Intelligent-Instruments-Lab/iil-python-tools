@@ -54,3 +54,13 @@ def deep_update(a, b):
             deep_update(a[k], b[k])
         else:
             a[k] = b[k]
+
+
+def arg_to_set(x):
+    """convert None to empty set, iterable to set, or scalar to set with one item"""
+    if x is None:
+        return set()
+    elif not hasattr(x, '__iter__'):
+        return {x}
+    else:
+        return set(x)

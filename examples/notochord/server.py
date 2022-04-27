@@ -5,6 +5,8 @@ Authors:
   Intelligent Instruments Lab 2022
 """
 
+import json
+
 from notochord import Notochord
 
 from iipyper import OSC, run
@@ -18,7 +20,8 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
     else:
         predictor = None
  
-    @osc.kwargs('/predictor/*')
+    @osc.kwargs('/predictor/*', json_keys=[
+        'include_pitch', 'exclude_pitch', 'include_instrument', 'exclude_instrument'])
     def _(address, **kw):
         """
         Handle OSC messages to Predictor

@@ -1,6 +1,49 @@
+from typing import Tuple
+import time
+import json
+
+from pythonosc import osc_packet
 from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.udp_client import SimpleUDPClient
+
+# leaving this here for now. seems like it may not be useful since nested bundles
+# do not appear to work in sclang.
+# class BundleDispatcher(Dispatcher):
+#     def call_handlers_for_packet(self,
+#              data: bytes, client_address: Tuple[str, int]
+#              ) -> None:
+#         """Override python-osc to handle whole bundles in one callback.
+#             data: Data of packet
+#             client_address: Address of client this packet originated from
+#         """
+#         # Get OSC messages from all bundles or standalone message.
+#         try:
+#             packet = osc_packet.OscPacket(data)
+#             addrs = [msg.message.address for msg in packet.messages]
+#             # get common root address
+#             root_addr = '/root' # TODO
+#             stem_addrs = addrs # TODO
+#             handler = self.handlers_for_address(root_addr)
+#             # TODO: handle time
+#             # times = [msg.time for msg in packet.messages]
+#             fused_message = []
+#             for stem, msg in zip(stem_addrs, packet.messages):
+#                 fused_message.append(stem)
+#                 fused_message.append(msg.message)
+#             handler.invoke(client_address, fused_message)
+#         except osc_packet.ParseError:
+#             pass
+
+def do_json(d, k, route):
+    v = d[k]
+    if not isinstance(v, str): return
+    try:
+        d[k] = json.loads(v)
+    except (TypeError, json.JSONDecodeError) as e:
+        print(f"""
+        warning: JSON decode failed for {route} argument "{k}": {type(e)} {e}
+        """)
 
 class OSC():
     """
@@ -136,16 +179,18 @@ class OSC():
         if self.verbose:
             print(f"OSC message sent {route}:{msg}")
 
-    def _decorate(self, use_kwargs, route):
+    def _decorate(self, use_kwargs, route, json_keys):
         """generic decorator (args and kwargs cases)"""
         if hasattr(route, '__call__'):
             # bare decorator
             f = route
             route = None
+            json_keys = set()
         else:
             f = None
+            json_keys = set(json_keys or [])
 
-        def decorator(f, route=route):
+        def decorator(f, route=route, json_keys=json_keys):
             # default_route = f'/{f.__name__}/*'
             if route is None:
                 route = f'/{f.__name__}'
@@ -162,6 +207,10 @@ class OSC():
                 # print('handler:', client, address)
                 if use_kwargs:
                     kwargs = {k:v for k,v in zip(args[::2], args[1::2])}
+                    # JSON conversions
+                    for k in json_keys:
+                        if k in kwargs: 
+                            do_json(kwargs, k, route)
                     args = []
                 else:
                     kwargs = {}
@@ -186,9 +235,15 @@ class OSC():
         """decorate a function as an args-style OSC handler."""
         return self._decorate(False, route)
 
-    def kwargs(self, route=None):
-        """decorate a function as an kwargs-style OSC handler"""
-        return self._decorate(True, route)
+    def kwargs(self, route=None, json_keys=None):
+        """decorate a function as an kwargs-style OSC handler
+        
+        Args:
+            route: specify the OSC route. if None, use the function name
+            json_keys: names of keyword arguments which should be decoded
+                from JSON, in the case that they arrive as strings
+        """
+        return self._decorate(True, route, json_keys)
 
     def __call__(self, client, *a, **kw):
         """alternate syntax for `send` with client name first"""
