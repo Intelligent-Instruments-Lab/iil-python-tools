@@ -460,9 +460,8 @@ class Notochord(nn.Module):
             # hard constraints
             fix_*: same as above, but to fix a value for the predicted note.
                 sampled values will always condition on fixed values, so passing
-                `fix_time=0`, for example, will make a probabilistically-sound
-                prediction of a chord tone: "what is the next note given that it 
-                happens immediately after the last one?"
+                `fix_instrument=1`, for example, will make the event appropriate
+                for the piano (instrument 1) to play.
                 
             # partial constraints
             allow_end: if False, zero probability of sampling the end marker
