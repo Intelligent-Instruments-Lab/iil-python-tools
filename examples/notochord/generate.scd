@@ -4,19 +4,6 @@
 // TODO: steerable generation. gui for ranges, temperatures;
 // MIDI controller for pitch set
 
-// TODO: keep track of pending model predictions so there are no races
-// whenever a note is played, feed it to the model
-// count the number of pending predictions
-// if a note is played while there are pending predictions, cancel them
-// ideally, would signal python to interrupt computation
-// less complicated: just ignore the results when they come in
-// there are pending predictions and pending notes:
-// pending predictions need to be ignored when they come in
-// pending notes need to be unscheduled
-
-// TODO: pitch blacklist option
-// use case: forbid model from releasing a note held by the player
-
 (
 MIDIClient.init;
 // MIDIClient.destinations
