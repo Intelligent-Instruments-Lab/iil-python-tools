@@ -185,7 +185,7 @@ class OSC():
         if self.verbose:
             print(f"OSC message sent {route}:{msg}")
 
-    def _decorate(self, use_kwargs, route, json_keys):
+    def _decorate(self, use_kwargs, route, return_host, return_port, json_keys):
         """generic decorator (args and kwargs cases)"""
         if hasattr(route, '__call__'):
             # bare decorator
@@ -196,7 +196,9 @@ class OSC():
             f = None
             json_keys = set(json_keys or [])
 
-        def decorator(f, route=route, json_keys=json_keys):
+        def decorator(f, route=route, 
+                return_host=return_host, return_port=return_port, 
+                json_keys=json_keys):
             # default_route = f'/{f.__name__}/*'
             if route is None:
                 route = f'/{f.__name__}'
@@ -228,6 +230,11 @@ class OSC():
                         value returned from OSC handler should start with route
                         """)
                     else:
+                        client = (
+                            client[0] if return_host is None else return_host,
+                            client[1] if return_port is None else return_port
+                        )
+                        print(client, r)
                         self.get_client_by_sender(client).send_message(r[0], r[1:])
 
             self.add_handler(route, handler)
@@ -236,11 +243,11 @@ class OSC():
 
         return decorator if f is None else decorator(f)
     
-    def args(self, route=None):
+    def args(self, route=None, return_host=None, return_port=None):
         """decorate a function as an args-style OSC handler."""
-        return self._decorate(False, route)
+        return self._decorate(False, route, return_host, return_port)
 
-    def kwargs(self, route=None, json_keys=None):
+    def kwargs(self, route=None, return_host=None, return_port=None, json_keys=None):
         """decorate a function as an kwargs-style OSC handler
         
         Args:
@@ -248,7 +255,7 @@ class OSC():
             json_keys: names of keyword arguments which should be decoded
                 from JSON, in the case that they arrive as strings
         """
-        return self._decorate(True, route, json_keys)
+        return self._decorate(True, route, return_host, return_port, json_keys)
 
     def __call__(self, client, *a, **kw):
         """alternate syntax for `send` with client name first"""

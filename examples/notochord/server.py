@@ -8,8 +8,8 @@ Authors:
 from notochord import Notochord
 from iipyper import OSC, run
 
-def main(host="127.0.0.1", port=9999, checkpoint=None):
-    osc = OSC(host, port)
+def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
+    osc = OSC(host, receive_port)
 
     if checkpoint is not None:
         predictor = Notochord.from_checkpoint(checkpoint)
@@ -17,8 +17,7 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
     else:
         predictor = None
  
-    @osc.kwargs('/predictor/*')#, json_keys=[
-        # 'include_pitch', 'exclude_pitch', 'include_instrument', 'exclude_instrument'])
+    @osc.kwargs('/predictor/*', return_port=send_port)
     def _(address, **kw):
         """
         Handle OSC messages to Predictor

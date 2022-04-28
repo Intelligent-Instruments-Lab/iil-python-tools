@@ -179,9 +179,12 @@ class Notochord(nn.Module):
 
         self.time_dist = CensoredMixtureLogistic(
             time_components, time_res, 
+            sharp_bounds=(1e-4,2e3),
             lo=time_bounds[0], hi=time_bounds[1], init='time')
         self.vel_dist = CensoredMixtureLogistic(
-            vel_components, 1.0, lo=0, hi=127, init='velocity')
+            vel_components, 1.0,
+            sharp_bounds=(1e-3,128),
+            lo=0, hi=127, init='velocity')
         
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
