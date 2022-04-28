@@ -48,9 +48,19 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     def test(address, x, y): # route is /test
         print(address, x, y)
         # if a value (besides None) is returned,
-        # it will be sent back as an OSC message to the sender
-        # with the route given as the first element:
+        # it will be sent back as an OSC message to the sender.
+        # you don't have to specify the IP or port of the client this way.
+        # the first element should be the OSC address:
         return '/test', x-y, x+y
+
+    # the above works with SuperCollider, but not with Max
+    # the reply port Max sends doesn't seem to work conveniently.
+    # (you can't make a new udpsend object with that port, it's taken)
+    # but you can specify a new return port like this:
+    @osc.args(return_port=5432)
+    def test2(address, x, y): # route is /test2
+        print(address, x, y)
+        return '/test', x-y, x+y # will send to port 5432
 
     # named arguments as key, value pairs in OSC
     # e.g. an OSC message ["/keyword_example", "arg2", 3]
