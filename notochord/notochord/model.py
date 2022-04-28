@@ -208,12 +208,6 @@ class Notochord(nn.Module):
             h_proj.append(nn.Dropout(dropout))
         h_proj.append(nn.Linear(rnn_hidden, emb_size))
         self.h_proj = nn.Sequential(*h_proj)
-        # self.projections = nn.ModuleList([
-        #     nn.Linear(emb_size, self.instrument_domain),
-        #     nn.Linear(emb_size, self.pitch_domain),
-        #     nn.Linear(emb_size, self.time_dist.n_params, bias=False),
-        #     nn.Linear(emb_size, self.vel_dist.n_params, bias=False)
-        # ])
         self.projections = nn.ModuleList([
             SelfGatedMLP(
                 emb_size, emb_size, self.instrument_domain, 
@@ -432,6 +426,28 @@ class Notochord(nn.Module):
             sample_velocity,
         )
     
+    def feed(self, inst, pitch, time, vel):
+        """consume a note and advance hidden state"""
+        with torch.inference_mode():
+            inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
+            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
+            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
+            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
+
+            embs = [
+                self.instrument_emb(inst),
+                self.pitch_emb(pitch), # 1, 1, emb_size
+                self.time_emb(time),# 1, 1, emb_size
+                self.vel_emb(vel)# 1, 1, emb_size
+            ]
+            x = sum(embs)
+
+            h, new_state = self.rnn(x, self.cell_state)
+            for t,new_t in zip(self.cell_state, new_state):
+                t[:] = new_t
+
+            return h
+
     # TODO: remove pitch_topk and sweep_time?
     def predict(self, 
             inst, pitch, time, vel, 
@@ -522,52 +538,53 @@ class Notochord(nn.Module):
         if (index_pitch is not None) and (pitch_temp is not None):
             print("warning: `index pitch` overrides `pitch_temp`")
 
+        inst_intervention = any(p is not None for p in (
+            instrument_temp, include_instrument, exclude_instrument))
+
+        pitch_intervention = (pitch_topk or any(p is not None for p in (
+            pitch_temp, include_pitch, exclude_pitch)))
+
+        time_intervention = any(p is not None for p in (
+            min_time, max_time, rhythm_temp, timing_temp))
+
+        vel_intervention = any(p is not None for p in (
+            min_vel, max_vel, velocity_temp))
+
+
+        constrain_instrument = list((
+            set(range(self.instrument_domain)) - {self.instrument_start_token}
+            if include_instrument is None 
+            else arg_to_set(include_instrument)
+        ) - arg_to_set(exclude_instrument))
+        if len(constrain_instrument)==0:
+            raise ValueError("""
+            every instrument has been excluded. check values of 
+            `include_instrument` and `exclude_instrument`
+            """)
+        # elif len(constrain_instrument)==1:
+        #     print("""
+        #     warning: recommended to use `fix_instrument`, not 
+        #     `include_instrument` to allow only one specific instrument
+        #     """)
+        
+        constrain_pitch = list((
+            set(range(self.pitch_domain)) - {self.pitch_start_token}
+            if include_pitch is None 
+            else arg_to_set(include_pitch)
+        ) - arg_to_set(exclude_pitch))
+        if len(constrain_pitch)==0:
+            raise ValueError("""
+            every pitch has been excluded. check values of 
+            `include_pitch` and `exclude_pitch`
+            """)
+        elif len(constrain_pitch)==1:
+            print("""
+            warning: recommended to use `fix_pitch`, not 
+            `include_pitch` to allow only one specific pitch
+            """)
+
         with torch.inference_mode():
-            inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
-            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
-            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
-            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
-
-            embs = [
-                self.instrument_emb(inst),
-                self.pitch_emb(pitch), # 1, 1, emb_size
-                self.time_emb(time),# 1, 1, emb_size
-                self.vel_emb(vel)# 1, 1, emb_size
-            ]
-            x = sum(embs)
-
-            inst_intervention = any(p is not None for p in (
-                instrument_temp, include_instrument, exclude_instrument))
-
-            pitch_intervention = (pitch_topk or any(p is not None for p in (
-                pitch_temp, include_pitch, exclude_pitch)))
-
-            time_intervention = any(p is not None for p in (
-                min_time, max_time, rhythm_temp, timing_temp))
-
-            vel_intervention = any(p is not None for p in (
-                min_vel, max_vel, velocity_temp))
-
-
-            h, new_state = self.rnn(x, self.cell_state)
-            for t,new_t in zip(self.cell_state, new_state):
-                t[:] = new_t
-
-            # h_parts = self.h_proj(h).chunk(self.note_dim+1, -1)
-            # h_ctx = h_parts[0]
-            # h_tgt = h_parts[1:]
-
-            constrain_instrument = list((
-                set(range(self.instrument_domain)) - {self.instrument_start_token}
-                if include_instrument is None 
-                else arg_to_set(include_instrument)
-            ) - arg_to_set(exclude_instrument))
-           
-            constrain_pitch = list((
-                set(range(self.pitch_domain)) - {self.pitch_start_token}
-                if include_pitch is None 
-                else arg_to_set(include_pitch)
-            ) - arg_to_set(exclude_pitch))
+            h = self.feed(inst, pitch, time, vel)
 
             modalities = list(zip(
                 self.projections,

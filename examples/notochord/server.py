@@ -5,10 +5,7 @@ Authors:
   Intelligent Instruments Lab 2022
 """
 
-import json
-
 from notochord import Notochord
-
 from iipyper import OSC, run
 
 def main(host="127.0.0.1", port=9999, checkpoint=None):
@@ -36,6 +33,13 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
             nonlocal predictor
             predictor = Notochord.from_checkpoint(**kw)
             predictor.eval()
+
+        elif cmd=="feed":
+            # print(kw)
+            if predictor is None:
+                print('no model loaded')
+            else:
+                r = predictor.feed(**kw) 
 
         elif cmd=="predict":
             if predictor is None:
