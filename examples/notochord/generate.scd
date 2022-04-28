@@ -7,9 +7,9 @@
 (
 MIDIClient.init;
 // MIDIClient.destinations
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1");
-~m2 = MIDIOut.newByName("IAC Driver", "Bus 2");
-~m3 = MIDIOut.newByName("IAC Driver", "Bus 3");
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
+~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
 ~gui = false;
 MIDIIn.connectAll;
 b = NetAddr.new("127.0.0.1", 9999);
