@@ -1,21 +1,23 @@
 // neural harmonizer
 // model answers each note from the controller with a simultaneous note
 
+// TODO: multi-instrument vs same-instrument mode
+// TODO: enque simultaneous events / block waiting for response
+// TODO: triads+
+// TODO: above/below modes
 (
 MIDIClient.init;
 // MIDIClient.destinations
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1");
-~m2 = MIDIOut.newByName("IAC Driver", "Bus 2");
-~m3 = MIDIOut.newByName("IAC Driver", "Bus 3");
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
+~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
 ~gui = false;
 MIDIIn.connectAll;
 b = NetAddr.new("127.0.0.1", 9999);
 ~controller = MIDIClient.sources.detect { |e| e.device.containsi("MPKmini2") }.uid;
 )
 
-
 (
-// TODO: what is with this input latency
 MIDIdef.noteOn(\input_on, {
     arg vel, pitch, chan, src;
     var perftime = Process.elapsedTime;
@@ -25,7 +27,7 @@ MIDIdef.noteOn(\input_on, {
 )
 
 (
-// mapp instruments to channels + buses for the Ableton set
+// map instruments to channels + buses for the Ableton set
 ~prog2portchan = { arg prog;
     case
     {prog==0}{"can't convert start token".postln}
@@ -227,7 +229,7 @@ MIDIdef.noteOff(\input_off, {
     // ~synths[pitch] = nil;
 
     // send MIDI
-    port_chan[\port].noteOff(port_chan[\chan], ~player_inst);
+    port_chan[\port].noteOff(port_chan[\chan], pitch);
 
     // inform model of player release
     ~feed_event.(~player_inst, pitch, dt, 0);
@@ -243,7 +245,7 @@ MIDIdef.noteOff(\input_off, {
 
     // post the current note
     [\player_off, dt, ~player_inst, pitch, 0].postln;
-    [\model_off, 0, ~model_inst, pitch, 0].postln;
+    [\model_off, 0, ~model_inst, harm_pitch, 0].postln;
 
 }, srcID:~controller);
 
@@ -339,7 +341,7 @@ OSCdef(\return, {
 )
 
 (
-// play the first note and let the model take over
+// reset
 t = nil;
 ~gate = false;
 ~pitch_temp = nil;//0.9;
@@ -349,8 +351,11 @@ t = nil;
 ~player_held.clear;
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
-~player_inst = 257;//128.rand+1;
-~model_inst = 258;//128.rand+1;
+~player_inst = 257;
+~model_inst = 258;
+// ~player_inst = 128.rand+1;
+// ~model_inst = 128.rand+1;
+// ~model_inst = 129;
 {~gate = true}.defer(0.2);
 )
 
