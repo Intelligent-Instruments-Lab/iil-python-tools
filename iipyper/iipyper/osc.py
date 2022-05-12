@@ -245,7 +245,7 @@ class OSC():
     
     def args(self, route=None, return_host=None, return_port=None):
         """decorate a function as an args-style OSC handler."""
-        return self._decorate(False, route, return_host, return_port)
+        return self._decorate(False, route, return_host, return_port, None)
 
     def kwargs(self, route=None, return_host=None, return_port=None, json_keys=None):
         """decorate a function as an kwargs-style OSC handler
