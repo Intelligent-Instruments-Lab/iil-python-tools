@@ -57,7 +57,7 @@ class MixEmbedding(nn.Module):
         x = x[...,None]
         return self.hi * x + self.lo * (1-x)
 
-class SelfGated(nn.Module):
+class GLU(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -65,7 +65,7 @@ class SelfGated(nn.Module):
         a, b = x.chunk(2, -1)
         return a * b.sigmoid()
 
-class SelfGatedMLP(nn.Module):
+class GLUMLP(nn.Module):
     def __init__(self, input, hidden, output, layers, dropout=0, norm=None):
         super().__init__()
         h = input
@@ -80,7 +80,7 @@ class SelfGatedMLP(nn.Module):
         self.net = []
         for _ in range(layers):
             self.net.append(nn.Sequential(
-                *get_dropout(), nn.Linear(h, hidden*2), SelfGated(), *get_norm()))
+                *get_dropout(), nn.Linear(h, hidden*2), GLU(), *get_norm()))
             h = hidden
         self.net.append(nn.Linear(hidden, output))
         self.net = nn.Sequential(*self.net)
@@ -188,9 +188,11 @@ class Notochord(nn.Module):
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
         self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
-        self.time_emb = SineEmbedding(time_sines, emb_size, 1e-3, 30, scale='log')
+        self.time_emb = torch.jit.script(SineEmbedding(
+            time_sines, emb_size, 1e-3, 30, scale='log'))
         # self.vel_emb = MixEmbedding(emb_size, (0, 127))
-        self.vel_emb = SineEmbedding(vel_sines, emb_size, 2, 512, scale='lin')
+        self.vel_emb = torch.jit.script(SineEmbedding(
+            vel_sines, emb_size, 2, 512, scale='lin'))
 
         # RNN backbone
         self.rnn = GenericRNN(kind, 
@@ -204,23 +206,22 @@ class Notochord(nn.Module):
             for _ in range(2 if kind=='lstm' else 1)
         ])
 
+        mlp_cls = lambda *a: torch.jit.script(GLUMLP(*a))
         # projection from RNN state to distribution parameters
-        h_proj = []
-        if dropout:
-            h_proj.append(nn.Dropout(dropout))
-        h_proj.append(nn.Linear(rnn_hidden, emb_size))
-        self.h_proj = nn.Sequential(*h_proj)
+        self.h_proj = mlp_cls(
+                rnn_hidden, emb_size, emb_size, 
+                mlp_layers, dropout, norm)
         self.projections = nn.ModuleList([
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.instrument_domain, 
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.pitch_domain, 
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.time_dist.n_params,
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.vel_dist.n_params, 
                 mlp_layers, dropout, norm),
         ])
@@ -236,6 +237,12 @@ class Notochord(nn.Module):
         for n,t in zip(self.cell_state_names(), self.initial_state):
             self.register_buffer(n, t.clone())
         self.step = 0
+
+        # volatile hidden states for caching purposes
+        # TODO: would actually like to lazily compute some values, 
+        #       like h_proj(h), which can be ignored when just feeding,
+        #       but should be computed only once when multiple sampling
+        self.prediction_states = []
 
     def cell_state_names(self):
         return tuple(f'cell_state_{i}' for i in range(len(self.initial_state)))
@@ -355,8 +362,6 @@ class Notochord(nn.Module):
                 )
         return r
 
-    # TODO: remove allow_end here
-    # allow_start should just be False
     def get_samplers(self, 
             instrument_top_p=None, constrain_instrument=None,
             pitch_topk=None, index_pitch=None, 
@@ -429,7 +434,22 @@ class Notochord(nn.Module):
         )
     
     def feed(self, inst, pitch, time, vel):
-        """consume a note and advance hidden state"""
+        """consume an event and advance hidden state
+        
+        Args:
+            inst: int. instrument of current note.
+                0 is start token
+                1-128 are General MIDI instruments
+                129-256 are drumkits (MIDI 1-128 on channel 13)
+                257-264 are 'anonymous' melodic instruments
+                265-272 are 'anonymous' drumkits
+            pitch: int. MIDI pitch of current note.
+                0-127 are MIDI pitches / drums
+                128 is start token
+            time: float. elapsed time in seconds since previous event.
+            vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
+                0 indicates a note-off event
+        """
         with torch.inference_mode():
             inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
@@ -437,7 +457,7 @@ class Notochord(nn.Module):
             vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
 
             embs = [
-                self.instrument_emb(inst),
+                self.instrument_emb(inst), # 1, 1, emb_size
                 self.pitch_emb(pitch), # 1, 1, emb_size
                 self.time_emb(time),# 1, 1, emb_size
                 self.vel_emb(vel)# 1, 1, emb_size
@@ -448,11 +468,13 @@ class Notochord(nn.Module):
             for t,new_t in zip(self.cell_state, new_state):
                 t[:] = new_t
 
-            return h
+            self.prediction_states = [h, self.h_proj(h)]
 
     # TODO: remove pitch_topk and sweep_time?
-    def predict(self, 
-            inst, pitch, time, vel, 
+    # TODO: would rather name query -> predict (or sample)
+    #       and predict -> feed_predict (or feed_sample)
+    # that will break API though
+    def query(self,
             fix_instrument=None, fix_pitch=None, fix_time=None, fix_vel=None, 
             pitch_topk=None, index_pitch=None,
             allow_end=False,
@@ -463,20 +485,13 @@ class Notochord(nn.Module):
             rhythm_temp=None, timing_temp=None,
             min_vel=None, max_vel=None):
         """
-        consume the most recent note and return a prediction for the next note.
+        return a prediction for the next note.
 
         various constraints on the the next note can be requested.
 
         Args:
-            inst: int. instrument id of current note (see return values)
-            pitch: int. MIDI number of current note.
-            time: float. elapsed time in seconds between current and previous
-                note.
-            vel: float. (possibly dequantized) MIDI velocity from 0-127 
-                inclusive of the current note. hard 0 indicates a note-off event.
-
             # hard constraints
-            fix_*: same as above, but to fix a value for the predicted note.
+            fix_*: same as the arguments to feed, but to fix a value for the predicted note.
                 sampled values will always condition on fixed values, so passing
                 `fix_instrument=1`, for example, will make the event appropriate
                 for the piano (instrument 1) to play.
@@ -536,7 +551,7 @@ class Notochord(nn.Module):
                 when using `sweep_time` or `pitch_topk`. that part of the API 
                 is very experimental and likely to break.
         """
-        # validate options:
+         # validate options:
         if (index_pitch is not None) and (pitch_temp is not None):
             print("warning: `index pitch` overrides `pitch_temp`")
 
@@ -551,7 +566,6 @@ class Notochord(nn.Module):
 
         vel_intervention = any(p is not None for p in (
             min_vel, max_vel, velocity_temp))
-
 
         constrain_instrument = list((
             set(range(self.instrument_domain)) - {self.instrument_start_token}
@@ -586,7 +600,7 @@ class Notochord(nn.Module):
             """)
 
         with torch.inference_mode():
-            h = self.feed(inst, pitch, time, vel)
+            h, proj_h = self.prediction_states
 
             modalities = list(zip(
                 self.projections,
@@ -601,7 +615,7 @@ class Notochord(nn.Module):
                 self.embeddings,
                 ))
 
-            context = [self.h_proj(h)] # embedded outputs for autoregressive prediction
+            context = [proj_h] # embedded outputs for autoregressive prediction
             predicted = [] # raw outputs
             params = [] # distribution parameters for visualization
 
@@ -635,17 +649,10 @@ class Notochord(nn.Module):
             iperm = np.argsort(perm) # inverse permutation back to canonical order
 
             md = ['instrument', 'pitch', 'time', 'vel']
-            print('sampling order:', [md[i] for i in perm])
+            # print('sampling order:', [md[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
-
-            # TODO: allow constraints; 
-            # attempt to sort the strongest constraints first
-            # constraints can be:
-            # discrete set, in which case evaluate probs and then sample categorical;
-            # range, in which case truncate;
-            # temperature?
             
             running_ctx = sum(context)
             # print(running_ctx)
@@ -656,7 +663,7 @@ class Notochord(nn.Module):
                 # j = len(det_idx) # number already determined
                 project, sample, embed = modalities[i]
                 # determine value for the next modality
-                hidden = running_ctx.tanh() #self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
+                hidden = running_ctx.tanh()
                 params.append(project(hidden))
                 pred = sample(params[-1])
                 predicted.append(pred)
@@ -707,19 +714,25 @@ class Notochord(nn.Module):
                 'time_params': params[iperm[2]],
                 'vel_params': params[iperm[3]]
             }
+
+    def predict(self, inst, pitch, time, vel, **kw):
+        """
+        call self.feed with *args, then self.query with **kwargs.
+        """
+        self.feed(inst, pitch, time, vel)
+        return self.query(**kw)
     
     def reset(self, start=True):
         """
         resets internal model state.
         Args:
-            start: if True, send a start token through the model with dt=0
-                   but discard the prediction
+            start: if True, send start tokens through the model
         """
         self.step = 0
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
         if start:
-            self.predict(
+            self.feed(
                 self.instrument_start_token, self.pitch_start_token, 0., 0.)
 
     @classmethod

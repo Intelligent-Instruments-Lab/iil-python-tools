@@ -50,7 +50,7 @@ def deep_update(a, b):
     in-place update a with contents of b, recursively for nested Mapping objects.
     """
     for k in b:
-        if isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
+        if k in a and isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
             deep_update(a[k], b[k])
         else:
             a[k] = b[k]
