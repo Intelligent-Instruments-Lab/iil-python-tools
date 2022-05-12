@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class MIDIDataset(Dataset):
-    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl'):
+    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl', test_len=1024):
         #, clamp_time=(-,10)):
         """
         """
@@ -20,6 +20,8 @@ class MIDIDataset(Dataset):
         self.n_anon = 8
         self.prog_start_token = 0
         # self.clamp_time = clamp_time
+        self.testing = False
+        self.max_test_len = 10000
         
     def __len__(self):
         return len(self.files)
@@ -92,7 +94,7 @@ class MIDIDataset(Dataset):
         # pad with start tokens, zeros
         # always pad with batch_len so that end tokens don't appear in a biased
         # location
-        pad = self.batch_len-1#max(0, self.batch_len-len(pitch))
+        pad = 0 if self.testing else self.batch_len-1#max(0, self.batch_len-len(pitch))
         program = torch.cat((
             program.new_full((1,), self.prog_start_token),
             program,
@@ -117,14 +119,18 @@ class MIDIDataset(Dataset):
         if pad > 0:
             mask[-pad:] = False
 
-        # random slice
-        i = random.randint(0, len(pitch)-self.batch_len)
-        program = program[i:i+self.batch_len]
-        pitch = pitch[i:i+self.batch_len]
-        time = time[i:i+self.batch_len]
-        velocity = velocity[i:i+self.batch_len]
-        end = end[i:i+self.batch_len]
-        mask = mask[i:i+self.batch_len]
+        if self.testing:
+            sl = slice(0, self.max_test_len)
+        else:
+            # random slice
+            i = random.randint(0, len(pitch)-self.batch_len)
+            sl = slice(i, i+self.batch_len)
+        program = program[sl]
+        pitch = pitch[sl]
+        time = time[sl]
+        velocity = velocity[sl]
+        end = end[sl]
+        mask = mask[sl]
 
         return {
             'mask':mask,
