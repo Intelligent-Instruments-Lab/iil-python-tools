@@ -1,0 +1,28 @@
+-- Notochord feed and query demo patterns
+
+d "feed"
+  $ ncfeedP (scale "<major minor>" $ run 16)
+  # ncfeedT (range 0 1 $ cos)
+  # ncfeedV (range 0 1 $ sine)
+  # ncfeedI "0 1 2 3"
+
+d "query"
+  $ ncqueryfixP (scale "<major minor>" $ run 16)
+  # ncqueryfixT (range 0 1 $ cos)
+  # ncqueryfixV (range 0 1 $ sine)
+  # ncqueryfixI "0 1 2 3"
+  # ncqueryexcludeI "[0, 1, 2, 3]"
+  # ncqueryincludeP "[0, 1, 2, 3]"
+  # ncqueryexcludeP "[0, 1, 2, 3]"
+  # ncqueryminT (range 0 1 $ cos)
+  # ncquerymaxT (range 0 1 $ sine)
+  # ncqueryminV (range 0 1 $ cos)
+  # ncquerymaxV (range 0 1 $ sine)
+  # ncquerytempI (range 0 1 $ cos)
+  # ncquerytempP (range 0 1 $ sine)
+  # ncquerytempT (range 0 1 $ cos)
+  # ncquerytempR (range 0 1 $ sine)
+  # ncquerytempV (range 0 1 $ cos)
+  # ncqueryindexP "[0, 1, 2, 3]"
+  # ncquerytopP "[0, 1, 2, 3]"
+  # ncquerysweepT "<0 1>"
