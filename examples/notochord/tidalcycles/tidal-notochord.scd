@@ -159,6 +159,8 @@ OSCdef(\from_tidal, {
     });
 
     // schedule note-on
+    // by the time this happens, the query_return OSCdef should have
+    // completed the event (if it needed a query to notochord)
     SystemClock.schedAbs(time, {
         // send to the synthesizer (MIDI bus or hacked dirth synth?)
         \note_on.postln; event.postln;
