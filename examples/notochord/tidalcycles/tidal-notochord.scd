@@ -10,7 +10,8 @@ thisProcess.openUDPPort(6789); // from tidal
 //     ~dirt.start(57120);
 // };
 // )
-
+//
+// ~dirt.soundLibrary.getEvent('matrix_bass', 1)
 
 
 // for sending MIDI to ableton
@@ -85,10 +86,59 @@ MIDIClient.init;
 };
 )
 
-// OSCdef.trace(false);
+// for sending MIDI to fluidsynth
+// fluidsynth -a coreaudio -m coremidi -v -o midi.autoconnect=1 -o synth.midi-bank-select=mma ~/Downloads/FluidR3_GM_GS.sf2
+(
+~channel_lru = LinkedList.fill(16, {arg i; i});
+~inst_channels = TwoWayIdentityDictionary.new;
+~sema = Semaphore(1);
+
+MIDIClient.init;
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+
+~release_all = {arg vel=0;
+    [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
+        port.noteOff(chan, note, vel)}}}
+};
+~midi_send = {arg inst, pitch, vel;
+    var channel;
+    ~sema.wait;
+    // check if this instrument has a channel
+    channel = ~inst_channels.at(inst);
+    channel.isNil.if{
+        // if not get least recently used channel
+        channel = ~channel_lru.popFirst;
+        // and change the bank+program
+        ((inst>128)&&(inst<=256))||(inst>=265).if{
+            ~m1.control(channel, 0, 1); //drum
+            ~m1.control(channel, 32, 0);
+            ~m1.program(channel, inst-128); //program
+        }{
+            ~m1.control(channel, 0, 0); //melodic
+            ~m1.control(channel, 32, 0);
+            ~m1.program(channel, inst-1); //program
+        };
+        // TODO: anonymous instruments?
+
+    }{
+        ~channel_lru.remove(channel)
+    };
+    // send the event
+    (vel>0).if{
+        ~m1.noteOn(channel, pitch, vel);
+    }{
+        ~m1.noteOff(channel, pitch);
+    };
+    // update the inst / channel mappings
+    ~channel_lru.add(channel);
+    ~inst_channels.remove(channel);
+    ~inst_channels[inst] = channel;
+    ~sema.signal;
+};
+)
 
 (
-~oLatency = 0.1; // must match value at tidal boot
+~oLatency = 0.1; // should match value at tidal boot
 ~ncLatency = ~oLatency-0.02; // slightly shorter than oLatency
 ~last_t = Process.elapsedTime;
 
@@ -101,11 +151,12 @@ OSCdef(\from_tidal, {
     var args = Dictionary.newFrom(msg[1..]);
     var delta = args[\delta] * (args[\legato]?1);
     // `time` is the start time
-    // args[\delta] is the duration
-    \tidal_feed.postln;
-    time.postln;
+    // delta is the duration
+
+    // \tidal_feed.postln;
+    // time.postln;
     // [time - Process.elapsedTime].postln;
-    args.postln;
+    // args.postln;
 
     ((args[\ncreset]?0) > 0).if{
         \reset.postln;
@@ -117,14 +168,17 @@ OSCdef(\from_tidal, {
 
         // note-on events should arrive from tidal in the order they happen
         // but note-offs do not, since they are implicit in duration of notes
-        // the only guarantee is nothing needs to happen sooner than tidal's
-        // oLatency parameter
+        // the only guarantee is they won't needs to happen sooner than tidal's
+        // oLatency parameter, since that's the soonest a new note-on can occur
         // so we can schedule all note-on and note-offs as soon as they arrive
         // (without all sub-events filled in, possibly)
 
         // anthing scheduled sooner than ncLatency (e.g. 100ms)
         // is 'frozen' and ready to (query_)feed notochord.
 
+        // so we will schedule notochord processing to happen ~ncLatency
+        // before the note-on,
+        // ensuring the event gets updated before it is time to play it
         ~schedule_events.(
             time, delta, args[\ncinst], args[\ncpitch], args[\ncvel]
         );
@@ -134,7 +188,7 @@ OSCdef(\from_tidal, {
 
 // create event handle,
 // schedule processing by notochord,
-// and schedule triggering the event
+// and schedule triggering the note-on event and corresponding note-off
 ~schedule_events = {
     arg time, delta, inst, pitch, vel;
 
@@ -142,13 +196,13 @@ OSCdef(\from_tidal, {
     var event = (inst:inst?(-1), pitch:pitch?(-1), vel:vel?(-1));
     ~events[handle] = event;
     ~event_idx = ~event_idx+1;
-    ("scheduling event "++~event_idx).postln;
+    ("scheduling event "++handle).postln;
 
     // schedule notochord processing
     SystemClock.schedAbs(time-~ncLatency, {
         // compute dt from previous event
         event[\time] = time - ~last_t;
-        \processing.postln; event.postln;
+        ("processing event "++handle).postln; event.postln;
         ~last_t = time;
         (event[\time]<0).if{"warning: dt < 0".postln};
 
@@ -173,7 +227,7 @@ OSCdef(\from_tidal, {
     // completed the event (if it needed a query to notochord)
     SystemClock.schedAbs(time, {
         // send to the synthesizer (MIDI bus or hacked dirth synth?)
-        \note_on.postln; event.postln;
+        ("starting note "++handle).postln; event.postln;
         ~any_missing.(event).if{
             "incomplete note-on".postln;
         }{
@@ -186,7 +240,7 @@ OSCdef(\from_tidal, {
     // in the future
     SystemClock.schedAbs(time+delta, {
         // send to the synthesizer (MIDI bus or hacked dirth synth?)
-        \note_off.postln; event.postln;
+        ("ending note "++handle).postln; event.postln;
         ~any_missing.(event).if{
             "incomplete note-off".postln;
         }{
@@ -226,6 +280,8 @@ OSCdef(\from_python, {
     arg msg, time, src;
     var args = Dictionary.newFrom(msg[1..]);
     var event = ~events[args[\handle]];
+
+    ("updating event "++args[\handle]).postln;
 
     // update the event
     event[\inst] = args[\instrument];
