@@ -30,6 +30,7 @@ ncOSCSpecs = [
 let ncinst = pI "ncinst"
     ncpitch = pI "ncpitch"
     ncvel = pF "ncvel"
+    ncreset = pI "ncreset"
     -- ncfeed i p t v = ncfeedI i # ncfeedP p # ncfeedT t # ncfeedV v
 :}
 

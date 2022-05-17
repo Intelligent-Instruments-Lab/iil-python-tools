@@ -48,7 +48,7 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
             else:
                 r = predictor.query_feed(**kw) 
                 return ('/notochord/query_return', 
-                    *np.ravel(list(r.items())))
+                    *[x for pair in r.items() for x in pair])
 
         elif cmd=="predict":
             if predictor is None:
