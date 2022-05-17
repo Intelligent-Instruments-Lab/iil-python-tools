@@ -12,6 +12,11 @@ MIDIClient.init;
 ~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
 ~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
 ~prog2portchan = { arg prog;
+    \inst.postln;
+    prog.postln;
+    prog.class.postln;
+    (prog-1 /8).asInteger.postln;
+    (prog-1 %8).asInteger.postln;
     case
     {prog==0}{"can't convert start token".postln}
     {prog<=128}{
@@ -64,23 +69,14 @@ MIDIClient.init;
     var port = port_chan[\port];
     var chan = port_chan[\chan];
     (vel>0).if{
-        port.noteOn(chan, pitch, vel.max(1));
+        port.noteOn(chan, pitch, vel);
     }{
         port.noteOff(chan, pitch);
     }
-}
+};
 )
 
-OSCdef.trace(false);
-
-
-// ok so how to actually 'schedule' things?
-// SystemClock one-offs should do?
-// schedule notochord-processing of each event for time of
-//    oLatency before occurence
-// also schedule the actual event to occur
-// and set up a handle for the OSC return handler to
-// fill in any predicted fields
+// OSCdef.trace(false);
 
 (
 ~oLatency = 0.1; // must match value at tidal boot
@@ -96,47 +92,41 @@ OSCdef(\from_tidal, {
     var args = Dictionary.newFrom(msg[1..]);
     // `time` is the start time
     // args[\delta] is the duration
-    \from_tidal.postln;
+    \tidal_feed.postln;
     time.postln;
     // [time - Process.elapsedTime].postln;
     args.postln;
 
-    // note-on events should arrive from tidal in the order they happen
-    // but note-offs do not, since they are implicit in duration of notes
-    // the only guarantee is nothing needs to happen sooner than tidal's
-    // oLatency parameter
-    // so we can schedule all note-on and note-offs as soon as they arrive
-    // (without all sub-events filled in, possibly)
+    ((args[\ncreset]?0) > 0).if{
+        \reset.postln;
+        SystemClock.schedAbs(time-~ncLatency, {
+            ~python.sendMsg("/notochord/reset");
+            ~release_all.(0);
+        });
+    }{
 
-    // anthing scheduled sooner than ncLatency (e.g. 100ms)
-    // is 'frozen' and ready to (query_)feed notochord.
+        // note-on events should arrive from tidal in the order they happen
+        // but note-offs do not, since they are implicit in duration of notes
+        // the only guarantee is nothing needs to happen sooner than tidal's
+        // oLatency parameter
+        // so we can schedule all note-on and note-offs as soon as they arrive
+        // (without all sub-events filled in, possibly)
 
-    // schedule note-on
-    ~schedule_event.(
-        time, args[\ncinst], args[\ncpitch], args[\ncvel]
-    );
-    // schedule note-off
-    ~schedule_event.(
-        time+args[\delta], args[\ncinst], args[\ncpitch], 0
-    );
+        // anthing scheduled sooner than ncLatency (e.g. 100ms)
+        // is 'frozen' and ready to (query_)feed notochord.
 
-    // pop those off in order of occurence, and call feed or query_feed
-    // in the case of query_feed, pass in some handle which tells the
-    // return OSCdef where to put the result in the scheduler
-
-    // finally pop completed events as they cross the current time,
-
-
-    //when instrument, pitch or velocity is negative or nil,
-    //query notochord
+        ~schedule_events.(
+            time, args[\delta], args[\ncinst], args[\ncpitch], args[\ncvel]
+        );
+    }
 
 }, "/notochord/tidal_feed");
 
 // create event handle,
 // schedule processing by notochord,
 // and schedule triggering the event
-~schedule_event = {
-    arg time, inst, pitch, vel;
+~schedule_events = {
+    arg time, delta, inst, pitch, vel;
 
     var handle = ~event_idx.asSymbol;
     var event = (inst:inst?(-1), pitch:pitch?(-1), vel:vel?(-1));
@@ -153,7 +143,7 @@ OSCdef(\from_tidal, {
         (event[\time]<0).if{"warning: dt < 0".postln};
 
         // if any parts not determined
-        (event.collect(_<0).values.reduce('||')).if{
+        ~any_missing.(event).if{
             // query_feed
             // include handle to event for writing the result
             ~python.sendMsg(
@@ -168,12 +158,34 @@ OSCdef(\from_tidal, {
         }
     });
 
-    // schedule event
+    // schedule note-on
     SystemClock.schedAbs(time, {
         // send to the synthesizer (MIDI bus or hacked dirth synth?)
-        \playing.postln; event.postln;
+        \note_on.postln; event.postln;
+        ~any_missing.(event).if{
+            "incomplete note-on".postln;
+        }{
+            ~midi_send.(event[\inst], event[\pitch], event[\vel]);
+        }
     });
 
+    // schedule note-off: fully determined once note-on is, since timing
+    // comes from tidal. may revisit if allowing notochord to do micro-timing
+    // in the future
+    SystemClock.schedAbs(time+delta, {
+        // send to the synthesizer (MIDI bus or hacked dirth synth?)
+        \note_off.postln; event.postln;
+        ~any_missing.(event).if{
+            "incomplete note-off".postln;
+        }{
+            ~midi_send.(event[\inst], event[\pitch], 0);
+        }
+    });
+
+};
+// check if any sub-events not predicted yet
+~any_missing = {arg event;
+    event.collect(_<0).values.reduce('||')
 };
 
 // convert an event (constructed in schedule_event from data received from tidal)
@@ -181,9 +193,17 @@ OSCdef(\from_tidal, {
 ~event_to_query = {
     arg event;
     var query = List[];
+    // if instrument is given
     (event[\inst]>=0).if{query.add(\fix_instrument); query.add(event[\inst])};
+    // if pitch is given
     (event[\pitch]>=0).if{query.add(\fix_pitch); query.add(event[\pitch])};
-    (event[\vel]>=0).if{query.add(\fix_vel); query.add(event[\vel])};
+    // if velocity is given
+    (event[\vel]>=0).if{
+        query.add(\fix_vel); query.add(event[\vel])
+    }{
+        // only predicting note-ons
+        query.add(\min_vel); query.add(1)
+    };
     query.add(\fix_time); query.add(event[\time]);
     query
 };
@@ -202,7 +222,6 @@ OSCdef(\from_python, {
 
     ~events.removeAt(\handle);
 
-
     // TODO: spit a warning if it trying to update
     //  an event which should have happened already)
     // (thisThread.seconds > ...).if{
@@ -211,4 +230,10 @@ OSCdef(\from_python, {
 
 }, "notochord/query_return");
 
+)
+
+
+(
+~python.sendMsg("/notochord/reset");
+~release_all.(0);
 )

@@ -9,7 +9,7 @@ p "choosepitch"
 
 hush
 
-p "chooseinst" 
+p "chooseinst"
   $ ncinst "-1"--"7 [-1]@7"
   <| ncpitch (run 8 + 48)
   # ncvel (range 30 120 $ sine)
