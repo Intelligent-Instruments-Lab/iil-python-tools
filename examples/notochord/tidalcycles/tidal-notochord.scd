@@ -8,8 +8,9 @@ thisProcess.openUDPPort(6789); // from tidal
 //     ~dirt = SuperDirt.new;
 //     ~dirt.loadSoundFiles("~/Music/sample/dirt/*");
 //     ~dirt.start(57120);
-// }
+// };
 // )
+
 
 
 // for sending MIDI to ableton

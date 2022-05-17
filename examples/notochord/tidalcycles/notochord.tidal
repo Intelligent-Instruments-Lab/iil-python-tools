@@ -1,6 +1,8 @@
 -- Notochord feed and query demo patterns
 :set
 
+-- notochord chooses the pitch,
+-- anchored by the mallet at MIDI pitch 48
 p "choosepitch" 
   $ ncinst "7 [9*3 [17 25]]"
   # ncpitch "-1 [48 -1]"
@@ -10,12 +12,20 @@ p "choosepitch"
 
 hush
 
+-- notochord chooses the instrumentation
 p "chooseinst"
-  $ ncinst "-1"--"7 [-1]@7"
+  $ ncinst "-1"
   <| ncpitch (run 8 + 48)
   # ncvel (range 30 120 $ sine)
   # cps 1
   # legato 0.5
+
+-- drums; notochord chooses the velocities
+p "choosevel"
+  $ ncinst "129"
+  <| ncpitch "[36*4, 56*8, [~ 38]*2]"
+  # cps 1
+  # legato 1
 
 hush
 
