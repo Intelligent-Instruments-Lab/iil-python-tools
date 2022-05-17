@@ -5,7 +5,8 @@ p "choosepitch"
   $ ncinst "7 [9*3 [17 25]]"
   # ncpitch "-1 [48 -1]"
   # ncvel (range 30 120 $ sine)
-  # cps 1
+  # cps 1 
+  # legato 4
 
 hush
 
@@ -14,6 +15,7 @@ p "chooseinst"
   <| ncpitch (run 8 + 48)
   # ncvel (range 30 120 $ sine)
   # cps 1
+  # legato 0.5
 
 hush
 

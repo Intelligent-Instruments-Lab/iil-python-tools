@@ -3,6 +3,14 @@ thisProcess.openUDPPort(6789); // from tidal
 ~python = NetAddr.new("127.0.0.1", 9999); // to python
 )
 
+// (
+// s.waitForBoot{
+//     ~dirt = SuperDirt.new;
+//     ~dirt.loadSoundFiles("~/Music/sample/dirt/*");
+//     ~dirt.start(57120);
+// }
+// )
+
 
 // for sending MIDI to ableton
 (
@@ -90,6 +98,7 @@ MIDIClient.init;
 OSCdef(\from_tidal, {
     arg msg, time, src;
     var args = Dictionary.newFrom(msg[1..]);
+    var delta = args[\delta] * (args[\legato]?1);
     // `time` is the start time
     // args[\delta] is the duration
     \tidal_feed.postln;
@@ -116,7 +125,7 @@ OSCdef(\from_tidal, {
         // is 'frozen' and ready to (query_)feed notochord.
 
         ~schedule_events.(
-            time, args[\delta], args[\ncinst], args[\ncpitch], args[\ncvel]
+            time, delta, args[\ncinst], args[\ncpitch], args[\ncvel]
         );
     }
 
@@ -144,14 +153,14 @@ OSCdef(\from_tidal, {
 
         // if any parts not determined
         ~any_missing.(event).if{
-            // query_feed
+            // query_feed notochord
             // include handle to event for writing the result
             ~python.sendMsg(
                 "/notochord/query_feed", \handle, handle,
                 *~event_to_query.(event)
             )
         }{
-            // else feed
+            // else just feed notochord
             ~python.sendMsg(
                 "/notochord/feed", *event.asPairs
             )
@@ -232,6 +241,8 @@ OSCdef(\from_python, {
 
 }, "notochord/query_return");
 
+~python.sendMsg("/notochord/reset");
+~release_all.(0);
 )
 
 
