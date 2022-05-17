@@ -1,12 +1,12 @@
 -- Notochord feed and query demo patterns
+:set
 
-d "feed"
-  $ ncfeedP (scale "<major minor>" $ run 16)
-  # ncfeedT (range 0 1 $ cos)
-  # ncfeedV (range 0 1 $ sine)
-  # ncfeedI "0 1 2 3"
+p "feed" 
+  $ ncfeedI "1 9 17 25"
+  # ncfeedP (run 16 + 48)
+  # ncfeedV (range 1 127 $ sine)
 
-d "query"
+p "query"
   $ ncqueryfixP (scale "<major minor>" $ run 16)
   # ncqueryfixT (range 0 1 $ cos)
   # ncqueryfixV (range 0 1 $ sine)
@@ -26,3 +26,5 @@ d "query"
   # ncqueryindexP "[0, 1, 2, 3]"
   # ncquerytopP "[0, 1, 2, 3]"
   # ncquerysweepT "<0 1>"
+
+hush

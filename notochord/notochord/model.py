@@ -483,7 +483,8 @@ class Notochord(nn.Module):
             include_pitch=None, exclude_pitch=None,
             instrument_temp=None, pitch_temp=None, velocity_temp=None,
             rhythm_temp=None, timing_temp=None,
-            min_vel=None, max_vel=None):
+            min_vel=None, max_vel=None,
+            handle=None, return_params=False):
         """
         return a prediction for the next note.
 
@@ -528,6 +529,11 @@ class Notochord(nn.Module):
                 stack the top k most likely pitches along the batch dimension
             sweep_time: if True, instead of sampling time, choose a diverse set of
                 times and stack along the batch dimension
+
+            # other
+            handle: an event ID to be included in the returned 
+                dict, if not None
+            return_params: if True, return distribution parameters
 
         Returns: dict of
             'end': int. value of 1 indicates the *current* event (the one 
@@ -702,25 +708,51 @@ class Notochord(nn.Module):
                 end = end.item()
 
             self.step += 1
-            return {
+            r = {
                 'end': end,
                 'step': self.step,
                 'instrument': pred_inst,
                 'pitch': pred_pitch, 
                 'time': pred_time,
                 'velocity': pred_vel,
-                'inst_params': params[iperm[0]],
-                'pitch_params': params[iperm[1]],
-                'time_params': params[iperm[2]],
-                'vel_params': params[iperm[3]]
             }
 
+            if handle is not None:
+                r['handle'] = handle
+
+            if return_params:
+                r |= {
+                    'inst_params': params[iperm[0]],
+                    'pitch_params': params[iperm[1]],
+                    'time_params': params[iperm[2]],
+                    'vel_params': params[iperm[3]]
+                }
+
+            return r
+
+
     def predict(self, inst, pitch, time, vel, **kw):
+        """
+        DEPRECATED: alias for feed_query
+        """
+        self.feed(inst, pitch, time, vel)
+        return self.query(**kw)
+
+    def feed_query(self, inst, pitch, time, vel, **kw):
         """
         call self.feed with *args, then self.query with **kwargs.
         """
         self.feed(inst, pitch, time, vel)
         return self.query(**kw)
+
+    def query_feed(self, *a, **kw):
+        """
+        call self.query with *args **kwargs, then self.feed with result,
+            and return result
+        """
+        r = self.query(*a, **kw)
+        self.feed(r['instrument'], r['pitch'], r['time'], r['velocity'])
+        return r
     
     def reset(self, start=True):
         """
