@@ -3,12 +3,13 @@ import math
 import numpy as np
 
 import torch
-from torch import logit, nn
+from torch import nn
 import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
 from .distributions import CensoredMixtureLogistic, reweight_top_p
+from .util import arg_to_set
 
 class SineEmbedding(nn.Module):
     def __init__(self, n, hidden, w0=1e-3, w1=10, scale='log'):
@@ -56,7 +57,7 @@ class MixEmbedding(nn.Module):
         x = x[...,None]
         return self.hi * x + self.lo * (1-x)
 
-class SelfGated(nn.Module):
+class GLU(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -64,7 +65,7 @@ class SelfGated(nn.Module):
         a, b = x.chunk(2, -1)
         return a * b.sigmoid()
 
-class SelfGatedMLP(nn.Module):
+class GLUMLP(nn.Module):
     def __init__(self, input, hidden, output, layers, dropout=0, norm=None):
         super().__init__()
         h = input
@@ -79,7 +80,7 @@ class SelfGatedMLP(nn.Module):
         self.net = []
         for _ in range(layers):
             self.net.append(nn.Sequential(
-                *get_dropout(), nn.Linear(h, hidden*2), SelfGated(), *get_norm()))
+                *get_dropout(), nn.Linear(h, hidden*2), GLU(), *get_norm()))
             h = hidden
         self.net.append(nn.Linear(hidden, output))
         self.net = nn.Sequential(*self.net)
@@ -177,16 +178,21 @@ class Notochord(nn.Module):
 
         self.time_dist = CensoredMixtureLogistic(
             time_components, time_res, 
+            sharp_bounds=(1e-4,2e3),
             lo=time_bounds[0], hi=time_bounds[1], init='time')
         self.vel_dist = CensoredMixtureLogistic(
-            vel_components, 1.0, lo=0, hi=127, init='velocity')
+            vel_components, 1.0,
+            sharp_bounds=(1e-3,128),
+            lo=0, hi=127, init='velocity')
         
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
         self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
-        self.time_emb = SineEmbedding(time_sines, emb_size, 1e-3, 30, scale='log')
+        self.time_emb = torch.jit.script(SineEmbedding(
+            time_sines, emb_size, 1e-3, 30, scale='log'))
         # self.vel_emb = MixEmbedding(emb_size, (0, 127))
-        self.vel_emb = SineEmbedding(vel_sines, emb_size, 2, 512, scale='lin')
+        self.vel_emb = torch.jit.script(SineEmbedding(
+            vel_sines, emb_size, 2, 512, scale='lin'))
 
         # RNN backbone
         self.rnn = GenericRNN(kind, 
@@ -200,29 +206,22 @@ class Notochord(nn.Module):
             for _ in range(2 if kind=='lstm' else 1)
         ])
 
+        mlp_cls = lambda *a: torch.jit.script(GLUMLP(*a))
         # projection from RNN state to distribution parameters
-        h_proj = []
-        if dropout:
-            h_proj.append(nn.Dropout(dropout))
-        h_proj.append(nn.Linear(rnn_hidden, emb_size))
-        self.h_proj = nn.Sequential(*h_proj)
-        # self.projections = nn.ModuleList([
-        #     nn.Linear(emb_size, self.instrument_domain),
-        #     nn.Linear(emb_size, self.pitch_domain),
-        #     nn.Linear(emb_size, self.time_dist.n_params, bias=False),
-        #     nn.Linear(emb_size, self.vel_dist.n_params, bias=False)
-        # ])
+        self.h_proj = mlp_cls(
+                rnn_hidden, emb_size, emb_size, 
+                mlp_layers, dropout, norm)
         self.projections = nn.ModuleList([
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.instrument_domain, 
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.pitch_domain, 
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.time_dist.n_params,
                 mlp_layers, dropout, norm),
-            SelfGatedMLP(
+            mlp_cls(
                 emb_size, emb_size, self.vel_dist.n_params, 
                 mlp_layers, dropout, norm),
         ])
@@ -238,6 +237,12 @@ class Notochord(nn.Module):
         for n,t in zip(self.cell_state_names(), self.initial_state):
             self.register_buffer(n, t.clone())
         self.step = 0
+
+        # volatile hidden states for caching purposes
+        # TODO: would actually like to lazily compute some values, 
+        #       like h_proj(h), which can be ignored when just feeding,
+        #       but should be computed only once when multiple sampling
+        self.prediction_states = []
 
     def cell_state_names(self):
         return tuple(f'cell_state_{i}' for i in range(len(self.initial_state)))
@@ -357,40 +362,300 @@ class Notochord(nn.Module):
                 )
         return r
 
-    # TODO: remove allow_end here
-    # allow_start should just be False
-    def get_samplers(self, 
-            instrument_top_p=None, exclude_instrument=None,
-            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False, 
-            pitch_top_p=None, velocity_temp=None,
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, time_weight_top_p=None, time_component_temp=None,
-            min_vel=None, max_vel=None):
+    # def get_samplers(self, 
+    #         instrument_top_p=None, constrain_instrument=None,
+    #         pitch_topk=None, index_pitch=None, 
+    #         pitch_top_p=None, constrain_pitch=None,
+    #         velocity_temp=None,
+    #         sweep_time=False, min_time=None, max_time=None,time_weight_top_p=None, time_component_temp=None,
+    #         min_vel=None, max_vel=None):
+    #     """
+    #     this method converts the many arguments to `predict` into functions for
+    #     sampling each note modality (e.g. pitch, time, velocity)
+    #     """
+
+        # def sample_instrument(x):
+        #     if constrain_instrument is not None:
+        #         preserve_x = x[...,constrain_instrument]
+        #         x = torch.full_like(x, -np.inf)
+        #         x[...,constrain_instrument] = preserve_x
+        #     probs = x.softmax(-1)
+        #     if instrument_top_p is not None:
+        #         probs = reweight_top_p(probs, instrument_top_p)
+        #     return D.Categorical(probs).sample()
+
+        # def sample_pitch(x):
+        #     if constrain_pitch is not None:
+        #         preserve_x = x[...,constrain_pitch]
+        #         x = torch.full_like(x, -np.inf)
+        #         x[...,constrain_pitch] = preserve_x
+        #     if index_pitch is not None:
+        #         return x.argsort(-1, True)[...,index_pitch]
+        #     elif pitch_topk is not None:
+        #         return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+        #     else:
+        #         probs = x.softmax(-1)
+        #         if pitch_top_p is not None:
+        #             probs = reweight_top_p(probs, pitch_top_p)
+        #         return D.Categorical(probs).sample()
+
+        # def sample_time(x):
+        #     # TODO: respect trunc_time when sweep_time is True
+        #     if sweep_time:
+        #         if min_time is not None or max_time is not None:
+        #             raise NotImplementedError("""
+        #             trunc_time with sweep_time needs implementation
+        #             """)
+        #         assert x.shape[0]==1, "batch size should be 1 here"
+        #         log_pi, loc, s = self.time_dist.get_params(x)
+        #         idx = log_pi.squeeze().argsort()[:9]
+        #         loc = loc.squeeze()[idx].sort().values[...,None] # multiple times in batch dim
+        #         # print(loc.shape)
+        #         return loc
+        #     else:
+        #         trunc = (
+        #             -np.inf if min_time is None else min_time,
+        #             np.inf if max_time is None else max_time)
+        #         return self.time_dist.sample(x, 
+        #             truncate=trunc,
+        #             component_temp=time_component_temp, weight_top_p=time_weight_top_p)
+
+        # def sample_velocity(x):
+        #     trunc = (
+        #         -np.inf if min_vel is None else min_vel,
+        #         np.inf if max_vel is None else max_vel)
+        #     return self.vel_dist.sample(x, component_temp=velocity_temp, truncate=trunc)
+
+        # return (
+        #     sample_instrument,
+        #     sample_pitch, 
+        #     sample_time,
+        #     sample_velocity,
+        # )
+
+    def is_drum(self, inst):
+        # TODO: add a constructor argument to specify which are drums
+        # hardcoded for now
+        return inst > 128 and inst < 257 or inst > 264
+
+    
+    def feed(self, inst, pitch, time, vel):
+        """consume an event and advance hidden state
+        
+        Args:
+            inst: int. instrument of current note.
+                0 is start token
+                1-128 are General MIDI instruments
+                129-256 are drumkits (MIDI 1-128 on channel 13)
+                257-264 are 'anonymous' melodic instruments
+                265-272 are 'anonymous' drumkits
+            pitch: int. MIDI pitch of current note.
+                0-127 are MIDI pitches / drums
+                128 is start token
+            time: float. elapsed time in seconds since previous event.
+            vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
+                0 indicates a note-off event
         """
-        this method converts the many arguments to `predict` into functions for
-        sampling each note modality (e.g. pitch, time, velocity)
+        with torch.inference_mode():
+            inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
+            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
+            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
+            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
+
+            embs = [
+                self.instrument_emb(inst), # 1, 1, emb_size
+                self.pitch_emb(pitch), # 1, 1, emb_size
+                self.time_emb(time),# 1, 1, emb_size
+                self.vel_emb(vel)# 1, 1, emb_size
+            ]
+            x = sum(embs)
+
+            h, new_state = self.rnn(x, self.cell_state)
+            for t,new_t in zip(self.cell_state, new_state):
+                t[:] = new_t
+
+            self.prediction_states = [h, self.h_proj(h)]
+
+    # TODO: remove pitch_topk and sweep_time?
+    # TODO: would rather name query -> predict (or sample)
+    #       and predict -> feed_predict (or feed_sample)
+    # that will break API though
+    def query(self,
+            fix_instrument=None, fix_pitch=None, fix_time=None, fix_vel=None, 
+            pitch_topk=None, index_pitch=None,
+            allow_end=False,
+            sweep_time=False, min_time=None, max_time=None,
+            include_instrument=None, exclude_instrument=None,
+            include_pitch=None, exclude_pitch=None,
+            include_drum=None,
+            instrument_temp=None, pitch_temp=None, velocity_temp=None,
+            rhythm_temp=None, timing_temp=None,
+            min_vel=None, max_vel=None,
+            handle=None, return_params=False):
         """
+        return a prediction for the next note.
+
+        various constraints on the the next note can be requested.
+
+        Args:
+            # hard constraints
+            fix_*: same as the arguments to feed, but to fix a value for the predicted note.
+                sampled values will always condition on fixed values, so passing
+                `fix_instrument=1`, for example, will make the event appropriate
+                for the piano (instrument 1) to play.
+                
+            # partial constraints
+            allow_end: if False, zero probability of sampling the end marker
+            min_time, max_time: if not None, truncate the time distribution
+            include_instrument: instrument id(s) to include in sampling.
+                (if not None, all others will be excluded)
+            exclude_instrument: instrument id(s) to exclude from sampling.
+            include_pitch: pitch(es) to include in sampling.
+                (if not None, all others will be excluded)
+            exclude_pitch: pitch(es) to exclude from sampling.
+            include_drum: like `include_pitch`, but only in effect when 
+                instrument is a drumkit
+            min_vel, max_vel: if not None, truncate the velocity distribution
+
+            # sampling strategies
+            instrument_temp: if not None, apply top_p sampling to instrument. 0 is
+                deterministic, 1 is 'natural' according to the model
+            pitch_temp: if not None, apply top_p sampling to pitch. 0 is
+                deterministic, 1 is 'natural' according to the model
+            velocity_temp: if not None, apply temperature sampling to the velocity
+                component.
+            rhythm_temp: if not None, apply top_p sampling to the weighting
+                of mixture components. this affects coarse rhythmic patterns;
+                0 is deterministic, 1 is 'natural' according to the model
+            timing_temp: if not None, apply temperature sampling to the time
+                component. this affects fine timing; 0 is deterministic and 
+                precise, 1 is 'natural' according to the model.
+            index_pitch: Optional[int]. if not None, deterministically take the
+                nth most likely pitch instead of sampling.
+
+            # multiple predictions
+            pitch_topk: Optional[int]. if not None, instead of sampling pitch, 
+                stack the top k most likely pitches along the batch dimension
+            sweep_time: if True, instead of sampling time, choose a diverse set of
+                times and stack along the batch dimension
+
+            # other
+            handle: an event ID to be included in the returned 
+                dict, if not None
+            return_params: if True, return distribution parameters
+
+        Returns: dict of
+            'end': int. value of 1 indicates the *current* event (the one 
+                passed as arguments to `predict`) was the last event, and the
+                predicted event should *not* be played. if `allow end` is false, 
+                this will always be 0.
+            'step': int. number of steps since calling `reset`.
+            'instrument': int. id of predicted instrument.
+                1-128 are General MIDI standard melodic instruments
+                129-256 are drumkits for MIDI programs 1-128
+                257-264 are 'anonymous' melodic instruments
+                265-272 are 'anonymous' drums
+            'pitch': int. predicted MIDI number of next note, 0-128.
+            'time': float. predicted time to next note in seconds.
+            'velocity': float. unquantized predicted velocity of next note.
+                0-127; hard 0 indicates a note-off event.
+            '*_params': tensor. distribution parameters for visualization
+                purposes.
+
+            note: `instrument`, `pitch`, `time`, `velocity` may return lists,
+                when using `sweep_time` or `pitch_topk`. that part of the API 
+                is very experimental and likely to break.
+        """
+         # validate options:
+        if (index_pitch is not None) and (pitch_temp is not None):
+            print("warning: `index pitch` overrides `pitch_temp`")
+
+        inst_intervention = any(p is not None for p in (
+            instrument_temp, include_instrument, exclude_instrument))
+
+        pitch_intervention = (pitch_topk or any(p is not None for p in (
+            pitch_temp, include_pitch, exclude_pitch, include_drum)))
+
+        time_intervention = any(p is not None for p in (
+            min_time, max_time, rhythm_temp, timing_temp))
+
+        vel_intervention = any(p is not None for p in (
+            min_vel, max_vel, velocity_temp))
+
+        constrain_instrument = list((
+            set(range(self.instrument_domain)) - {self.instrument_start_token}
+            if include_instrument is None 
+            else arg_to_set(include_instrument)
+        ) - arg_to_set(exclude_instrument))
+        if len(constrain_instrument)==0:
+            raise ValueError("""
+            every instrument has been excluded. check values of 
+            `include_instrument` and `exclude_instrument`
+            """)
+        # elif len(constrain_instrument)==1:
+        #     print("""
+        #     warning: recommended to use `fix_instrument`, not 
+        #     `include_instrument` to allow only one specific instrument
+        #     """)
+        
+        constrain_pitch = list((
+            set(range(self.pitch_domain)) - {self.pitch_start_token}
+            if include_pitch is None 
+            else arg_to_set(include_pitch)
+        ) - arg_to_set(exclude_pitch))
+        if len(constrain_pitch)==0:
+            raise ValueError("""
+            every pitch has been excluded. check values of 
+            `include_pitch` and `exclude_pitch`
+            """)
+        elif len(constrain_pitch)==1:
+            print("""
+            warning: recommended to use `fix_pitch`, not 
+            `include_pitch` to allow only one specific pitch
+            """)
 
         def sample_instrument(x):
-            if not allow_start:
-                x[...,self.instrument_start_token] = -np.inf
-            if exclude_instrument is not None:
-                x[...,exclude_instrument] = -np.inf
+            #  instead of below, leaning on the instrument being first in 
+            # default order.
+            # if include_drum is supplied, make sure to exclude drum instruments
+            # when no pitch is in the allowed drums
+            # if include_drum is not None:
+            #     pit = predicted_by_name('instrument')
+            #     pits = [pit] if pit is not None else constrain_pitch
+            #     if pits is not None and all(pit not in include_drum for pit in pits):
+            #         constrain_instrument = [i for i in constrain_instrument if not self.is_drum(i)]
+            if constrain_instrument is not None:
+                preserve_x = x[...,constrain_instrument]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_instrument] = preserve_x
             probs = x.softmax(-1)
-            if instrument_top_p is not None:
-                probs = reweight_top_p(probs, instrument_top_p)
+            if instrument_temp is not None:
+                probs = reweight_top_p(probs, instrument_temp)
             return D.Categorical(probs).sample()
 
         def sample_pitch(x):
-            if not allow_start:
-                x[...,self.pitch_start_token] = -np.inf
+            # conditional constraint
+            if include_drum is not None:
+                # if this event is / must be a drum,
+                # use include_drum instead of constrain_instrument
+                inst = predicted_by_name('instrument')
+                insts = [inst] if inst is not None else constrain_instrument
+                if insts is not None and all(self.is_drum(i) for i in insts):
+                    nonlocal constrain_pitch
+                    constrain_pitch = include_drum
+
+            if constrain_pitch is not None:
+                preserve_x = x[...,constrain_pitch]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_pitch] = preserve_x
             if index_pitch is not None:
                 return x.argsort(-1, True)[...,index_pitch]
             elif pitch_topk is not None:
                 return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
             else:
                 probs = x.softmax(-1)
-                if pitch_top_p is not None:
-                    probs = reweight_top_p(probs, pitch_top_p)
+                if pitch_temp is not None:
+                    probs = reweight_top_p(probs, pitch_temp)
                 return D.Categorical(probs).sample()
 
         def sample_time(x):
@@ -403,7 +668,8 @@ class Notochord(nn.Module):
                 assert x.shape[0]==1, "batch size should be 1 here"
                 log_pi, loc, s = self.time_dist.get_params(x)
                 idx = log_pi.squeeze().argsort()[:9]
-                loc = loc.squeeze()[idx].sort().values[...,None] # multiple times in batch dim
+                loc = loc.squeeze()[idx].sort().values[...,None] 
+                # multiple times in batch dim
                 # print(loc.shape)
                 return loc
             else:
@@ -411,118 +677,34 @@ class Notochord(nn.Module):
                     -np.inf if min_time is None else min_time,
                     np.inf if max_time is None else max_time)
                 return self.time_dist.sample(x, 
-                    truncate=trunc, bias=bias_time,
-                    component_temp=time_component_temp, weight_top_p=time_weight_top_p)
+                    truncate=trunc,
+                    component_temp=timing_temp, weight_top_p=rhythm_temp)
 
         def sample_velocity(x):
             trunc = (
                 -np.inf if min_vel is None else min_vel,
                 np.inf if max_vel is None else max_vel)
-            return self.vel_dist.sample(x, component_temp=velocity_temp, truncate=trunc)
-
-        return (
-            sample_instrument,
-            sample_pitch, 
-            sample_time,
-            sample_velocity,
-        )
-    
-    # TODO: remove pitch_topk and sweep_time?
-    def predict(self, 
-            inst, pitch, time, vel, 
-            fix_instrument=None, fix_pitch=None, fix_time=None, fix_vel=None, 
-            pitch_topk=None, index_pitch=None, allow_start=False, allow_end=False,
-            sweep_time=False, min_time=None, max_time=None, bias_time=None, 
-            exclude_instrument=None,
-            instrument_temp=None, pitch_temp=None, velocity_temp=None,
-            rhythm_temp=None, timing_temp=None,
-            min_vel=None, max_vel=None):
-        """
-        consume the most recent note and return a prediction for the next note.
-
-        various constraints on the the next note can be requested.
-
-        Args:
-            pitch: int. MIDI number of current note.
-            time: float. elapsed time in seconds since previous note.
-            vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
-            fix_*: same as above, but to fix a value for the predicted note.
-                sampled values will always condition on fixed values, so passing
-                `fix_time=0`, for example, will make a probabilistically-sound
-                prediction of a chord tone: "what is the next note given that it 
-                happens immediately after the last one?"
-            pitch_topk: Optional[int]. if not None, instead of sampling pitch, stack
-                the top k most likely pitches along the batch dimension
-            index_pitch: Optional[int]. if not None, deterministically take the nth
-                most likely pitch instead of sampling.
-            allow_start: if False, zero probability for sampling the start token
-            allow_end: if False, zero probaility for sampling the end token
-            sweep_time: if True, instead of sampling time, choose a diverse set of
-                times and stack along the batch dimension
-            min_time, max_time: if not None, truncate the time distribution
-            bias_time: add this delay to the time 
-                (after applying min/max but before clamping to 0).
-                may be useful for latency correction.
-            exclude_instrument: instrument id to exclude from sampling.
-            instrument_temp: if not None, apply top_p sampling to instrument. 0 is
-                deterministic, 1 is 'natural' according to the model
-            pitch_temp: if not None, apply top_p sampling to pitch. 0 is
-                deterministic, 1 is 'natural' according to the model
-            velocity_temp: if not None, apply temperature sampling to the velocity
-                component.
-            rhythm_temp: if not None, apply top_p sampling to the weighting
-                of mixture components. this affects coarse rhythmic patterns; 0 is
-                deterministic, 1 is 'natural' according to the model
-            timing_temp: if not None, apply temperature sampling to the time
-                component. this affects fine timing; 0 is deterministic and precise,
-                1 is 'natural' according to the model.
-            min_vel, max_vel: if not None, truncate the velocity distribution
-
-        Returns: dict of
-            'pitch': int. predicted MIDI number of next note.
-            'time': float. predicted time to next note.
-            'velocity': float. unquantized predicted velocity of next note.
-            '*_params': tensor. distribution parameters for visualization purposes.
-        """
-        if (index_pitch is not None) and (pitch_temp is not None):
-            print("warning: `index pitch` overrides `pitch_temp`")
+            return self.vel_dist.sample(
+                x, component_temp=velocity_temp, truncate=trunc)
 
         with torch.inference_mode():
-            inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
-            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
-            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
-            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
-
-            embs = [
-                self.instrument_emb(inst),
-                self.pitch_emb(pitch), # 1, 1, emb_size
-                self.time_emb(time),# 1, 1, emb_size
-                self.vel_emb(vel)# 1, 1, emb_size
-            ]
-            x = sum(embs)
-            
-            h, new_state = self.rnn(x, self.cell_state)
-            for t,new_t in zip(self.cell_state, new_state):
-                t[:] = new_t
-
-            # h_parts = self.h_proj(h).chunk(self.note_dim+1, -1)
-            # h_ctx = h_parts[0]
-            # h_tgt = h_parts[1:]
+            h, proj_h = self.prediction_states
 
             modalities = list(zip(
                 self.projections,
-                self.get_samplers(
-                    instrument_temp, exclude_instrument,
-                    pitch_topk, index_pitch, allow_start, allow_end, 
-                    pitch_temp,
-                    velocity_temp,
-                    sweep_time, min_time, max_time, bias_time, 
-                    rhythm_temp, timing_temp,
-                    min_vel, max_vel),
+                (sample_instrument, sample_pitch, sample_time, sample_velocity),
+                # self.get_samplers(
+                #     instrument_temp, constrain_instrument,
+                #     pitch_topk, index_pitch,
+                #     pitch_temp, constrain_pitch,
+                #     velocity_temp,
+                #     sweep_time, min_time, max_time,
+                #     rhythm_temp, timing_temp,
+                #     min_vel, max_vel),
                 self.embeddings,
                 ))
 
-            context = [self.h_proj(h)] # embedded outputs for autoregressive prediction
+            context = [proj_h] # embedded outputs for autoregressive prediction
             predicted = [] # raw outputs
             params = [] # distribution parameters for visualization
 
@@ -539,14 +721,10 @@ class Notochord(nn.Module):
             for i,(item, embed) in enumerate(zip(fix, self.embeddings)):
                 if item is None:
                     if (
-                        i==0 and any(p is not None for p in (
-                            instrument_temp, exclude_instrument)) or
-                        i==1 and (pitch_topk or pitch_temp is not None) or
-                        i==2 and any(p is not None for p in (
-                            min_time, max_time, rhythm_temp, timing_temp)) or
-                        i==3 and any(p is not None for p in (
-                            min_vel, max_vel, velocity_temp))
-                        ):
+                        i==0 and inst_intervention or
+                        i==1 and pitch_intervention or
+                        i==2 and time_intervention or
+                        i==3 and vel_intervention):
                         cons_idx.append(i)
                     else:
                         uncons_idx.append(i)
@@ -559,18 +737,17 @@ class Notochord(nn.Module):
             perm = det_idx + undet_idx # permutation from the canonical order
             iperm = np.argsort(perm) # inverse permutation back to canonical order
 
-            md = ['instrument', 'pitch', 'time', 'vel']
-            print('sampling order:', [md[i] for i in perm])
+            mode_names = ['instrument', 'pitch', 'time', 'velocity']
+            name_to_idx = {k:v for k,v in zip(mode_names, iperm)}
+            def predicted_by_name(name):
+                idx = name_to_idx[name]
+                if len(predicted) > idx:
+                    return predicted[idx]
+                return None
+            # print('sampling order:', [mode_names[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
-
-            # TODO: allow constraints; 
-            # attempt to sort the strongest constraints first
-            # constraints can be:
-            # discrete set, in which case evaluate probs and then sample categorical;
-            # range, in which case truncate;
-            # temperature?
             
             running_ctx = sum(context)
             # print(running_ctx)
@@ -581,7 +758,7 @@ class Notochord(nn.Module):
                 # j = len(det_idx) # number already determined
                 project, sample, embed = modalities[i]
                 # determine value for the next modality
-                hidden = running_ctx.tanh() #self.xformer(context, h_ctx, perm_h_tgt[:j+1])[j]
+                hidden = running_ctx.tanh()
                 params.append(project(hidden))
                 pred = sample(params[-1])
                 predicted.append(pred)
@@ -591,10 +768,14 @@ class Notochord(nn.Module):
                     running_ctx += embed(pred)
                 det_idx.append(i)
 
-            pred_inst = predicted[iperm[0]]
-            pred_pitch = predicted[iperm[1]]
-            pred_time = predicted[iperm[2]]
-            pred_vel = predicted[iperm[3]]
+            pred_inst = predicted_by_name('instrument')
+            pred_pitch = predicted_by_name('pitch')
+            pred_time = predicted_by_name('time')
+            pred_vel = predicted_by_name('velocity')
+            # pred_inst = predicted[iperm[0]]
+            # pred_pitch = predicted[iperm[1]]
+            # pred_time = predicted[iperm[2]]
+            # pred_vel = predicted[iperm[3]]
 
             if allow_end:
                 end_params = self.end_proj(h)
@@ -620,31 +801,64 @@ class Notochord(nn.Module):
                 end = end.item()
 
             self.step += 1
-            return {
+            r = {
                 'end': end,
                 'step': self.step,
                 'instrument': pred_inst,
                 'pitch': pred_pitch, 
                 'time': pred_time,
                 'velocity': pred_vel,
-                'inst_params': params[iperm[0]],
-                'pitch_params': params[iperm[1]],
-                'time_params': params[iperm[2]],
-                'vel_params': params[iperm[3]]
             }
+
+            if handle is not None:
+                r['handle'] = handle
+
+            if return_params:
+                r |= {
+                    'inst_params': params[iperm[0]],
+                    'pitch_params': params[iperm[1]],
+                    'time_params': params[iperm[2]],
+                    'vel_params': params[iperm[3]]
+                }
+
+            return r
+
+
+    def predict(self, inst, pitch, time, vel, **kw):
+        """
+        DEPRECATED: alias for feed_query
+        """
+        self.feed(inst, pitch, time, vel)
+        return self.query(**kw)
+
+    def feed_query(self, inst, pitch, time, vel, **kw):
+        """
+        call self.feed with *args, then self.query with **kwargs.
+        """
+        self.feed(inst, pitch, time, vel)
+        return self.query(**kw)
+
+    def query_feed(self, *a, **kw):
+        """
+        call self.query with *args **kwargs, then self.feed with result,
+            and return result
+        """
+        r = self.query(*a, **kw)
+        self.feed(r['instrument'], r['pitch'], r['time'], r['velocity'])
+        return r
     
     def reset(self, start=True):
         """
         resets internal model state.
         Args:
-            start: if True, send a start token through the model with dt=0
-                   but discard the prediction
+            start: if True, send start tokens through the model
         """
         self.step = 0
         for n,t in zip(self.cell_state_names(), self.initial_state):
             getattr(self, n)[:] = t.detach()
         if start:
-            self.predict(self.instrument_start_token, self.pitch_start_token, 0., 0.)
+            self.feed(
+                self.instrument_start_token, self.pitch_start_token, 0., 0.)
 
     @classmethod
     def from_checkpoint(cls, path):

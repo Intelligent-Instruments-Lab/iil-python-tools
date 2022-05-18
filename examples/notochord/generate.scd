@@ -4,33 +4,30 @@
 // TODO: steerable generation. gui for ranges, temperatures;
 // MIDI controller for pitch set
 
-// TODO: keep track of pending model predictions so there are no races
-// whenever a note is played, feed it to the model
-// count the number of pending predictions
-// if a note is played while there are pending predictions, cancel them
-// ideally, would signal python to interrupt computation
-// less complicated: just ignore the results when they come in
-// there are pending predictions and pending notes:
-// pending predictions need to be ignored when they come in
-// pending notes need to be unscheduled
-
-// TODO: pitch blacklist option
-// use case: forbid model from releasing a note held by the player
-
 (
 MIDIClient.init;
 // MIDIClient.destinations
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1");
-~m2 = MIDIOut.newByName("IAC Driver", "Bus 2");
-~m3 = MIDIOut.newByName("IAC Driver", "Bus 3");
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
+~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
+~gui = false;
+MIDIIn.connectAll;
+b = NetAddr.new("127.0.0.1", 9999);
+~controller = MIDIClient.sources.detect { |e| e.device.containsi("MPKmini2") }.uid;
 )
-/*
-~m1.noteOn(0, 60, 127)
-~m2.noteOn(0, 60, 127)
-~m1.noteOff(0, 60, 64)
-~m2.noteOff(0, 60, 64)*/
+
 
 (
+// TODO: what is with this input latency
+MIDIdef.noteOn(\input_on, {
+    arg vel, pitch, chan, src;
+    var perftime = Process.elapsedTime;
+    ~m2.noteOn(12, pitch, 100);
+    (Process.elapsedTime - perftime).postln;
+}, srcID:~controller);
+)
+(
+// mapp instruments to channels + buses for the Ableton set
 ~prog2portchan = { arg prog;
     case
     {prog==0}{"can't convert start token".postln}
@@ -81,25 +78,24 @@ MIDIClient.init;
 };
 )
 
+// ~m1.noteOn(12, 60, 64);
+
 /*(
 ~prog2portchan.(257)[\chan]
 )*/
 
 (
-~gui = false;
-MIDIIn.connectAll;
-b = NetAddr.new("127.0.0.1", 9999);
-Server.default.options.inDevice_("Built-in Microph");
-Server.default.options.outDevice_("Built-in Output");
+// Server.default.options.inDevice_("Built-in Microph");
+// Server.default.options.outDevice_("Built-in Output");
 // Server.default.options.inDevice_("mic-buds");
 // Server.default.options.outDevice_("mic-buds");
-s.boot;
+// s.boot;
 /*~gui.if{
     k = MIDIKeyboard.new(bounds: Rect(0, 0, 500, 100), octaves:11, startnote:0)
 };*/
 )
 
-(
+/*(
 SynthDef(\pluck, {
     var vel = \vel.kr;
     var freq = \freq.kr;
@@ -109,7 +105,7 @@ SynthDef(\pluck, {
     signal = BLowPass.ar(signal, fr)*vel;
     Out.ar([0,1], signal);
 }).add
-)
+)*/
 
 // measure round-trip latency
 (
@@ -142,6 +138,7 @@ b.sendMsg("/predictor/predict",
 ~player_instrument = 1;
 ~use_synth = false;
 ~duet = false;
+~include_pitch = nil;
 
 ~gate = true;
 
@@ -164,21 +161,26 @@ b.sendMsg("/predictor/reset");
     names.do{arg name;
         var val = currentEnvironment[name];
         val.notNil.if{
-            kw.add(name); kw.add(val)}
+            kw.add(name);
+            // convert Collections to JSON strings
+            val.isKindOf(Collection).if{
+                val = "%JSON:"++JSON.stringify(val)};
+            kw.add(val)}
     }
 };
+
 
 ~predict_event = {
     arg inst, pitch, dt, vel;
     var kw = List[
         \inst, inst, \pitch, pitch, \time, dt, \vel, vel,
-        \allow_start, false
+        // \allow_start, false
     ];
     ~duet.if{kw.add(\exclude_instrument); kw.add(~player_inst)};
     ~global_kws.(kw, [
         \min_time, \max_time, \allow_end,
         \instrument_temp, \pitch_temp, \rhythm_temp, \timing_temp,
-        \velocity_temp
+        \velocity_temp, \include_pitch
     ]);
 
     // kw.postln;
@@ -191,7 +193,7 @@ b.sendMsg("/predictor/reset");
 ~clear_pending_events = {~pending_events.do{arg pe; pe.stop}.clear};
 
 // footswitch
-MIDIdef.program(\switch, {
+/*MIDIdef.program(\switch, {
     arg num, chan, src;
     num.switch
     {1}{~gate = false}
@@ -205,7 +207,7 @@ MIDIdef.program(\switch, {
         ~step = 0;
         };
     ~gate.postln;
-});
+});*/
 
 // MIDI from controller
 MIDIdef.noteOff(\input_off, {
@@ -242,12 +244,16 @@ MIDIdef.noteOff(\input_off, {
     // post the current note
     [\player, dt, inst, pitch, 0].postln;
 
-});
+}, srcID:~controller);
+
 MIDIdef.noteOn(\input_on, {
     arg vel, pitch, chan, src;
+    var perftime = Process.elapsedTime;
     var t2, dt;
     var inst = ~player_inst;
     var port_chan = ~prog2portchan.(inst);
+
+    // ~m2.noteOn(12, pitch, 100);
 
     // mark time of current note
     t2 = Process.elapsedTime;
@@ -271,6 +277,7 @@ MIDIdef.noteOn(\input_on, {
         // send MIDI
         port_chan[\port].noteOn(port_chan[\chan], pitch, vel);
     };
+    (Process.elapsedTime - perftime).postln;
 
     //get a new prediction in light of current note
     ~predict_event.(inst, pitch, dt, vel);
@@ -281,7 +288,7 @@ MIDIdef.noteOn(\input_on, {
 
     // post the current note
     [\player, dt, inst, pitch, vel].postln;
-});
+}, srcID:~controller);
 
 // OSC return from python
 OSCdef(\return, {
@@ -373,33 +380,36 @@ OSCdef(\return, {
 )
 
 (
+// play the first note and let the model take over
 t = nil;
 ~gate = false;
 ~duet = false;
 ~allow_end = true;
-~instrument_temp = 0.95;
-~pitch_temp = 0.9;
-~rhythm_temp = 1;
-~timing_temp = 0.1;
+~instrument_temp = nil;//0.95;
+~pitch_temp = nil;//0.9;
+~rhythm_temp = nil;//1;
+~timing_temp = nil;//0.1;
 ~min_time = nil;//~delay;
-~velocity_temp = 0;
-// send a note manually if you don't have a MIDI controller:
+~velocity_temp = nil;//0;
+~include_pitch = (24..48)*2;//nil
 ~clear_pending_events.();
 ~synths.do(_.release(1.0));
 ~release_all.(0);
 b.sendMsg("/predictor/reset");
 ~player_inst = 128.rand+1;
-{~gate = true; MIDIdef.all[\input_on].func.value(127.rand+1, 128.rand)}.defer(0.2);
+{~gate = true; MIDIdef.all[\input_on].func.value(127.rand+1, 60+12.rand)}.defer(0.2);
 // ~player_inst = 272;
 // {~gate = true; MIDIdef.all[\input_on].func.value(128.rand+1, 27.rand+60)}.defer(0.2);
 )
 
 (
+// reserve an instrument for the player
 t = nil;
 ~seq!?(_.stop);
 ~gate = false;
 ~duet = true;
 ~allow_end = false;
+~include_pitch = nil;
 ~instrument_temp = 1;
 ~pitch_temp = 1;
 ~rhythm_temp = 1;
@@ -410,7 +420,7 @@ t = nil;
 b.sendMsg("/predictor/reset");
 ~player_inst = 272;
 s = 2;
-{~seq = Routine{
+{/*~seq = Routine{
     loop{
         MIDIdef.all[\input_on].func.value(100, 51);
         MIDIdef.all[\input_on].func.value(100, 36);
@@ -427,7 +437,7 @@ s = 2;
         (0.02*s).sleep;
     }
 }.play(SystemClock);
-{ ~gate=true }.defer(4);
+{ ~gate=true }.defer(4);*/
 }.defer(0.5);
 )
 

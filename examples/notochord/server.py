@@ -6,11 +6,11 @@ Authors:
 """
 
 from notochord import Notochord
-
 from iipyper import OSC, run
+import numpy as np
 
-def main(host="127.0.0.1", port=9999, checkpoint=None):
-    osc = OSC(host, port)
+def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
+    osc = OSC(host, receive_port)
 
     if checkpoint is not None:
         predictor = Notochord.from_checkpoint(checkpoint)
@@ -18,10 +18,10 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
     else:
         predictor = None
  
-    @osc.kwargs('/predictor/*')
+    @osc.kwargs('/notochord/*', return_port=send_port)
     def _(address, **kw):
         """
-        Handle OSC messages to Predictor
+        Handle OSC messages to Notochord
         """
         print(f"{address} {kw}")
 
@@ -33,6 +33,22 @@ def main(host="127.0.0.1", port=9999, checkpoint=None):
             nonlocal predictor
             predictor = Notochord.from_checkpoint(**kw)
             predictor.eval()
+
+        elif cmd=="feed":
+            # print(kw)
+            if predictor is None:
+                print('no model loaded')
+            else:
+                r = predictor.feed(**kw) 
+
+        elif cmd=="query_feed":
+            # print(kw)
+            if predictor is None:
+                print('no model loaded')
+            else:
+                r = predictor.query_feed(**kw) 
+                return ('/notochord/query_return', 
+                    *[x for pair in r.items() for x in pair])
 
         elif cmd=="predict":
             if predictor is None:

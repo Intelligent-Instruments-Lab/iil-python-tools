@@ -1,7 +1,10 @@
 // in this example, the most likely next pitches (according to Notochord)
 // are drawn on the Linnstrument as you play
 
+// NOTE: for an older version of Notochord without note-offs. needs update
+
 (
+~instrument = 57; // trumpet
 ~use_linn = true; // use linnstrument
 ~gui = false; // use keyboard GUI
 MIDIIn.connectAll;
@@ -25,9 +28,11 @@ Server.default.options.outDevice_("Built-in Output");
         // attack the current note
         ~synth = Synth(\pluck, [\freq, freq, \vel, amp]);
 
-        //
-        b.sendMsg("/predictor/predict",
-            \pitch, midinote, \time, dt, \vel, amp*127,
+        // monophonic -- release last note and immediately start new note
+        b.sendMsg("/notochord/feed",
+            \pitch, midinote, \time, ~delay, \vel, amp*127);
+        b.sendMsg("/notochord/predict",
+            \pitch, midinote, \time, dt, \vel, 0,
             \pitch_topk, 5);
 
         // mark time of current note
@@ -51,17 +56,17 @@ s.waitForBoot{
 
 (
 // set the delay for more precise timing
-~delay = 0.2;
+~delay = 0.01;
 
 ~model_reset = {
     t = Process.elapsedTime;
-    b.sendMsg("/predictor/reset");
+    b.sendMsg("/notochord/reset");
     // ~synth!?{~synth.free};
     s.freeAll;
     ~synth = nil;
-    b.sendMsg("/predictor/predict",
+/*    b.sendMsg("/predictor/predict",
         \pitch, 128, \time, 0, \vel, 0,
-        \pitch_topk, 5);
+        \pitch_topk, 5);*/
 
 };
 ~model_reset.();
@@ -70,7 +75,7 @@ s.waitForBoot{
 // OSC return from python
 OSCdef(\return, {
     arg msg, time, addr, recvPort;
-    var pitches, dts;
+    var inst, pitches, dts;
     var last_pitch = nil;
     var colormap = [8,3,10,9,1];
     var color = 0;
@@ -85,8 +90,9 @@ OSCdef(\return, {
     };
     msg = stack[0];
 
-    pitches = msg[1];
-    dts = msg[2];
+    inst = msg[1]
+    pitches = msg[2];
+    dts = msg[3];
 
     ~linn.allLightsOff;
     pitches.do{arg pitch;
@@ -117,7 +123,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
+b.sendMsg("/notochord/predict",
     \pitch, 60+12.rand, \time, 0, \vel, 0,
     \index_pitch, 0,
     \sweep_time, true,

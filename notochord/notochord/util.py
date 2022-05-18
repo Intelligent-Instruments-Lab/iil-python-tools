@@ -50,7 +50,17 @@ def deep_update(a, b):
     in-place update a with contents of b, recursively for nested Mapping objects.
     """
     for k in b:
-        if isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
+        if k in a and isinstance(a[k], Mapping) and isinstance(b[k], Mapping):
             deep_update(a[k], b[k])
         else:
             a[k] = b[k]
+
+
+def arg_to_set(x):
+    """convert None to empty set, iterable to set, or scalar to set with one item"""
+    if x is None:
+        return set()
+    elif not hasattr(x, '__iter__'):
+        return {x}
+    else:
+        return set(x)

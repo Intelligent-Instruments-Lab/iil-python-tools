@@ -3,10 +3,13 @@ import random
 from collections import defaultdict
 import itertools as it
 
+import pdb
+
 from tqdm import tqdm
 import fire
 
 import numpy as np
+import scipy.stats
 
 import torch
 from torch.utils.data import DataLoader
@@ -21,6 +24,7 @@ class Trainer:
         model_dir,
         log_dir,
         data_dir,
+        results_dir,
         model = None, # dict of model constructor overrides
         batch_size = 128,
         batch_len = 64,
@@ -58,11 +62,12 @@ class Trainer:
         # mutate some arguments:
         self.model_dir = Path(model_dir) / self.experiment
         self.log_dir = Path(log_dir) / self.experiment
+        self.results_dir = Path(results_dir) / self.experiment
         self.data_dir = Path(data_dir)
         self.device = torch.device(device)
 
         # filesystem
-        for d in (self.model_dir, self.log_dir):
+        for d in (self.model_dir, self.log_dir, self.results_dir):
             d.mkdir(parents=True, exist_ok=True)
 
         # random states
@@ -83,14 +88,21 @@ class Trainer:
         # dataset
         self.dataset = MIDIDataset(
             self.data_dir, self.batch_len)#, clamp_time=clamp_time)
-        valid_len = int(len(self.dataset)*0.05)
-        train_len = len(self.dataset) - valid_len
-        self.train_dataset, self.valid_dataset = torch.utils.data.random_split(
-            self.dataset, [train_len, valid_len], 
+        valid_len = int(len(self.dataset)*0.03)
+        test_len = int(len(self.dataset)*0.02)
+        train_len = len(self.dataset) - valid_len - test_len
+        self.train_dataset, self.valid_dataset, self.test_dataset = torch.utils.data.random_split(
+            self.dataset, [train_len, valid_len, test_len], 
             generator=torch.Generator().manual_seed(0))
 
-        self.opt = torch.optim.AdamW(
-            self.model.parameters(), 
+        # params = {k:v for k,v in self.model.named_parameters()}
+        # ks = ['projections.3.net.1.weight', 'projections.2.net.1.weight']
+        # slow_params = {k:params.pop(k) for k in ks}
+        # self.opt = torch.optim.AdamW([
+        #     {'params':params.values()},
+        #     {'params':slow_params.values(), 'lr':self.lr*1e-1}], 
+        #     self.lr, self.adam_betas, self.adam_eps, self.weight_decay)
+        self.opt = torch.optim.AdamW(self.model.parameters(),
             self.lr, self.adam_betas, self.adam_eps, self.weight_decay)
 
     @property
@@ -150,11 +162,14 @@ class Trainer:
             'end_nll': -reduce('end_log_probs'),
         }
 
-    def _validate(self, valid_loader, ar_mask=None):
+    def _validate(self, valid_loader, ar_mask=None, testing=False):
         """"""
-        metrics = defaultdict(float)
+        pops = defaultdict(list)
         self.model.eval()
+        if testing:
+            self.dataset.testing = True
         for batch in tqdm(valid_loader, desc=f'validating epoch {self.epoch}'):
+            # print(batch['mask'].shape, batch['mask'].sum())
             mask = batch['mask'].to(self.device, non_blocking=True)[...,1:]
             end = batch['end'].to(self.device, non_blocking=True)
             inst = batch['instrument'].to(self.device, non_blocking=True)
@@ -167,30 +182,46 @@ class Trainer:
                     validation=True, ar_mask=ar_mask)
                 losses = {k:v.item() for k,v in self.get_loss_components(
                     result, mask).items()}
-                metrics['loss'] += sum(losses.values())
                 for k,v in losses.items():
-                    metrics[k] += v
-                metrics['instrument_acc'] += (result['instrument_log_probs']
+                    pops[k].append(v)
+                pops['loss'].append(sum(losses.values()))
+                pops['instrument_acc'].append(result['instrument_log_probs']
                     .masked_select(mask).exp().mean().item())
-                metrics['pitch_acc'] += (result['pitch_log_probs']
+                pops['pitch_acc'].append(result['pitch_log_probs']
                     .masked_select(mask).exp().mean().item())
-                metrics['time_acc_30ms'] += (result['time_acc_30ms']
+                pops['time_acc_30ms'].append(result['time_acc_30ms']
                     .masked_select(mask).mean().item())
-                metrics['velocity_acc'] += (result['velocity_log_probs']
+                pops['velocity_acc'].append(result['velocity_log_probs']
                     .masked_select(mask).exp().mean().item())
-        return {k:v/len(valid_loader) for k,v in metrics.items()}
+        return {
+            'logs':{k:np.mean(v) for k,v in pops.items()},
+            # 'bootstraps':{
+            #     k:scipy.stats.bootstrap((v,), np.mean).confidence_interval 
+            #     for k,v in pops.items()},
+            'pops':pops
+        }
+
 
     def test(self):
         """Entry point to testing"""
         # TODO: should make a test split before doing serious
         # model comparison.
+        # ds = torch.utils.data.Subset(self.valid_dataset, [0,1,2])
+        ds = self.test_dataset
         loader = DataLoader(
-            self.valid_dataset, self.batch_size,
-            shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
+            ds, 1,#self.batch_size,
+            shuffle=False, num_workers=self.n_jobs if self.gpu else 0, pin_memory=self.gpu)
 
+        results = []
         for perm, mask in gen_masks(self.model.note_dim):
-            r = self._validate(loader, ar_mask=mask)
-            print(perm, r)
+            # TODO: bootstrap CI. need to return all likelihoods, not mean, from _validate
+            r = self._validate(
+                loader, ar_mask=mask.to(self.device, non_blocking=True),
+                testing=True)
+            # print(r['bootstraps'])
+            perm = [['instrument', 'pitch', 'time', 'velocity'][i] for i in perm]
+            results.append((perm, r['pops']))
+        torch.save(results, self.results_dir / f'result-{self.epoch:04d}.pt')
 
     def train(self):
         """Entry point to model training"""
@@ -199,14 +230,15 @@ class Trainer:
         train_loader = DataLoader(
             self.train_dataset, self.batch_size,
             shuffle=True, num_workers=self.n_jobs, pin_memory=self.gpu)
+
         valid_loader = DataLoader(
-            self.valid_dataset, self.batch_size,
+            self.valid_dataset, self.batch_size//4,
             shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         ##### validation loop
         def run_validation():
-            metrics = self._validate(valid_loader)
-            self.log('valid', metrics)
+            logs = self._validate(valid_loader)['logs']
+            self.log('valid', logs)
 
         epoch_size = self.epoch_size or len(train_loader)
 
@@ -218,6 +250,7 @@ class Trainer:
 
             ##### training loop
             self.model.train()
+            self.dataset.testing = False
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
                 mask = batch['mask'].to(self.device, non_blocking=True)
@@ -228,6 +261,7 @@ class Trainer:
                 vel = batch['velocity'].to(self.device, non_blocking=True)
 
                 self.iteration += 1
+                # TODO: use mask instead of batch dims
                 self.exposure += self.batch_size * self.batch_len
                 logs = {}
 

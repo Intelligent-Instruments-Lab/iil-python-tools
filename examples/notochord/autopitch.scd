@@ -1,5 +1,5 @@
 // in this example the Linnstrument displays an interface to perform pitches
-// by their likelihood under the Notochord model instead of by MIDI number
+// by their likelihood under the NotePredictor model instead of by MIDI number
 
 // the grid in the upper left gives control of pitches from
 // the single most likely (cyan) to least likely (pink).
@@ -8,6 +8,9 @@
 // the lone yellow pad resets the model.
 
 // model predictions are conditioned on performed timing and velocity.
+
+// TODO: this example is based an older, monophonic version of notochord without noteoffs
+//       it is hacked to work similarly wit Notochord v3, but could use an update
 
 (
 ~use_linn = true; // use linnstrument
@@ -33,7 +36,7 @@ Server.default.options.outDevice_("Built-in Output");
             {y==2}{x*4+16}
             {y==3}{x*8+40}
             {y==4}{127-x};
-            idx.postln;
+            // idx.postln;
             ~midi_handle.(amp*127, idx);
         }{
             case
@@ -85,13 +88,13 @@ SynthDef(\pluck, {
 
 // measure round-trip latency
 (
-OSCdef(\return, {
+OSCdef(\test, {
     arg msg, time, addr, recvPort;
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
-    \pitch, 60+12.rand, \time, 0, \vel, 0, \fix_time, 0, \fix_vel, 0);
+b.sendMsg("/notochord/predict",
+    \inst, 257, \pitch, 60+12.rand, \time, 0, \vel, 0, \fix_time, 0, \fix_vel, 0);
 )
 
 // set the delay for more precise timing
@@ -104,17 +107,16 @@ b.sendMsg("/predictor/predict",
 // model chooses pitches
 (
 ~gate = 1;
+~instrument = 57;
 
 ~model_reset = {
-    ~last_pitch = nil;
+    ~last_pitch = 60;
     ~last_dt = nil;
     ~last_vel = nil;
     t = Process.elapsedTime;
-    b.sendMsg("/predictor/reset");
+    b.sendMsg("/notochord/reset");
     y!?{y.free};
     y = nil;
-    b.sendMsg("/predictor/predict", \pitch, 128, \time, 0, \vel, 0);
-
 };
 
 ~model_reset.();
@@ -128,7 +130,7 @@ MIDIdef.program(\switch, {
     {3}{
         ~gate = 0;
         SystemClock.clear;
-        b.sendMsg("/predictor/reset");
+        b.sendMsg("/notochord/reset");
         y.release;
         SystemClock.clear;
         };
@@ -151,13 +153,17 @@ MIDIdef.program(\switch, {
     // get a new prediction in light of last note,
     // fixing dt and vel to performed values so just pitch is predicted
     pitch.notNil.if{
-        b.sendMsg("/predictor/predict",
-            \pitch, ~last_pitch, \time, ~last_dt, \vel, ~last_vel,
-            \index_pitch, pitch, \fix_time, dt, \fix_vel, vel);
+        b.sendMsg("/notochord/feed",
+            \inst, ~instrument, \pitch, ~last_pitch, \time, ~delay, \vel, ~last_vel);
+        b.sendMsg("/notochord/predict",
+            \inst, ~instrument, \pitch, ~last_pitch, \time, ~last_dt, \vel, 0,
+            \index_pitch, pitch, \fix_time, dt, \fix_vel, vel, \fix_instrument, ~instrument);
     }{
-        b.sendMsg("/predictor/predict",
-            \pitch, ~last_pitch, \time, ~last_dt, \vel, ~last_vel,
-            \fix_time, dt, \fix_vel, vel);
+        b.sendMsg("/notochord/feed",
+            \inst, ~instrument, \pitch, ~last_pitch, \time, ~delay, \vel, ~last_vel);
+        b.sendMsg("/notochord/predict",
+            \inst, ~instrument, \pitch, ~last_pitch, \time, ~last_dt, \vel, 0,
+            \fix_time, dt, \fix_vel, vel, \fix_instrument, ~instrument);
     };
 
     ~last_dt = dt;
@@ -174,9 +180,10 @@ MIDIdef.program(\switch, {
 // OSC return from python
 OSCdef(\return, {
     arg msg, time, addr, recvPort;
-    var pitch = msg[1]; // MIDI number of predicted note
-    var dt = msg[2]; // time to predicted note
-    var vel = msg[3]; // velocity 0-127
+    var inst = msg[1]; // MIDI number of predicted note
+    var pitch = msg[2]; // MIDI number of predicted note
+    var dt = msg[3]; // time to predicted note
+    var vel = msg[4]; // velocity 0-127
 
     // store the pitch and immediately set (unless there is no synth,
     // indicating this is the first note)
@@ -193,6 +200,3 @@ OSCdef(\return, {
 ~model_reset.()
 // send a note manually if you don't have a midi controller
 MIDIdef.all[\input].func.(64, 16) //velocity, "pitch"
-
-// load another model
-// b.sendMsg("/predictor/load", "/path/to/checkpoint");
