@@ -29,9 +29,9 @@ Server.default.options.outDevice_("Built-in Output");
         ~synth = Synth(\pluck, [\freq, freq, \vel, amp]);
 
         // monophonic -- release last note and immediately start new note
-        b.sendMsg("/predictor/feed",
+        b.sendMsg("/notochord/feed",
             \pitch, midinote, \time, ~delay, \vel, amp*127);
-        b.sendMsg("/predictor/predict",
+        b.sendMsg("/notochord/predict",
             \pitch, midinote, \time, dt, \vel, 0,
             \pitch_topk, 5);
 
@@ -60,7 +60,7 @@ s.waitForBoot{
 
 ~model_reset = {
     t = Process.elapsedTime;
-    b.sendMsg("/predictor/reset");
+    b.sendMsg("/notochord/reset");
     // ~synth!?{~synth.free};
     s.freeAll;
     ~synth = nil;
@@ -123,7 +123,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
+b.sendMsg("/notochord/predict",
     \pitch, 60+12.rand, \time, 0, \vel, 0,
     \index_pitch, 0,
     \sweep_time, true,

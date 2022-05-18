@@ -114,7 +114,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
+b.sendMsg("/notochord/predict",
     \inst, 0, \pitch, 60+12.rand, \time, 0, \vel, 0,
 );
 )
@@ -146,7 +146,7 @@ t = nil;
 ~player_t = t;
 ~machine_t = t;
 
-b.sendMsg("/predictor/reset");
+b.sendMsg("/notochord/reset");
 
 ~global_kws = {
     //add a collection of global variables to an argument list
@@ -164,7 +164,7 @@ b.sendMsg("/predictor/reset");
 
 ~feed_event = {
     arg inst, pitch, dt, vel;
-    b.sendMsg("/predictor/feed",
+    b.sendMsg("/notochord/feed",
         \inst, inst, \pitch, pitch, \time, dt, \vel, vel);
 };
 
@@ -186,7 +186,7 @@ b.sendMsg("/predictor/reset");
         // \exclude_pitch
     ]);
 
-    b.sendMsg("/predictor/predict", *kw);
+    b.sendMsg("/notochord/predict", *kw);
     ~pending_predictions.addFirst(pitch);
 
 };
@@ -350,7 +350,7 @@ t = nil;
 ~pending_predictions.clear;
 ~player_held.clear;
 ~release_all.(0);
-b.sendMsg("/predictor/reset");
+b.sendMsg("/notochord/reset");
 ~player_inst = 257;
 ~model_inst = 258;
 // ~player_inst = 128.rand+1;

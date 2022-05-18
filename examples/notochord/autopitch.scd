@@ -93,7 +93,7 @@ OSCdef(\test, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
+b.sendMsg("/notochord/predict",
     \inst, 257, \pitch, 60+12.rand, \time, 0, \vel, 0, \fix_time, 0, \fix_vel, 0);
 )
 
@@ -114,7 +114,7 @@ b.sendMsg("/predictor/predict",
     ~last_dt = nil;
     ~last_vel = nil;
     t = Process.elapsedTime;
-    b.sendMsg("/predictor/reset");
+    b.sendMsg("/notochord/reset");
     y!?{y.free};
     y = nil;
 };
@@ -130,7 +130,7 @@ MIDIdef.program(\switch, {
     {3}{
         ~gate = 0;
         SystemClock.clear;
-        b.sendMsg("/predictor/reset");
+        b.sendMsg("/notochord/reset");
         y.release;
         SystemClock.clear;
         };
@@ -153,15 +153,15 @@ MIDIdef.program(\switch, {
     // get a new prediction in light of last note,
     // fixing dt and vel to performed values so just pitch is predicted
     pitch.notNil.if{
-        b.sendMsg("/predictor/feed",
+        b.sendMsg("/notochord/feed",
             \inst, ~instrument, \pitch, ~last_pitch, \time, ~delay, \vel, ~last_vel);
-        b.sendMsg("/predictor/predict",
+        b.sendMsg("/notochord/predict",
             \inst, ~instrument, \pitch, ~last_pitch, \time, ~last_dt, \vel, 0,
             \index_pitch, pitch, \fix_time, dt, \fix_vel, vel, \fix_instrument, ~instrument);
     }{
-        b.sendMsg("/predictor/feed",
+        b.sendMsg("/notochord/feed",
             \inst, ~instrument, \pitch, ~last_pitch, \time, ~delay, \vel, ~last_vel);
-        b.sendMsg("/predictor/predict",
+        b.sendMsg("/notochord/predict",
             \inst, ~instrument, \pitch, ~last_pitch, \time, ~last_dt, \vel, 0,
             \fix_time, dt, \fix_vel, vel, \fix_instrument, ~instrument);
     };
