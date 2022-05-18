@@ -21,7 +21,7 @@ class MIDIDataset(Dataset):
         self.prog_start_token = 0
         # self.clamp_time = clamp_time
         self.testing = False
-        self.max_test_len = 10000
+        self.max_test_len = 2048
         
     def __len__(self):
         return len(self.files)

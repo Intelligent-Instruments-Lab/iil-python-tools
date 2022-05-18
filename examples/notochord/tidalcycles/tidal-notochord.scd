@@ -3,19 +3,137 @@ thisProcess.openUDPPort(6789); // from tidal
 ~python = NetAddr.new("127.0.0.1", 9999); // to python
 )
 
-// (
-// s.waitForBoot{
-//     ~dirt = SuperDirt.new;
-//     ~dirt.loadSoundFiles("~/Music/sample/dirt/*");
-//     ~dirt.start(57120);
-// };
-// )
-//
-// ~dirt.soundLibrary.getEvent('matrix_bass', 1)
+// notochord uses General MIDI (https://en.wikipedia.org/wiki/General_MIDI)
+// instrument and drum mappings.
+// instrument 1-128 are the GM melodic instruments, 129-256 are drumkits
 
-
-// for sending MIDI to ableton
+// Option 1: map up to 16 notochord instruments to specific MIDI channels:
 (
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+// this will automatically restrict the instruments notochord can sample
+// to the keys of ~midi_map
+// (but make sure not to use any other instruments in tidal either)
+~midi_map = (
+    // notochord instrument (1-256): midi channel (1-16)
+      1: 1, //grand piano -> channel 1
+     13: 2, //marimba -> channel 2
+    // 19: 3, //rock organ -> channel 3
+    // 26: 4, //acoustic guitar (steel) -> channel 4
+    // 39: 5, //synth bass 1 -> channel 5
+    // 43: 6, //cello -> channel 6
+    // 47: 7, //harp -> channel 7
+    // 54: 8, //voice oohs -> channel 8
+    // 57: 9, //trumpet -> channel 9
+    129:10, //standard drumkit -> channel 10 (drums)
+    // 67:11, //tenor sax -> channel 11
+    // 76:12, //pan flute -> channel 12
+    // 82:13, //saw lead -> channel 13
+    // 90:14, //warm pad -> channel 14
+    // 109:15, //kalimba -> channel 15
+    // 119:16, //synth drum -> channel 16
+);
+// this will automatically restrict the pitches notochord can sample
+// when using a drum instrument to the keys of ~drum_map
+// (but make sure not to use any other drums in tidal either)
+// this example is based on the default 808 rack in Ableton
+~drum_map = (
+    //general MIDI number: desired MIDI number
+    36:36, //electric bass drum -> C1
+    37:37, //side stick -> C#1
+    40:38, //electric snare -> D1
+    39:39, //hand clap -> D#1
+    75:40, //clave -> E1
+    45:41, //low tom -> F1
+    42:42, //closed hat-> F#1
+    47:43, //mid tom -> G1
+    70:44, //maracas -> G#1
+    50:45, //hi tom -> A1
+    46:46, //open hat -> A#1
+    64:47, //low conga -> B1
+    63:48, //mid conga -> C2
+    51:49, //ride cymbal 1 -> C#2
+    62:50, //hi conga -> D2
+    56:51, //cowbell -> D#2
+);
+~release_all = {arg vel=0;
+    [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
+        port.noteOff(chan, note, vel)}}}
+};
+~midi_send = {arg inst, pitch, vel;
+    var channel = ~midi_map[inst]-1;
+    ~is_drum.(inst).if{pitch = ~drum_map[pitch]};
+    channel.isNil.if{"nil channel in mid_send"};
+    pitch.isNil.if{"nil pitch in mid_send"};
+    (vel>0).if{
+        ~m1.noteOn(channel, pitch, vel);
+    }{
+        ~m1.noteOff(channel, pitch);
+    };
+};
+)
+
+// Option 2: send MIDI to fluidsynth
+// example fluidsynth terminal commands:
+// fluidsynth -a coreaudio -m coremidi -v -o midi.autoconnect=1 -o synth.midi-bank-select=mma ~/Downloads/FluidR3_GM_GS.sf2
+// fluidsynth -a coreaudio -m coremidi -v -o midi.autoconnect=1 -o synth.midi-bank-select=xg "/Users/victor/Downloads/Timbres of Heaven (XGM) 4.00(G)/Timbres of Heaven (XGM) 4.00(G).sf2"
+(
+~drum_map = nil;
+~midi_map = nil;
+~bank_xg = true;
+~channel_lru = LinkedList.fill(16, {arg i; i});
+~inst_channels = TwoWayIdentityDictionary.new;
+~sema = Semaphore(1);
+
+MIDIClient.init;
+~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
+
+~release_all = {arg vel=0;
+    [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
+        port.noteOff(chan, note, vel)}}}
+};
+~midi_send = {arg inst, pitch, vel;
+    var channel;
+    ~sema.wait;
+    // check if this instrument has a channel
+    channel = ~inst_channels.at(inst);
+    channel.isNil.if{
+        // if not get least recently used channel
+        channel = ~channel_lru.popFirst;
+        // and change the bank+program
+        ~is_drum.(inst).if{
+            ~m1.control(channel, 0, ~bank_xg.if{120}{1}); //drum
+            ~m1.control(channel, 32, 0);
+            ~m1.program(channel, inst-129); //program
+        }{
+            ~m1.control(channel, 0, 0); //melodic
+            ~m1.control(channel, 32, 0);
+            ~m1.program(channel, inst-1); //program
+        };
+        // TODO: anonymous instruments?
+
+    }{
+        ~channel_lru.remove(channel)
+    };
+    // send the event
+    (vel>0).if{
+        ~m1.noteOn(channel, pitch, vel);
+    }{
+        ~m1.noteOff(channel, pitch);
+    };
+    // update the inst / channel mappings
+    ~channel_lru.add(channel);
+    ~inst_channels.remove(channel);
+    ~inst_channels[inst] = channel;
+    ~sema.signal;
+};
+)
+
+// Option 3: send MIDI to GM.als
+// this is an Ableton set which maps general midi onto ~30 synths
+// ask victor for the set. requires Live 9 suite or higher
+(
+~drum_map = nil;
+~midi_map = nil;
 MIDIClient.init;
 // MIDIClient.destinations
 ~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
@@ -86,57 +204,6 @@ MIDIClient.init;
 };
 )
 
-// for sending MIDI to fluidsynth
-// fluidsynth -a coreaudio -m coremidi -v -o midi.autoconnect=1 -o synth.midi-bank-select=mma ~/Downloads/FluidR3_GM_GS.sf2
-(
-~channel_lru = LinkedList.fill(16, {arg i; i});
-~inst_channels = TwoWayIdentityDictionary.new;
-~sema = Semaphore(1);
-
-MIDIClient.init;
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
-
-~release_all = {arg vel=0;
-    [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
-        port.noteOff(chan, note, vel)}}}
-};
-~midi_send = {arg inst, pitch, vel;
-    var channel;
-    ~sema.wait;
-    // check if this instrument has a channel
-    channel = ~inst_channels.at(inst);
-    channel.isNil.if{
-        // if not get least recently used channel
-        channel = ~channel_lru.popFirst;
-        // and change the bank+program
-        ((inst>128)&&(inst<=256))||(inst>=265).if{
-            ~m1.control(channel, 0, 1); //drum
-            ~m1.control(channel, 32, 0);
-            ~m1.program(channel, inst-128); //program
-        }{
-            ~m1.control(channel, 0, 0); //melodic
-            ~m1.control(channel, 32, 0);
-            ~m1.program(channel, inst-1); //program
-        };
-        // TODO: anonymous instruments?
-
-    }{
-        ~channel_lru.remove(channel)
-    };
-    // send the event
-    (vel>0).if{
-        ~m1.noteOn(channel, pitch, vel);
-    }{
-        ~m1.noteOff(channel, pitch);
-    };
-    // update the inst / channel mappings
-    ~channel_lru.add(channel);
-    ~inst_channels.remove(channel);
-    ~inst_channels[inst] = channel;
-    ~sema.signal;
-};
-)
-
 (
 ~oLatency = 0.1; // should match value at tidal boot
 ~ncLatency = ~oLatency-0.02; // slightly shorter than oLatency
@@ -144,6 +211,11 @@ MIDIClient.init;
 
 ~events = Dictionary.new;
 ~event_idx = 0;
+
+// check if an instrument is a drumkit
+~is_drum = {arg inst;
+    ((inst>128)&&(inst<=256))||(inst>=265)
+};
 
 // handle OSC input from tidal
 OSCdef(\from_tidal, {
@@ -271,6 +343,14 @@ OSCdef(\from_tidal, {
         query.add(\min_vel); query.add(1)
     };
     query.add(\fix_time); query.add(event[\time]);
+    ~midi_map.notNil.if{
+        query.add(\include_instrument);
+        query.add("%JSON:"++JSON.stringify(~midi_map.keys.asList))
+    };
+    ~drum_map.notNil.if{
+        query.add(\include_drum);
+        query.add("%JSON:"++JSON.stringify(~drum_map.keys.asList))
+    };
     query
 };
 

@@ -362,76 +362,82 @@ class Notochord(nn.Module):
                 )
         return r
 
-    def get_samplers(self, 
-            instrument_top_p=None, constrain_instrument=None,
-            pitch_topk=None, index_pitch=None, 
-            pitch_top_p=None, constrain_pitch=None,
-            velocity_temp=None,
-            sweep_time=False, min_time=None, max_time=None,time_weight_top_p=None, time_component_temp=None,
-            min_vel=None, max_vel=None):
-        """
-        this method converts the many arguments to `predict` into functions for
-        sampling each note modality (e.g. pitch, time, velocity)
-        """
+    # def get_samplers(self, 
+    #         instrument_top_p=None, constrain_instrument=None,
+    #         pitch_topk=None, index_pitch=None, 
+    #         pitch_top_p=None, constrain_pitch=None,
+    #         velocity_temp=None,
+    #         sweep_time=False, min_time=None, max_time=None,time_weight_top_p=None, time_component_temp=None,
+    #         min_vel=None, max_vel=None):
+    #     """
+    #     this method converts the many arguments to `predict` into functions for
+    #     sampling each note modality (e.g. pitch, time, velocity)
+    #     """
 
-        def sample_instrument(x):
-            if constrain_instrument is not None:
-                preserve_x = x[...,constrain_instrument]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_instrument] = preserve_x
-            probs = x.softmax(-1)
-            if instrument_top_p is not None:
-                probs = reweight_top_p(probs, instrument_top_p)
-            return D.Categorical(probs).sample()
+        # def sample_instrument(x):
+        #     if constrain_instrument is not None:
+        #         preserve_x = x[...,constrain_instrument]
+        #         x = torch.full_like(x, -np.inf)
+        #         x[...,constrain_instrument] = preserve_x
+        #     probs = x.softmax(-1)
+        #     if instrument_top_p is not None:
+        #         probs = reweight_top_p(probs, instrument_top_p)
+        #     return D.Categorical(probs).sample()
 
-        def sample_pitch(x):
-            if constrain_pitch is not None:
-                preserve_x = x[...,constrain_pitch]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_pitch] = preserve_x
-            if index_pitch is not None:
-                return x.argsort(-1, True)[...,index_pitch]
-            elif pitch_topk is not None:
-                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
-            else:
-                probs = x.softmax(-1)
-                if pitch_top_p is not None:
-                    probs = reweight_top_p(probs, pitch_top_p)
-                return D.Categorical(probs).sample()
+        # def sample_pitch(x):
+        #     if constrain_pitch is not None:
+        #         preserve_x = x[...,constrain_pitch]
+        #         x = torch.full_like(x, -np.inf)
+        #         x[...,constrain_pitch] = preserve_x
+        #     if index_pitch is not None:
+        #         return x.argsort(-1, True)[...,index_pitch]
+        #     elif pitch_topk is not None:
+        #         return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+        #     else:
+        #         probs = x.softmax(-1)
+        #         if pitch_top_p is not None:
+        #             probs = reweight_top_p(probs, pitch_top_p)
+        #         return D.Categorical(probs).sample()
 
-        def sample_time(x):
-            # TODO: respect trunc_time when sweep_time is True
-            if sweep_time:
-                if min_time is not None or max_time is not None:
-                    raise NotImplementedError("""
-                    trunc_time with sweep_time needs implementation
-                    """)
-                assert x.shape[0]==1, "batch size should be 1 here"
-                log_pi, loc, s = self.time_dist.get_params(x)
-                idx = log_pi.squeeze().argsort()[:9]
-                loc = loc.squeeze()[idx].sort().values[...,None] # multiple times in batch dim
-                # print(loc.shape)
-                return loc
-            else:
-                trunc = (
-                    -np.inf if min_time is None else min_time,
-                    np.inf if max_time is None else max_time)
-                return self.time_dist.sample(x, 
-                    truncate=trunc,
-                    component_temp=time_component_temp, weight_top_p=time_weight_top_p)
+        # def sample_time(x):
+        #     # TODO: respect trunc_time when sweep_time is True
+        #     if sweep_time:
+        #         if min_time is not None or max_time is not None:
+        #             raise NotImplementedError("""
+        #             trunc_time with sweep_time needs implementation
+        #             """)
+        #         assert x.shape[0]==1, "batch size should be 1 here"
+        #         log_pi, loc, s = self.time_dist.get_params(x)
+        #         idx = log_pi.squeeze().argsort()[:9]
+        #         loc = loc.squeeze()[idx].sort().values[...,None] # multiple times in batch dim
+        #         # print(loc.shape)
+        #         return loc
+        #     else:
+        #         trunc = (
+        #             -np.inf if min_time is None else min_time,
+        #             np.inf if max_time is None else max_time)
+        #         return self.time_dist.sample(x, 
+        #             truncate=trunc,
+        #             component_temp=time_component_temp, weight_top_p=time_weight_top_p)
 
-        def sample_velocity(x):
-            trunc = (
-                -np.inf if min_vel is None else min_vel,
-                np.inf if max_vel is None else max_vel)
-            return self.vel_dist.sample(x, component_temp=velocity_temp, truncate=trunc)
+        # def sample_velocity(x):
+        #     trunc = (
+        #         -np.inf if min_vel is None else min_vel,
+        #         np.inf if max_vel is None else max_vel)
+        #     return self.vel_dist.sample(x, component_temp=velocity_temp, truncate=trunc)
 
-        return (
-            sample_instrument,
-            sample_pitch, 
-            sample_time,
-            sample_velocity,
-        )
+        # return (
+        #     sample_instrument,
+        #     sample_pitch, 
+        #     sample_time,
+        #     sample_velocity,
+        # )
+
+    def is_drum(self, inst):
+        # TODO: add a constructor argument to specify which are drums
+        # hardcoded for now
+        return inst > 128 and inst < 257 or inst > 264
+
     
     def feed(self, inst, pitch, time, vel):
         """consume an event and advance hidden state
@@ -481,6 +487,7 @@ class Notochord(nn.Module):
             sweep_time=False, min_time=None, max_time=None,
             include_instrument=None, exclude_instrument=None,
             include_pitch=None, exclude_pitch=None,
+            include_drum=None,
             instrument_temp=None, pitch_temp=None, velocity_temp=None,
             rhythm_temp=None, timing_temp=None,
             min_vel=None, max_vel=None,
@@ -506,6 +513,8 @@ class Notochord(nn.Module):
             include_pitch: pitch(es) to include in sampling.
                 (if not None, all others will be excluded)
             exclude_pitch: pitch(es) to exclude from sampling.
+            include_drum: like `include_pitch`, but only in effect when 
+                instrument is a drumkit
             min_vel, max_vel: if not None, truncate the velocity distribution
 
             # sampling strategies
@@ -565,7 +574,7 @@ class Notochord(nn.Module):
             instrument_temp, include_instrument, exclude_instrument))
 
         pitch_intervention = (pitch_topk or any(p is not None for p in (
-            pitch_temp, include_pitch, exclude_pitch)))
+            pitch_temp, include_pitch, exclude_pitch, include_drum)))
 
         time_intervention = any(p is not None for p in (
             min_time, max_time, rhythm_temp, timing_temp))
@@ -605,19 +614,93 @@ class Notochord(nn.Module):
             `include_pitch` to allow only one specific pitch
             """)
 
+        def sample_instrument(x):
+            #  instead of below, leaning on the instrument being first in 
+            # default order.
+            # if include_drum is supplied, make sure to exclude drum instruments
+            # when no pitch is in the allowed drums
+            # if include_drum is not None:
+            #     pit = predicted_by_name('instrument')
+            #     pits = [pit] if pit is not None else constrain_pitch
+            #     if pits is not None and all(pit not in include_drum for pit in pits):
+            #         constrain_instrument = [i for i in constrain_instrument if not self.is_drum(i)]
+            if constrain_instrument is not None:
+                preserve_x = x[...,constrain_instrument]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_instrument] = preserve_x
+            probs = x.softmax(-1)
+            if instrument_temp is not None:
+                probs = reweight_top_p(probs, instrument_temp)
+            return D.Categorical(probs).sample()
+
+        def sample_pitch(x):
+            # conditional constraint
+            if include_drum is not None:
+                # if this event is / must be a drum,
+                # use include_drum instead of constrain_instrument
+                inst = predicted_by_name('instrument')
+                insts = [inst] if inst is not None else constrain_instrument
+                if insts is not None and all(self.is_drum(i) for i in insts):
+                    nonlocal constrain_pitch
+                    constrain_pitch = include_drum
+
+            if constrain_pitch is not None:
+                preserve_x = x[...,constrain_pitch]
+                x = torch.full_like(x, -np.inf)
+                x[...,constrain_pitch] = preserve_x
+            if index_pitch is not None:
+                return x.argsort(-1, True)[...,index_pitch]
+            elif pitch_topk is not None:
+                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+            else:
+                probs = x.softmax(-1)
+                if pitch_temp is not None:
+                    probs = reweight_top_p(probs, pitch_temp)
+                return D.Categorical(probs).sample()
+
+        def sample_time(x):
+            # TODO: respect trunc_time when sweep_time is True
+            if sweep_time:
+                if min_time is not None or max_time is not None:
+                    raise NotImplementedError("""
+                    trunc_time with sweep_time needs implementation
+                    """)
+                assert x.shape[0]==1, "batch size should be 1 here"
+                log_pi, loc, s = self.time_dist.get_params(x)
+                idx = log_pi.squeeze().argsort()[:9]
+                loc = loc.squeeze()[idx].sort().values[...,None] 
+                # multiple times in batch dim
+                # print(loc.shape)
+                return loc
+            else:
+                trunc = (
+                    -np.inf if min_time is None else min_time,
+                    np.inf if max_time is None else max_time)
+                return self.time_dist.sample(x, 
+                    truncate=trunc,
+                    component_temp=timing_temp, weight_top_p=rhythm_temp)
+
+        def sample_velocity(x):
+            trunc = (
+                -np.inf if min_vel is None else min_vel,
+                np.inf if max_vel is None else max_vel)
+            return self.vel_dist.sample(
+                x, component_temp=velocity_temp, truncate=trunc)
+
         with torch.inference_mode():
             h, proj_h = self.prediction_states
 
             modalities = list(zip(
                 self.projections,
-                self.get_samplers(
-                    instrument_temp, constrain_instrument,
-                    pitch_topk, index_pitch,
-                    pitch_temp, constrain_pitch,
-                    velocity_temp,
-                    sweep_time, min_time, max_time,
-                    rhythm_temp, timing_temp,
-                    min_vel, max_vel),
+                (sample_instrument, sample_pitch, sample_time, sample_velocity),
+                # self.get_samplers(
+                #     instrument_temp, constrain_instrument,
+                #     pitch_topk, index_pitch,
+                #     pitch_temp, constrain_pitch,
+                #     velocity_temp,
+                #     sweep_time, min_time, max_time,
+                #     rhythm_temp, timing_temp,
+                #     min_vel, max_vel),
                 self.embeddings,
                 ))
 
@@ -654,8 +737,14 @@ class Notochord(nn.Module):
             perm = det_idx + undet_idx # permutation from the canonical order
             iperm = np.argsort(perm) # inverse permutation back to canonical order
 
-            md = ['instrument', 'pitch', 'time', 'vel']
-            # print('sampling order:', [md[i] for i in perm])
+            mode_names = ['instrument', 'pitch', 'time', 'velocity']
+            name_to_idx = {k:v for k,v in zip(mode_names, iperm)}
+            def predicted_by_name(name):
+                idx = name_to_idx[name]
+                if len(predicted) > idx:
+                    return predicted[idx]
+                return None
+            # print('sampling order:', [mode_names[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
@@ -679,10 +768,14 @@ class Notochord(nn.Module):
                     running_ctx += embed(pred)
                 det_idx.append(i)
 
-            pred_inst = predicted[iperm[0]]
-            pred_pitch = predicted[iperm[1]]
-            pred_time = predicted[iperm[2]]
-            pred_vel = predicted[iperm[3]]
+            pred_inst = predicted_by_name('instrument')
+            pred_pitch = predicted_by_name('pitch')
+            pred_time = predicted_by_name('time')
+            pred_vel = predicted_by_name('velocity')
+            # pred_inst = predicted[iperm[0]]
+            # pred_pitch = predicted[iperm[1]]
+            # pred_time = predicted[iperm[2]]
+            # pred_vel = predicted[iperm[3]]
 
             if allow_end:
                 end_params = self.end_proj(h)

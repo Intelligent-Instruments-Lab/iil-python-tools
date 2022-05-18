@@ -232,7 +232,7 @@ class Trainer:
             shuffle=True, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         valid_loader = DataLoader(
-            self.valid_dataset, self.batch_size,
+            self.valid_dataset, self.batch_size//4,
             shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         ##### validation loop
