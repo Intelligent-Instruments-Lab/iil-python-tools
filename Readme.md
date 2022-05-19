@@ -1,4 +1,4 @@
-# Structure
+# Repository Structure
 
 - iipyper: python package for easy MIDI, OSC, event loops
 - notochord: python package for the Notochord MIDI performance model
@@ -22,7 +22,7 @@ git clone https://github.com/Intelligent-Instruments-Lab/iil-python-tools.git
 cd iil-python-tools
 ```
 
-we manage python dependencies with `conda`. If you don't have an anaoconda/miniconda python install already, download an installer from https://docs.conda.io/en/latest/miniconda.html or use `brew install --cask miniconda` on mac.
+we manage python dependencies with `conda`. If you don't have an anaconda/miniconda python install already, download an installer from https://docs.conda.io/en/latest/miniconda.html or use `brew install --cask miniconda` on mac.
 
 you can check that this worked with `which python` -- it should have 'miniconda' in the path
 
