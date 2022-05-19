@@ -39,12 +39,13 @@ this will install all dependencies in a conda environment called `iil-python-too
 download a model checkpoint (e.g. `notochord_lakh_20G.ckpt`) from the releases page: https://github.com/Intelligent-Instruments-Lab/iil-python-tools/releases
 
 ## Run python server
-this will run notochord and listen for OSC messages to feed and query the model:
+In a terminal, make sure the `iil-python-tools` conda environment is active (`conda activate iil-python-tools`) and run:
 ```
 python examples/notochord/server.py --checkpoint ~/Downloads/notochord_lakh_20G.ckpt
 ```
+this will run notochord and listen continously for OSC messages.
 
-`examples/notochord/generate.scd` and `examples/notochord/harmonize.scd` are example SuperCollider scripts for interacting with notochord
+`examples/notochord/generate.scd` and `examples/notochord/harmonize.scd` are example scripts for interacting with the notochord server from SuperCollider.
 
 ## Tidal interface
 
@@ -65,10 +66,11 @@ In a terminal, start the python server as described above.
 In Supercollider, step through `examples/notochord/tidalcycles/tidal-notochord.scd` which will receive from Tidal, talk to the python server, and send MIDI on to a synthesizer. There are two options, either send to fluidsynth to synthesize General MIDI, or specify your own mapping of instruments to channels and send on to your own DAW or synth.
 
 ### Install fluidsynth (optional)
+fluidsynth (https://github.com/FluidSynth/fluidsynth) is a General MIDI synthesizer which you can install from the package manager. On mac:
 ```
 brew install fluidsynth
 ```
-get a soundfont, like this one: https://drive.google.com/file/d/1-cwBWZIYYTxFwzcWFaoGA7Kjx5SEjVAa/view
+fluidsynth needs a soundfont to run, like this one: https://drive.google.com/file/d/1-cwBWZIYYTxFwzcWFaoGA7Kjx5SEjVAa/view
 
 run fluidsynth in a terminal (see the fluidsynth block in `examples/notochord/tidalcycles/tidal-notochord.scd` for an example command).
 
