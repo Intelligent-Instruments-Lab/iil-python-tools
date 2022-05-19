@@ -1,3 +1,5 @@
+include("API");
+
 (
 thisProcess.openUDPPort(6789); // from tidal
 ~python = NetAddr.new("127.0.0.1", 9999); // to python
@@ -9,6 +11,7 @@ thisProcess.openUDPPort(6789); // from tidal
 
 // Option 1: map up to 16 notochord instruments to specific MIDI channels:
 (
+MIDIClient.init;
 ~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
 // this will automatically restrict the instruments notochord can sample
 // to the keys of ~midi_map
