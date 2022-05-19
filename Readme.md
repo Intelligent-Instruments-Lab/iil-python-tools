@@ -1,8 +1,8 @@
 # Structure
 
 - iipyper: python package for easy MIDI, OSC, event loops
-- notochord: python package for defining+training pytorch RNN models
-    - notebooks: jupyter notebooks
+- notochord: python package for the Notochord MIDI performance model
+    - notochord: package source code
     - scripts: helper scripts for training, data preprocessing etc
 - examples:
     - iipyper: basic usage for iipyper
