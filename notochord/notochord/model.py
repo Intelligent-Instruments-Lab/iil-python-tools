@@ -617,13 +617,20 @@ class Notochord(nn.Module):
         def sample_instrument(x):
             #  instead of below, leaning on the instrument being first in 
             # default order.
+            # ^ insufficient when pitch is fully specified and instrument is not though
+
             # if include_drum is supplied, make sure to exclude drum instruments
             # when no pitch is in the allowed drums
-            # if include_drum is not None:
-            #     pit = predicted_by_name('instrument')
-            #     pits = [pit] if pit is not None else constrain_pitch
-            #     if pits is not None and all(pit not in include_drum for pit in pits):
-            #         constrain_instrument = [i for i in constrain_instrument if not self.is_drum(i)]
+            if include_drum is not None:
+                pit = predicted_by_name('pitch')
+                pits = [pit] if pit is not None else constrain_pitch
+                if pits is not None and all(pit not in include_drum for pit in pits):
+                    nonlocal constrain_instrument
+                    if constrain_instrument is None:
+                        constrain_instrument = range(1,self.instrument_domain)
+                    constrain_instrument = [
+                        i for i in constrain_instrument if not self.is_drum(i)]
+
             if constrain_instrument is not None:
                 preserve_x = x[...,constrain_instrument]
                 x = torch.full_like(x, -np.inf)

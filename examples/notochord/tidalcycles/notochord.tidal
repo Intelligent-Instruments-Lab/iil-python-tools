@@ -64,6 +64,16 @@ do
 
 do
   once $ ncreset "1"
+  -- notochord chooses the instrumentation
+  p "chooseinst"
+    $ ncinst "-1"
+    <| ncpitch (slow 4 (run 32 + 36))
+    # ncvel (range 30 99 $ slow 4 saw)
+    # cps 1
+    # legato 0.99
+
+do
+  once $ ncreset "1"
   -- velocity ramp; notochord chooses the instrumentation + pitch
   p "dynamicsonly"
     $ ncinst "[-1]*8"
@@ -75,15 +85,7 @@ do
 -- below examples are for fluidsynth only 
 --
 
-do
-  once $ ncreset "1"
-  -- notochord chooses the instrumentation
-  p "chooseinst"
-    $ ncinst "-1"
-    <| ncpitch (slow 4 (run 32 + 36))
-    # ncvel (range 30 99 $ slow 4 saw)
-    # cps 1
-    # legato 0.99
+hush
 
 do
   once $ ncreset "1"
