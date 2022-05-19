@@ -16,14 +16,18 @@ MIDIClient.init;
 // this will automatically restrict the instruments notochord can sample
 // to the keys of ~midi_map
 // (but make sure not to use any other instruments in tidal either)
+// this example requires you to set up synths on MIDI channels 2,3,4, and 10
+// where 10 has a drum rack.
+// uncomment lines to add more channels, and change to first number to use
+// different notochord instruments.
 ~midi_map = (
     // notochord instrument (1-256): midi channel (1-16)
-      1: 1, //grand piano -> channel 1
-     13: 2, //marimba -> channel 2
-    // 19: 3, //rock organ -> channel 3
-    // 26: 4, //acoustic guitar (steel) -> channel 4
-    // 39: 5, //synth bass 1 -> channel 5
-    // 43: 6, //cello -> channel 6
+    // 1: 1, //grand piano -> channel 1
+      8: 2, //clavinet -> channel 2
+     13: 3, //marimba -> channel 3
+     17: 4, //drawbar organ -> channel 4
+     27: 5, //jazz guitar -> channel 5
+    // 39: 6, //synth bass 1 -> channel 6
     // 47: 7, //harp -> channel 7
     // 54: 8, //voice oohs -> channel 8
     // 57: 9, //trumpet -> channel 9
@@ -32,8 +36,8 @@ MIDIClient.init;
     // 76:12, //pan flute -> channel 12
     // 82:13, //saw lead -> channel 13
     // 90:14, //warm pad -> channel 14
-    // 109:15, //kalimba -> channel 15
-    // 119:16, //synth drum -> channel 16
+    // 9:15, //celesta -> channel 15
+    // 11:16, //music box -> channel 16
 );
 // this will automatically restrict the pitches notochord can sample
 // when using a drum instrument to the keys of ~drum_map
@@ -68,9 +72,11 @@ MIDIClient.init;
 };
 ~midi_send = {arg inst, pitch, vel;
     var channel = ~midi_map[inst]-1;
-    ~is_drum.(inst).if{pitch = ~drum_map[pitch]};
-    channel.isNil.if{"nil channel in mid_send"};
-    pitch.isNil.if{"nil pitch in mid_send"};
+    ~is_drum.(inst).if{
+        pitch = ~drum_map[pitch]
+    };
+    channel.isNil.if{"nil channel in ~midi_send: are you  sending something from tidal which isn't in ~midi_map"};
+    pitch.isNil.if{"nil pitch in ~midi_send: are you sending something from tidal which isn't in ~drum_map?"};
     (vel>0).if{
         ~m1.noteOn(channel, pitch, vel);
     }{
@@ -236,7 +242,7 @@ OSCdef(\from_tidal, {
             "incomplete note-on".postln;
         }{
             ~midi_send.(event[\inst], event[\pitch], event[\vel]);
-        }
+        };
     });
 
     // schedule note-off: fully determined once note-on is, since timing
