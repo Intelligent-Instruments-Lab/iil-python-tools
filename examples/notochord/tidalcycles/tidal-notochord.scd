@@ -55,6 +55,10 @@ thisProcess.openUDPPort(6789); // from tidal
     62:50, //hi conga -> D2
     56:51, //cowbell -> D#2
 );
+//
+/*~pitch_maps = (
+
+)*/
 ~release_all = {arg vel=0;
     [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
         port.noteOff(chan, note, vel)}}}
@@ -128,81 +132,6 @@ MIDIClient.init;
 };
 )
 
-// Option 3: send MIDI to GM.als
-// this is an Ableton set which maps general midi onto ~30 synths
-// ask victor for the set. requires Live 9 suite or higher
-(
-~drum_map = nil;
-~midi_map = nil;
-MIDIClient.init;
-// MIDIClient.destinations
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
-~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
-~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
-~prog2portchan = { arg prog;
-    \inst.postln;
-    prog.postln;
-    prog.class.postln;
-    (prog-1 /8).asInteger.postln;
-    (prog-1 %8).asInteger.postln;
-    case
-    {prog==0}{"can't convert start token".postln}
-    {prog<=128}{
-        var group = (prog-1 /8).asInteger;
-        var idx = (prog-1 %8).asInteger;
-        var port = switch(group)
-        { 0}{case
-            {idx<4}{~m1} //acoustic
-            {idx<6}{~m2} //electric
-            {true}{~m3} //harpsichord
-        } //piano
-        { 1}{((idx<3)||(idx==5)).if{~m1}{~m2}} //chromatic perc
-        { 2}{(idx<4).if{~m1}{~m2}} //organ
-        { 3}{(idx<5).if{~m1}{~m2}} //guitar
-        { 4}{(idx<4).if{~m2}{~m1}} //bass
-        { 5}{(idx<5).if{~m1}{~m2}} //strings
-        { 6}{(idx<4).if{~m1}{~m2}} //ensemble
-        { 7}{(idx<3).if{~m1}{~m2}} //brass
-        { 8}{(idx<4).if{~m1}{~m2}} //reed
-        { 9}{(idx<3).if{~m1}{~m2}} //pipe
-        {10}{(idx%2==0).if{~m1}{~m2}} //synth lead
-        {11}{(idx<4).if{~m1}{~m2}} //synth pad
-        {12}{~m1} //synth fx
-        {13}{case //'ethnic'
-            {idx<=3}{~m1}
-            {idx==4}{~m2}
-            {idx==5}{group=2;~m2}
-            {idx==6}{group=5;~m1}
-            {idx==7}{group=8;~m2}
-        }
-        {14}{~m1} //percussive
-        {15}{~m1} //sound fx
-        ;
-        // \melody.postln;
-        (port:port, chan:group)
-    }{(prog<=256)||(prog>=265)}{
-        // \drum.postln;
-        (port:~m2, chan:12)
-    }{prog-257 < 8}{
-        // \anon.postln;
-        (port:~m1, chan:0)
-    }
-};
-~release_all = {arg vel=0;
-    [~m1, ~m2, ~m3].do{arg port; 128.do{arg note; 16.do{arg chan;
-        port.noteOff(chan, note, vel)}}}
-};
-~midi_send = {arg inst, pitch, vel;
-    var port_chan = ~prog2portchan.(inst);
-    var port = port_chan[\port];
-    var chan = port_chan[\chan];
-    (vel>0).if{
-        port.noteOn(chan, pitch, vel);
-    }{
-        port.noteOff(chan, pitch);
-    }
-};
-)
 
 (
 ~oLatency = 0.1; // should match value at tidal boot
