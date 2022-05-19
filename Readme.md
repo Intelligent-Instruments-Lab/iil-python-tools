@@ -22,12 +22,7 @@ git clone https://github.com/Intelligent-Instruments-Lab/iil-python-tools.git
 cd iil-python-tools
 ```
 
-(skip this if you already have anaconda/miniconda python installed)
-on mac:
-```
-brew install --cask miniconda
-```
-or download an installer from https://docs.conda.io/en/latest/miniconda.html
+we manage python dependencies with `conda`. If you don't have an anaoconda/miniconda python install already, download an installer from https://docs.conda.io/en/latest/miniconda.html or use `brew install --cask miniconda` on mac.
 
 you can check that this worked with `which python` -- it should have 'miniconda' in the path
 
