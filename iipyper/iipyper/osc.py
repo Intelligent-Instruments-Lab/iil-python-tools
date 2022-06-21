@@ -1,6 +1,7 @@
 from typing import Tuple
 import time
 import json
+import cProfile as profile
 
 from pythonosc import osc_packet
 from pythonosc.osc_server import AsyncIOOSCUDPServer
@@ -35,21 +36,21 @@ from pythonosc.udp_client import SimpleUDPClient
 #         except osc_packet.ParseError:
 #             pass
 
-def do_json(d, k, json_keys, route):
-    v = d[k]
+def convert_json(v, force, route):
     if not isinstance(v, str): return
     has_prefix = v.startswith('%JSON:')
     if has_prefix:
         v = v[6:]
-    if k in json_keys or has_prefix:
+    if force or has_prefix:
         try:
-            d[k] = json.loads(v)
+            return json.loads(v)
         except (TypeError, json.JSONDecodeError) as e:
             print(f"""
             warning: JSON decode failed for {route} argument "{k}": 
             value: {v}
             {type(e)} {e}
             """)
+    return v
 
 class OSC():
     """
@@ -185,7 +186,8 @@ class OSC():
         if self.verbose:
             print(f"OSC message sent {route}:{msg}")
 
-    def _decorate(self, use_kwargs, route, return_host, return_port, json_keys):
+    def _decorate(self, use_kwargs, route, pass_route,
+            return_host, return_port, return_route, json_keys):
         """generic decorator (args and kwargs cases)"""
         if hasattr(route, '__call__'):
             # bare decorator
@@ -196,8 +198,9 @@ class OSC():
             f = None
             json_keys = set(json_keys or [])
 
-        def decorator(f, route=route, 
+        def decorator(f, route=route, pass_route=pass_route,
                 return_host=return_host, return_port=return_port, 
+                return_route=return_route,
                 json_keys=json_keys):
             # default_route = f'/{f.__name__}/*'
             if route is None:
@@ -217,25 +220,43 @@ class OSC():
                     kwargs = {k:v for k,v in zip(args[::2], args[1::2])}
                     # JSON conversions
                     for k in kwargs: 
-                        do_json(kwargs, k, json_keys, route)
+                        kwargs[k] = convert_json(
+                            kwargs[k], k in json_keys, route)
                     args = []
                 else:
+                    args = [convert_json(a, False, route) for a in args]
                     kwargs = {}
-                r = f(address, *args, **kwargs)
+                if pass_route:
+                    r = f(address, *args, **kwargs)
+                else:
+                    # t = time.time()
+                    r = f(*args, **kwargs)
+                    # print(time.time() - t)
+                    # profile.runctx('r = f(*args, **kwargs)', globals(), locals())
+
                 # if there was a return value,
                 # send it as a message back to the sender
-                if r is not None:
-                    if not hasattr(r, '__len__'):
+                if r is None:
+                    return
+                # if return route not given in decorator,
+                # use first returned value
+                if return_route is None:
+                    if (
+                        not hasattr(r, '__len__') or 
+                        not isinstance(r[0], str) or
+                        len(r)<2):
                         print("""
                         value returned from OSC handler should start with route
                         """)
-                    else:
-                        client = (
-                            client[0] if return_host is None else return_host,
-                            client[1] if return_port is None else return_port
-                        )
-                        print(client, r)
-                        self.get_client_by_sender(client).send_message(r[0], r[1:])
+                    rr, *r = r
+                else:
+                    rr = return_route
+                client = (
+                    client[0] if return_host is None else return_host,
+                    client[1] if return_port is None else return_port
+                )
+                print(client, r)
+                self.get_client_by_sender(client).send_message(rr, r)
 
             self.add_handler(route, handler)
 
@@ -243,11 +264,15 @@ class OSC():
 
         return decorator if f is None else decorator(f)
     
-    def args(self, route=None, return_host=None, return_port=None):
+    def args(self, route=None, pass_route=True,
+        return_host=None, return_port=None, return_route=None):
         """decorate a function as an args-style OSC handler."""
-        return self._decorate(False, route, return_host, return_port, None)
+        return self._decorate(False, route, pass_route,
+            return_host, return_port, return_route, None)
 
-    def kwargs(self, route=None, return_host=None, return_port=None, json_keys=None):
+    def kwargs(self, route=None, pass_route=True,
+        return_host=None, return_port=None, return_route=None, 
+        json_keys=None):
         """decorate a function as an kwargs-style OSC handler
         
         Args:
@@ -255,8 +280,37 @@ class OSC():
             json_keys: names of keyword arguments which should be decoded
                 from JSON, in the case that they arrive as strings
         """
-        return self._decorate(True, route, return_host, return_port, json_keys)
+        return self._decorate(True, route, pass_route,
+            return_host, return_port, return_route, json_keys)
 
-    def __call__(self, client, *a, **kw):
-        """alternate syntax for `send` with client name first"""
-        self.send(*a, client=client, **kw)
+    def cls(self, obj, route=None, kwargs=False, pass_route=False):
+        """wrap an instance of a class, adding an OSC route for each of its methods"""
+        method_names = [m for m in dir(obj) if not m.startswith('_')]
+        if route is None:
+            route = type(obj).__name__
+        for m in method_names:
+            method=getattr(obj, m)
+            if callable(method):
+                m_route = '/'.join(('', route, m))
+                print(m_route)
+                if kwargs:
+                    self.kwargs(
+                        route=m_route, return_route=m_route, 
+                        pass_route=pass_route)(method)
+                else:
+                    self.args(
+                        route=m_route, return_route=m_route,
+                        pass_route=pass_route)(method)
+
+    def __call__(self, *a, **kw):
+        """syntactic sugar:
+        
+        alternate syntax for `send` with client name first;
+        
+        or alias for `cls`
+        """
+        if isinstance(a[0], str):
+            client, *a = a
+            self.send(*a, client=client, **kw)
+        else:
+            self.cls(*a, **kw)

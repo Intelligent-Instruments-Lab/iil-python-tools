@@ -13,5 +13,5 @@ class Identity(Feature):
     """just check size and convert to numpy array"""
     def __call__(self, source):
         source = np.array(source)
-        assert source.shape == (self.size,)
+        assert source.shape[-1] == self.size
         return source

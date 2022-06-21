@@ -11,7 +11,7 @@ class NNSearch:
     def __call__(self, feature: Feature, k: int = 5) -> Tuple[TargetIDs, Scores]:
         feature = feature[None].astype(np.float32) # add batch dim, enforce type
         scores, target_ids = self.index.search(feature, k)
-        scores = scores ** 0.5 # hardcoded for L2
+        scores = scores #** 0.5 # hardcoded for L2
         return target_ids[0], scores[0] # remove batch dim
 
     # add a feature vector the the index and return its ID
