@@ -32,6 +32,7 @@ conda env create -f environment.yml
 conda activate iil-python-tools
 pip install -e notochord
 pip install -e iipyper
+pip install -e iml
 ```
 this will install all dependencies in a conda environment called `iil-python-tools`, and do an editable install of notochord and iipyper so you can hack on them.
 

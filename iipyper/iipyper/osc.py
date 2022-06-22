@@ -2,6 +2,7 @@ from typing import Tuple
 import time
 import json
 import cProfile as profile
+import inspect
 
 from pythonosc import osc_packet
 from pythonosc.osc_server import AsyncIOOSCUDPServer
@@ -186,7 +187,7 @@ class OSC():
         if self.verbose:
             print(f"OSC message sent {route}:{msg}")
 
-    def _decorate(self, use_kwargs, route, pass_route,
+    def _decorate(self, arg_mode, route, pass_route,
             return_host, return_port, return_route, json_keys):
         """generic decorator (args and kwargs cases)"""
         if hasattr(route, '__call__'):
@@ -216,16 +217,42 @@ class OSC():
                     *args: content of OSC message
                 """
                 # print('handler:', client, address)
-                if use_kwargs:
+                if arg_mode=='args':
                     kwargs = {k:v for k,v in zip(args[::2], args[1::2])}
                     # JSON conversions
                     for k in kwargs: 
                         kwargs[k] = convert_json(
                             kwargs[k], k in json_keys, route)
                     args = []
-                else:
+                elif arg_mode=='kwargs':
+                    # e.g. "arg1", 0, "arg2", 1
+                    # -> kwargs = {"arg1":0 "arg2":1}
                     args = [convert_json(a, False, route) for a in args]
                     kwargs = {}
+                elif arg_mode=='vectors':
+                    # e.g. "arg1", 0, 1, "arg2", 0.5
+                    # -> kwargs = {"arg1":[0,1], "arg2":[0.5]}
+                    s = inspect.signature(f)
+                    kwargs = {}
+                    v = None
+                    for item in args:
+                        # if item is a keyword name,
+                        # start collecting into a list
+                        if item in s.parameters:
+                            v = []
+                            kwargs[item] = v
+                        else:
+                            # this will allow strings and mized types in
+                            # arguments, as long as they don't collide
+                            # with argument names in the function
+                            if v is None:
+                                raise ValueError(f"""
+                                unexpected argument "{item}" to route "{route}"
+                                """)
+                            v.append(item)
+                    args = []
+                    # print(args,kwargs)
+
                 if pass_route:
                     r = f(address, *args, **kwargs)
                 else:
@@ -266,8 +293,22 @@ class OSC():
     
     def args(self, route=None, pass_route=True,
         return_host=None, return_port=None, return_route=None):
-        """decorate a function as an args-style OSC handler."""
-        return self._decorate(False, route, pass_route,
+        """decorate a function as an args-style OSC handler.
+
+        each item of the OSC message is passed as a positional argument.
+        if the function returns a value, it will be sent as a reply to the
+        OSC sender.
+
+        Args:
+            route: if None, route will be derived from function name
+            pass_route: if True, route will be passed as first argument
+            return_host: override host address for return message
+            return_port: override port for return message
+            return_route: if None, return route is expected to be first
+                returned value
+
+        """
+        return self._decorate('args', route, pass_route,
             return_host, return_port, return_route, None)
 
     def kwargs(self, route=None, pass_route=True,
@@ -280,10 +321,30 @@ class OSC():
             json_keys: names of keyword arguments which should be decoded
                 from JSON, in the case that they arrive as strings
         """
-        return self._decorate(True, route, pass_route,
+        return self._decorate('kwargs', route, pass_route,
             return_host, return_port, return_route, json_keys)
 
-    def cls(self, obj, route=None, kwargs=False, pass_route=False):
+    def vectors(self, route=None, pass_route=True,
+        return_host=None, return_port=None, return_route=None):
+        """decorate a function as an args-style OSC handler.
+
+        each item of the OSC message is passed as a positional argument.
+        if the function returns a value, it will be sent as a reply to the
+        OSC sender.
+
+        Args:
+            route: if None, route will be derived from function name
+            pass_route: if True, route will be passed as first argument
+            return_host: override host address for return message
+            return_port: override port for return message
+            return_route: if None, return route is expected to be first
+                returned value
+
+        """
+        return self._decorate('vectors', route, pass_route,
+            return_host, return_port, return_route, None)
+
+    def api(self, obj, route=None, arg_mode='kwargs', pass_route=False):
         """wrap an instance of a class, adding an OSC route for each of its methods"""
         method_names = [m for m in dir(obj) if not m.startswith('_')]
         if route is None:
@@ -293,12 +354,16 @@ class OSC():
             if callable(method):
                 m_route = '/'.join(('', route, m))
                 print(m_route)
-                if kwargs:
+                if arg_mode=='kwargs':
                     self.kwargs(
                         route=m_route, return_route=m_route, 
                         pass_route=pass_route)(method)
-                else:
+                elif arg_mode=='args':
                     self.args(
+                        route=m_route, return_route=m_route,
+                        pass_route=pass_route)(method)
+                elif arg_mode=='vectors':
+                    self.vectors(
                         route=m_route, return_route=m_route,
                         pass_route=pass_route)(method)
 
@@ -313,4 +378,4 @@ class OSC():
             client, *a = a
             self.send(*a, client=client, **kw)
         else:
-            self.cls(*a, **kw)
+            self.api(*a, **kw)

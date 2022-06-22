@@ -14,7 +14,7 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
 
     iml = IML(2)
 
-    osc(iml)
+    osc(iml, arg_mode='vectors')
 
 if __name__=='__main__':
     run(main)

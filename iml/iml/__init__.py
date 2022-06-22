@@ -30,8 +30,8 @@ class IML:
         self.targets[target_id] = target
         self.sources[target_id] = source
 
-    def map(self, source: Source, k: Optional[int] = 5) -> Target:
-        """convert a source to a target using embed, predict, interpolate"""
+    def map(self, source: Source, k: int = 5) -> Target:
+        """convert a source to a target using embed, neighbors, interpolate"""
         feature = self.embed(source)
         target_ids, scores = self.neighbors(feature, k=k)
         b = [i>=0 for i in target_ids] # case where there are fewer than k neighbors
