@@ -457,10 +457,10 @@ class Notochord(nn.Module):
                 0 indicates a note-off event
         """
         with torch.inference_mode():
-            inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
-            pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
-            time = torch.FloatTensor([[time]]) # 1x1 (batch, time)
-            vel = torch.FloatTensor([[vel]]) # 1x1 (batch, time)
+            inst = torch.LongTensor([[inst]]).to(self.device) # 1x1 (batch, time)
+            pitch = torch.LongTensor([[pitch]]).to(self.device) # 1x1 (batch, time)
+            time = torch.FloatTensor([[time]]).to(self.device) # 1x1 (batch, time)
+            vel = torch.FloatTensor([[vel]]).to(self.device) # 1x1 (batch, time)
 
             embs = [
                 self.instrument_emb(inst), # 1, 1, emb_size
@@ -877,4 +877,8 @@ class Notochord(nn.Module):
         model = cls(**checkpoint['kw']['model'])
         model.load_state_dict(checkpoint['model_state'], strict=False)
         return model
+
+    @property
+    def device(self):
+        return self.end_proj.weight.device
         

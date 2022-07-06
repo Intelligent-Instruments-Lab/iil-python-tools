@@ -44,4 +44,5 @@ async def _run_async():
 def run(main=None):
     if main is not None:
         fire.Fire(main)
-    asyncio.run(_run_async())
+    asyncio.get_event_loop().run_until_complete(_run_async())
+    #asyncio.run(_run_async())

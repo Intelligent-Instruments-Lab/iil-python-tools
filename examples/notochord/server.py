@@ -14,7 +14,7 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
 
     if checkpoint is not None:
         predictor = Notochord.from_checkpoint(checkpoint)
-        predictor.eval()
+        predictor.eval().cuda()
     else:
         predictor = None
  

@@ -114,7 +114,7 @@ OSCdef(\return, {
     (Process.elapsedTime - t).postln;
 }, '/prediction', nil);
 t = Process.elapsedTime;
-b.sendMsg("/predictor/predict",
+b.sendMsg("/notochord/predict",
     \inst, 0, \pitch, 60+12.rand, \time, 0, \vel, 0,
     \pitch_temp, 0.5, \rhythm_temp, 0.5, \timing_temp, 0.1
 );

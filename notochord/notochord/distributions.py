@@ -158,7 +158,7 @@ class CensoredMixtureLogistic(nn.Module):
 
         if truncate is None:
             truncate = (-np.inf, np.inf)
-        truncate = torch.tensor(truncate)
+        truncate = torch.tensor(truncate).to(self.bias.device)
 
         if component_temp is None:
             component_temp = 1
@@ -193,7 +193,7 @@ class CensoredMixtureLogistic(nn.Module):
         upper = cdfs[...,1,:].movedim(-1, 0).gather(0, c)
         lower = cdfs[...,0,:].movedim(-1, 0).gather(0, c)
 
-        u = torch.rand(shape, *h.shape[:-1])
+        u = torch.rand(shape, *h.shape[:-1], device=self.bias.device)
         # truncate
         u = u * (upper-lower) + lower
 
