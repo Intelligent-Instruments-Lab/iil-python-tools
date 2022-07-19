@@ -1,4 +1,3 @@
-import numpy as np
 from pathlib import Path
 import random
 
@@ -40,9 +39,8 @@ class MIDIDataset(Dataset):
 
         anon_melodic_start = 256
         anon_drum_start = anon_melodic_start + self.n_anon
-        anon_melodic = np.arange(anon_melodic_start, anon_melodic_start + self.n_anon)  # array of anon melodic programs
-        anon_drum = np.arange(anon_drum_start, anon_drum_start + self.n_anon)  # array of anon drum programs
-        np.random.shuffle(anon_melodic); np.random.shuffle(anon_drum)  # shuffle for random selection
+        anon_melodic = torch.randperm(self.n_anon) + anon_melodic_start  # array of anon melodic programs
+        anon_drum = torch.randperm(self.n_anon) + anon_drum_start  # array of anon drum programs
 
         i = 0
         for pr in unique_melodic:
