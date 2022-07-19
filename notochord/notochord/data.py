@@ -81,6 +81,7 @@ class MIDIDataset(Dataset):
         )
         pitch = pitch + transpose
 
+        # randomly map instruments to 'anonymous melodic' and 'anonymous drum'
         program = self._random_map_anonymous_instruments(program)
 
         # shift from 0-index to general MIDI 1-index; reserve 0 for start token
