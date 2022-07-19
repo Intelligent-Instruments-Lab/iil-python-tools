@@ -76,7 +76,7 @@ class MIDIDataset(Dataset):
         transpose_down = min(self.transpose, pitch.min().item())
         transpose_up = min(self.transpose, 127-pitch.max())
         transpose = (
-            random.randint(-transpose_down, transpose_up)   # why not torch.randint?
+            random.randint(-transpose_down, transpose_up)
             * (program<128) # don't transpose drums
         )
         pitch = pitch + transpose
