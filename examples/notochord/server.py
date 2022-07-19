@@ -8,6 +8,7 @@ Authors:
 from notochord import Notochord
 from iipyper import OSC, run
 import numpy as np
+from time import time
 
 def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
     osc = OSC(host, receive_port)
@@ -54,7 +55,9 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
             if predictor is None:
                 print('no model loaded')
             else:
+                t = time()
                 r = predictor.predict(**kw)
+                print(time() - t)
                 return '/prediction', r['instrument'], r['pitch'], r['time'], r['velocity'], r['end'], r['step']
 
         elif cmd=="reset":
