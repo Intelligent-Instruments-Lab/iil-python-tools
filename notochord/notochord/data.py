@@ -32,13 +32,13 @@ class MIDIDataset(Dataset):
         Randomly map instruments to eight additional ‘anonymous’ melodic and drum identities
         with a probability of 10% per instrument, without replacement.
 
-        The input program should contain melodic instruments from MIDI note numbers 1-128 and
-        drum instruments from 129-256. Anonymous instruments are mapped to subsequent note numbers.
+        The input program should contain melodic instruments from MIDI note numbers 0-127 and
+        drum instruments from 128-255. Anonymous instruments are mapped to subsequent note numbers.
         """
-        unique_melodic = program.masked_select(program<=128).unique()
-        unique_drum = program.masked_select(program>128).unique()
+        unique_melodic = program.masked_select(program<128).unique()
+        unique_drum = program.masked_select(program>=128).unique()
 
-        anon_melodic_start = 256 + 1
+        anon_melodic_start = 256
         anon_drum_start = anon_melodic_start + self.n_anon
         anon_melodic = np.arange(anon_melodic_start, anon_melodic_start + self.n_anon)  # array of anon melodic programs
         anon_drum = np.arange(anon_drum_start, anon_drum_start + self.n_anon)  # array of anon drum programs
@@ -81,10 +81,10 @@ class MIDIDataset(Dataset):
         )
         pitch = pitch + transpose
 
+        program = self._random_map_anonymous_instruments(program)
+
         # shift from 0-index to general MIDI 1-index; reserve 0 for start token
         program += 1
-
-        program = self._random_map_anonymous_instruments(program)
 
         time_margin = 1e-3 # hardcoded since it should match prep script
 
