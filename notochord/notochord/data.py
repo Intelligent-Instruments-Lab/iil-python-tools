@@ -26,6 +26,39 @@ class MIDIDataset(Dataset):
     def __len__(self):
         return len(self.files)
     
+    def _random_map_anonymous_instruments(self, program: torch.Tensor) -> torch.Tensor:
+        """
+        Randomly map instruments to eight additional ‘anonymous’ melodic and drum identities
+        with a probability of 10% per instrument, without replacement.
+
+        The input program should contain melodic instruments from MIDI note numbers 0-127 and
+        drum instruments from 128-255. Anonymous instruments are mapped to subsequent note numbers.
+        """
+        unique_melodic = program.masked_select(program<128).unique()
+        unique_drum = program.masked_select(program>=128).unique()
+
+        anon_melodic_start = 256
+        anon_drum_start = anon_melodic_start + self.n_anon
+        anon_melodic = torch.randperm(self.n_anon) + anon_melodic_start  # array of anon melodic programs
+        anon_drum = torch.randperm(self.n_anon) + anon_drum_start  # array of anon drum programs
+
+        i = 0
+        for pr in unique_melodic:
+            if torch.rand((1,)) < 0.1:
+                program[program==pr] = anon_melodic[i]
+                i += 1
+                if i >= len(anon_melodic):  # no more anon instruments to write to
+                    break
+        i = 0
+        for pr in unique_drum:
+            if torch.rand((1,)) < 0.1:
+                program[program==pr] = anon_drum[i]
+                i += 1
+                if i >= len(anon_drum):  # no more anon instruments to write to
+                    break
+
+        return program
+
     def __getitem__(self, idx):
         f = self.files[idx]
         item = torch.load(f)
@@ -41,23 +74,14 @@ class MIDIDataset(Dataset):
         transpose_down = min(self.transpose, pitch.min().item())
         transpose_up = min(self.transpose, 127-pitch.max())
         transpose = (
-            random.randint(-transpose_down, transpose_up) 
+            random.randint(-transpose_down, transpose_up)
             * (program<128) # don't transpose drums
         )
         pitch = pitch + transpose
 
-        unique_melodic = program.masked_select(program<128).unique()
-        unique_drum = program.masked_select(program>=128).unique()
+        # randomly map instruments to 'anonymous melodic' and 'anonymous drum'
+        program = self._random_map_anonymous_instruments(program)
 
-        # # randomly map instruments to 'anonymous melodic' and 'anonymous drum'
-        for pr in unique_melodic:
-            if torch.rand((1,)) < 0.1:
-                r = torch.randint(self.n_anon, size=(1,))
-                program[program==pr] = r+256
-        for pr in unique_drum:
-            if torch.rand((1,)) < 0.1:
-                r = torch.randint(self.n_anon, size=(1,))
-                program[program==pr] = r+256+self.n_anon
         # shift from 0-index to general MIDI 1-index; reserve 0 for start token
         program += 1
 
