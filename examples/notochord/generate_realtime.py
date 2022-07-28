@@ -83,8 +83,8 @@ def generate_from_notochord(q, checkpoint: str) -> None:
             # use query feed - blacklist certain instruments, set temperature - absolute simplest way
             start = time.time()
             r = predictor.query_feed(include_instrument=include_instrument)
-            end = time.time() - start
-            time.sleep(nctime)
+            notochord_latency = time.time() - start
+            time.sleep(nctime)  # TODO: factor in notochord_latency
             q.put(r)  # add event to queue to be played
     except KeyboardInterrupt:
         print('generate_from_notochord done')
