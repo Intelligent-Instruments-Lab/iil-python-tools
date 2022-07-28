@@ -84,7 +84,7 @@ def generate_from_notochord(q, checkpoint: str) -> None:
             start = time.time()
             r = predictor.query_feed(include_instrument=include_instrument)
             notochord_latency = time.time() - start
-            time.sleep(nctime)  # TODO: factor in notochord_latency
+            time.sleep(min(nctime - notochord_latency, 0))  # TODO: test logic for factoring in notochord_latency
             q.put(r)  # add event to queue to be played
     except KeyboardInterrupt:
         print('generate_from_notochord done')
