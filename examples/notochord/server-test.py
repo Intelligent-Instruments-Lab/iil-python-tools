@@ -66,11 +66,11 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
 
                 with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
                     with record_function("predict"):
-                        # r = predictor.predict(**kw)
-                        nonlocal h
-                        h = h@W
-                print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-                prof.export_chrome_trace("trace2.json")
+                        r = predictor.predict(**kw)
+                        # nonlocal h
+                        # h = h@W
+                print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+                # prof.export_chrome_trace("trace2.json")
 
                 # return '/prediction', r['instrument'], r['pitch'], r['time'], r['velocity'], r['end'], r['step']
                 return '/prediction', 0,0,0,0,0,0

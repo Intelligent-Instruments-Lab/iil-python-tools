@@ -37,7 +37,7 @@ thisProcess.openUDPPort(6789); // from tidal
 // (but make sure not to use any other drums in tidal either)
 // this example is based on the default 808 rack in Ableton
 ~drum_map = (
-    //general MIDI number: desired MIDI number
+    //general MIDI number (in Notochord): desired MIDI number (in DAW)
     36:36, //electric bass drum -> C1
     37:37, //side stick -> C#1
     40:38, //electric snare -> D1
@@ -131,6 +131,7 @@ MIDIClient.init;
 // Option 3: send MIDI to GM.als
 // this is an Ableton set which maps general midi onto ~30 synths
 // ask victor for the set. requires Live 9 suite or higher
+// requires 3 MIDI buses set up
 (
 ~drum_map = nil;
 ~midi_map = nil;
@@ -239,9 +240,9 @@ OSCdef(\from_tidal, {
     }{
 
         // note-on events should arrive from tidal in the order they happen
-        // but note-offs do not, since they are implicit in duration of notes
-        // the only guarantee is they won't needs to happen sooner than tidal's
-        // oLatency parameter, since that's the soonest a new note-on can occur
+        // but note-offs do not, since they are implicit in duration of notes.
+        // the only guarantee is they won't need to happen sooner than tidal's
+        // oLatency parameter, since that's the soonest a new note-on can occur.
         // so we can schedule all note-on and note-offs as soon as they arrive
         // (without all sub-events filled in, possibly)
 
@@ -271,7 +272,7 @@ OSCdef(\from_tidal, {
     ("scheduling event "++handle).postln;
 
     // schedule notochord processing
-    SystemClock.schedAbs(time-~ncLatency, {
+    SystemClock.schedAbs(time - ~ncLatency, {
         // compute dt from previous event
         event[\time] = time - ~last_t;
         ("processing event "++handle).postln; event.postln;
