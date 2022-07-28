@@ -1,5 +1,7 @@
 ## WIP!! offline generate midi and audiofile from notochord
 
+# TODO: add pyfluidsynth to requirements
+
 from notochord import Notochord
 
 import fire
