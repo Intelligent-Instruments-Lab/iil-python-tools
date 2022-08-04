@@ -1,3 +1,5 @@
+include("API");
+
 (
 thisProcess.openUDPPort(6789); // from tidal
 ~python = NetAddr.new("127.0.0.1", 9999); // to python
@@ -9,18 +11,23 @@ thisProcess.openUDPPort(6789); // from tidal
 
 // Option 1: map up to 16 notochord instruments to specific MIDI channels:
 (
+MIDIClient.init;
 ~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
 // this will automatically restrict the instruments notochord can sample
 // to the keys of ~midi_map
 // (but make sure not to use any other instruments in tidal either)
+// this example requires you to set up synths on MIDI channels 2,3,4, and 10
+// where 10 has a drum rack.
+// uncomment lines to add more channels, and change to first number to use
+// different notochord instruments.
 ~midi_map = (
     // notochord instrument (1-256): midi channel (1-16)
-      1: 1, //grand piano -> channel 1
-     13: 2, //marimba -> channel 2
-    // 19: 3, //rock organ -> channel 3
-    // 26: 4, //acoustic guitar (steel) -> channel 4
-    // 39: 5, //synth bass 1 -> channel 5
-    // 43: 6, //cello -> channel 6
+    // 1: 1, //grand piano -> channel 1
+      8: 2, //clavinet -> channel 2
+     13: 3, //marimba -> channel 3
+     17: 4, //drawbar organ -> channel 4
+     27: 5, //jazz guitar -> channel 5
+    // 39: 6, //synth bass 1 -> channel 6
     // 47: 7, //harp -> channel 7
     // 54: 8, //voice oohs -> channel 8
     // 57: 9, //trumpet -> channel 9
@@ -29,8 +36,8 @@ thisProcess.openUDPPort(6789); // from tidal
     // 76:12, //pan flute -> channel 12
     // 82:13, //saw lead -> channel 13
     // 90:14, //warm pad -> channel 14
-    // 109:15, //kalimba -> channel 15
-    // 119:16, //synth drum -> channel 16
+    // 9:15, //celesta -> channel 15
+    // 11:16, //music box -> channel 16
 );
 // this will automatically restrict the pitches notochord can sample
 // when using a drum instrument to the keys of ~drum_map
@@ -55,15 +62,21 @@ thisProcess.openUDPPort(6789); // from tidal
     62:50, //hi conga -> D2
     56:51, //cowbell -> D#2
 );
+//
+/*~pitch_maps = (
+
+)*/
 ~release_all = {arg vel=0;
     [~m1].do{arg port; 128.do{arg note; 16.do{arg chan;
         port.noteOff(chan, note, vel)}}}
 };
 ~midi_send = {arg inst, pitch, vel;
     var channel = ~midi_map[inst]-1;
-    ~is_drum.(inst).if{pitch = ~drum_map[pitch]};
-    channel.isNil.if{"nil channel in midi_send"};
-    pitch.isNil.if{"nil pitch in midi_send"};
+    ~is_drum.(inst).if{
+        pitch = ~drum_map[pitch]
+    };
+    channel.isNil.if{"nil channel in ~midi_send: are you  sending something from tidal which isn't in ~midi_map"};
+    pitch.isNil.if{"nil pitch in ~midi_send: are you sending something from tidal which isn't in ~drum_map?"};
     (vel>0).if{
         ~m1.noteOn(channel, pitch, vel);
     }{
@@ -128,82 +141,6 @@ MIDIClient.init;
 };
 )
 
-// Option 3: send MIDI to GM.als
-// this is an Ableton set which maps general midi onto ~30 synths
-// ask victor for the set. requires Live 9 suite or higher
-// requires 3 MIDI buses set up
-(
-~drum_map = nil;
-~midi_map = nil;
-MIDIClient.init;
-// MIDIClient.destinations
-~m1 = MIDIOut.newByName("IAC Driver", "Bus 1").latency_(0);
-~m2 = MIDIOut.newByName("IAC Driver", "Bus 2").latency_(0);
-~m3 = MIDIOut.newByName("IAC Driver", "Bus 3").latency_(0);
-~prog2portchan = { arg prog;
-    \inst.postln;
-    prog.postln;
-    prog.class.postln;
-    (prog-1 /8).asInteger.postln;
-    (prog-1 %8).asInteger.postln;
-    case
-    {prog==0}{"can't convert start token".postln}
-    {prog<=128}{
-        var group = (prog-1 /8).asInteger;
-        var idx = (prog-1 %8).asInteger;
-        var port = switch(group)
-        { 0}{case
-            {idx<4}{~m1} //acoustic
-            {idx<6}{~m2} //electric
-            {true}{~m3} //harpsichord
-        } //piano
-        { 1}{((idx<3)||(idx==5)).if{~m1}{~m2}} //chromatic perc
-        { 2}{(idx<4).if{~m1}{~m2}} //organ
-        { 3}{(idx<5).if{~m1}{~m2}} //guitar
-        { 4}{(idx<4).if{~m2}{~m1}} //bass
-        { 5}{(idx<5).if{~m1}{~m2}} //strings
-        { 6}{(idx<4).if{~m1}{~m2}} //ensemble
-        { 7}{(idx<3).if{~m1}{~m2}} //brass
-        { 8}{(idx<4).if{~m1}{~m2}} //reed
-        { 9}{(idx<3).if{~m1}{~m2}} //pipe
-        {10}{(idx%2==0).if{~m1}{~m2}} //synth lead
-        {11}{(idx<4).if{~m1}{~m2}} //synth pad
-        {12}{~m1} //synth fx
-        {13}{case //'ethnic'
-            {idx<=3}{~m1}
-            {idx==4}{~m2}
-            {idx==5}{group=2;~m2}
-            {idx==6}{group=5;~m1}
-            {idx==7}{group=8;~m2}
-        }
-        {14}{~m1} //percussive
-        {15}{~m1} //sound fx
-        ;
-        // \melody.postln;
-        (port:port, chan:group)
-    }{(prog<=256)||(prog>=265)}{
-        // \drum.postln;
-        (port:~m2, chan:12)
-    }{prog-257 < 8}{
-        // \anon.postln;
-        (port:~m1, chan:0)
-    }
-};
-~release_all = {arg vel=0;
-    [~m1, ~m2, ~m3].do{arg port; 128.do{arg note; 16.do{arg chan;
-        port.noteOff(chan, note, vel)}}}
-};
-~midi_send = {arg inst, pitch, vel;
-    var port_chan = ~prog2portchan.(inst);
-    var port = port_chan[\port];
-    var chan = port_chan[\chan];
-    (vel>0).if{
-        port.noteOn(chan, pitch, vel);
-    }{
-        port.noteOff(chan, pitch);
-    }
-};
-)
 
 (
 ~oLatency = 0.1; // should match value at tidal boot
@@ -305,7 +242,7 @@ OSCdef(\from_tidal, {
             "incomplete note-on".postln;
         }{
             ~midi_send.(event[\inst], event[\pitch], event[\vel]);
-        }
+        };
     });
 
     // schedule note-off: fully determined once note-on is, since timing
