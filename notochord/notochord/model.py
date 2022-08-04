@@ -744,7 +744,7 @@ class Notochord(nn.Module):
                 if len(predicted) > idx:
                     return predicted[idx]
                 return None
-            # print('sampling order:', [mode_names[i] for i in perm])
+            print('sampling order:', [mode_names[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on alteady determined ones
@@ -846,6 +846,13 @@ class Notochord(nn.Module):
         r = self.query(*a, **kw)
         self.feed(r['instrument'], r['pitch'], r['time'], r['velocity'])
         return r
+
+    def feed_query_feed(self, inst, pitch, time, vel, **kw):
+        """
+        call self.feed with *args, then self.query with **kwargs.
+        """
+        self.feed(inst, pitch, time, vel)
+        return self.query_feed(**kw)
     
     def reset(self, start=True):
         """

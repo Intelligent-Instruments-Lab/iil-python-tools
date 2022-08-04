@@ -62,8 +62,8 @@ thisProcess.openUDPPort(6789); // from tidal
 ~midi_send = {arg inst, pitch, vel;
     var channel = ~midi_map[inst]-1;
     ~is_drum.(inst).if{pitch = ~drum_map[pitch]};
-    channel.isNil.if{"nil channel in mid_send"};
-    pitch.isNil.if{"nil pitch in mid_send"};
+    channel.isNil.if{"nil channel in midi_send"};
+    pitch.isNil.if{"nil pitch in midi_send"};
     (vel>0).if{
         ~m1.noteOn(channel, pitch, vel);
     }{

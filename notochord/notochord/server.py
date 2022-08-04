@@ -35,39 +35,45 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None, checkpoint=None):
             predictor = Notochord.from_checkpoint(**kw)
             predictor.eval()
 
-        elif cmd=="feed":
-            # print(kw)
-            if predictor is None:
-                print('no model loaded')
-            else:
+        elif predictor is None:
+            print('no model loaded')
+        else:
+
+            if cmd=="feed":
                 r = predictor.feed(**kw) 
 
-        elif cmd=="query_feed":
-            # print(kw)
-            if predictor is None:
-                print('no model loaded')
-            else:
+            elif cmd=='query':
+                r = predictor.query(**kw) 
+                return ('/notochord/query_return', 
+                    *[x for pair in r.items() for x in pair])
+
+            elif cmd=='query_feed':
                 r = predictor.query_feed(**kw) 
                 return ('/notochord/query_return', 
                     *[x for pair in r.items() for x in pair])
 
-        elif cmd=="predict":
-            if predictor is None:
-                print('no model loaded')
-            else:
+            elif cmd=="feed_query":
+                r = predictor.feed_query(**kw)
+                return ('/notochord/query_return', 
+                    *[x for pair in r.items() for x in pair])
+
+            elif cmd=="feed_query_feed":
+                r = predictor.feed_query_feed(**kw)
+                return ('/notochord/query_return', 
+                    *[x for pair in r.items() for x in pair])
+
+            elif cmd=="predict":
+                # deprecated
                 t = time()
                 r = predictor.predict(**kw)
                 print(time() - t)
                 return '/prediction', r['instrument'], r['pitch'], r['time'], r['velocity'], r['end'], r['step']
 
-        elif cmd=="reset":
-            if predictor is None:
-                print('no model loaded')
-            else:
+            elif cmd=="reset":
                 predictor.reset(**kw)
-            
-        else:
-            print(f"PitchPredictor: Unrecognised OSC {address} with {kw}")
+
+            else:
+                print(f"Notochord: Unrecognised OSC {address} with {kw}")
 
 if __name__=='__main__':
     run(main)
