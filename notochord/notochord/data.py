@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class MIDIDataset(Dataset):
-    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl', test_len=1024):
+    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl', test_len=2048):
         #, clamp_time=(-,10)):
         """
         """
@@ -21,7 +21,7 @@ class MIDIDataset(Dataset):
         self.prog_start_token = 0
         # self.clamp_time = clamp_time
         self.testing = False
-        self.max_test_len = 2048
+        self.max_test_len = test_len
         
     def __len__(self):
         return len(self.files)
