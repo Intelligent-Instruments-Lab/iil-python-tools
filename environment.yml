@@ -4,11 +4,9 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-  - python=3.9
-  - pytorch=1.11
-  - torchaudio
+  - python=3.10
+  - pytorch=1.12
   - onnx
-  - tensorboard
   - ipykernel
   - tensorboard
   - seaborn
@@ -17,6 +15,5 @@ dependencies:
   - pip
   - pip:
     - mido
-    - pretty-midi
     - python-rtmidi
     - python-osc
