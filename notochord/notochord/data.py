@@ -55,9 +55,9 @@ class MIDIDataset(Dataset):
         new_program = program.clone()
 
         if len(anon_melodic)>self.n_anon:
-            print(f'warning: {anon_melodic} > {self.n_anon} anon melodic instruments')
+            print(f'warning: {len(anon_melodic)} > {self.n_anon} anon melodic instruments')
         if len(anon_drum)>self.n_anon:
-            print(f'warning: {anon_drum} > {self.n_anon} anon drum instruments')
+            print(f'warning: {len(anon_drum)} > {self.n_anon} anon drum instruments')
 
         i = 0
         for pr in anon_melodic:

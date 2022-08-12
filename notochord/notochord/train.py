@@ -1,3 +1,7 @@
+import os
+# fix torch device order to be same as nvidia-smi order
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+
 from pathlib import Path
 import random
 from collections import defaultdict
