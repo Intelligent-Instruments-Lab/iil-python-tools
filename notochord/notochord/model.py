@@ -159,7 +159,7 @@ class Notochord(nn.Module):
             mlp_layers=0,
             dropout=0.1, norm=None,
             num_pitches=128, 
-            num_instruments=272,
+            num_instruments=320,
             time_sines=128, vel_sines=128,
             time_bounds=(0,10), time_components=32, time_res=1e-2,
             vel_components=16
@@ -188,10 +188,12 @@ class Notochord(nn.Module):
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
         self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
-        self.time_emb = torch.jit.script(SineEmbedding(
+        self.time_emb = torch.jit.script(
+            SineEmbedding(
             time_sines, emb_size, 1e-3, 30, scale='log'))
         # self.vel_emb = MixEmbedding(emb_size, (0, 127))
-        self.vel_emb = torch.jit.script(SineEmbedding(
+        self.vel_emb = torch.jit.script(
+            SineEmbedding(
             vel_sines, emb_size, 2, 512, scale='lin'))
 
         # RNN backbone
@@ -436,7 +438,7 @@ class Notochord(nn.Module):
     def is_drum(self, inst):
         # TODO: add a constructor argument to specify which are drums
         # hardcoded for now
-        return inst > 128 and inst < 257 or inst > 264
+        return inst > 128 and inst < 257 or inst > 288
 
     
     def feed(self, inst, pitch, time, vel):

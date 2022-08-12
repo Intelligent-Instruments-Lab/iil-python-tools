@@ -54,7 +54,7 @@ class Trainer:
             """
         kw['model'] = model = get_class_defaults(model_cls) | model
         model['num_pitches'] = 128
-        model['num_instruments'] = 272
+        model['num_instruments'] = 320
         # model['time_bounds'] = clamp_time
 
         # assign all arguments to self by default
@@ -237,7 +237,8 @@ class Trainer:
 
         ##### validation loop
         def run_validation():
-            logs = self._validate(valid_loader)['logs']
+            self.dataset.batch_len = self.dataset.max_test_len
+            logs = self._validate(valid_loader, testing=False)['logs']
             self.log('valid', logs)
 
         epoch_size = self.epoch_size or len(train_loader)
@@ -251,6 +252,7 @@ class Trainer:
             ##### training loop
             self.model.train()
             self.dataset.testing = False
+            self.dataset.batch_len = self.batch_len
             for batch in tqdm(it.islice(train_loader, epoch_size), 
                     desc=f'training epoch {self.epoch}', total=epoch_size):
                 mask = batch['mask'].to(self.device, non_blocking=True)

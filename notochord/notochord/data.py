@@ -17,7 +17,7 @@ class MIDIDataset(Dataset):
         self.transpose = transpose
         self.speed = speed
         self.start_token = 128
-        self.n_anon = 8
+        self.n_anon = 32
         self.prog_start_token = 0
         # self.clamp_time = clamp_time
         self.testing = False
@@ -26,47 +26,64 @@ class MIDIDataset(Dataset):
     def __len__(self):
         return len(self.files)
     
-    def _random_map_anonymous_instruments(self, program: torch.Tensor) -> torch.Tensor:
+    def _remap_anonymous_instruments(self, program: torch.Tensor) -> torch.Tensor:
         """
-        Randomly map instruments to eight additional ‘anonymous’ melodic and drum identities
-        with a probability of 10% per instrument, without replacement.
-
-        The input program should contain melodic instruments from MIDI note numbers 0-127 and
-        drum instruments from 128-255. Anonymous instruments are mapped to subsequent note numbers.
+        Randomly map instruments to additional ‘anonymous’ melodic and drum identities
+        with a probability of 10% per instrument, without replacement. 
+        Also map any parts > 256 to appropriate anonymous ids.
         """
-        unique_melodic = program.masked_select(program<128).unique()
-        unique_drum = program.masked_select(program>=128).unique()
+        orig_program = program%1000
+        is_melodic = (orig_program<=128) | (orig_program>256)
+        is_anon = (program > 256)
+        named_melodic = list(program.masked_select(is_melodic & ~is_anon).unique())
+        anon_melodic = list(program.masked_select(is_melodic & is_anon).unique())
+        named_drum = list(program.masked_select(~is_melodic & ~is_anon).unique())
+        anon_drum = list(program.masked_select(~is_melodic & is_anon).unique())
 
-        anon_melodic_start = 256
+        anon_melodic_start = 257
         anon_drum_start = anon_melodic_start + self.n_anon
-        anon_melodic = torch.randperm(self.n_anon) + anon_melodic_start  # array of anon melodic programs
-        anon_drum = torch.randperm(self.n_anon) + anon_drum_start  # array of anon drum programs
+        perm_anon_melodic = torch.randperm(self.n_anon) + anon_melodic_start 
+        perm_anon_drum = torch.randperm(self.n_anon) + anon_drum_start 
+
+        for pr in named_melodic:
+            if torch.rand((1,)) < 0.1:
+                anon_melodic.append(pr)
+        for pr in named_drum:
+            if torch.rand((1,)) < 0.1:
+                anon_drum.append(pr)
+
+        new_program = program.clone()
+
+        if len(anon_melodic)>self.n_anon:
+            print(f'warning: {anon_melodic} > {self.n_anon} anon melodic instruments')
+        if len(anon_drum)>self.n_anon:
+            print(f'warning: {anon_drum} > {self.n_anon} anon drum instruments')
 
         i = 0
-        for pr in unique_melodic:
-            if torch.rand((1,)) < 0.1:
-                program[program==pr] = anon_melodic[i]
-                i += 1
-                if i >= len(anon_melodic):  # no more anon instruments to write to
-                    break
+        for pr in anon_melodic:
+            new_program[program==pr] = perm_anon_melodic[i%self.n_anon]
+            i += 1
         i = 0
-        for pr in unique_drum:
-            if torch.rand((1,)) < 0.1:
-                program[program==pr] = anon_drum[i]
-                i += 1
-                if i >= len(anon_drum):  # no more anon instruments to write to
-                    break
+        for pr in anon_drum:
+            new_program[program==pr] = perm_anon_drum[i%self.n_anon]
+            i += 1
 
-        return program
+        # print(new_program.unique())
+
+        return new_program
 
     def __getitem__(self, idx):
         f = self.files[idx]
         item = torch.load(f)
-        program = item['program'] # 1-d LongTensor of MIDI programs 0-255
-        # (128-255 are drums)
+        program = item['program'] # 1-d LongTensor of MIDI programs
+        # 0 is unused
+        # (128-256 are drums)
+        # 257+ are 'true anonymous' (no program change on track)
+        # (drums with no PC are just mapped to 129)
+        # N + 1000*K is the Kth additional part for instrument N
         pitch = item['pitch'] # 1-d LongTensor of MIDI pitches 0-127
-        time = item['time']
-        velocity = item['velocity']
+        time = item['time'] # 1-d DoubleTensor of absolute times in seconds
+        velocity = item['velocity'] # 1-d LongTensor of MIDI velocities 0-127
 
         assert len(pitch) == len(time)
 
@@ -79,16 +96,16 @@ class MIDIDataset(Dataset):
         )
         pitch = pitch + transpose
 
-        # randomly map instruments to 'anonymous melodic' and 'anonymous drum'
-        program = self._random_map_anonymous_instruments(program)
+        # scramble anonymous and extra parts to 'anonymous melodic' and 'anonymous drum' parts
+        program = self._remap_anonymous_instruments(program)
 
-        # shift from 0-index to general MIDI 1-index; reserve 0 for start token
-        program += 1
-
-        time_margin = 1e-3 # hardcoded since it should match prep script
+        time_margin = 1e-3
 
         # dequantize: add noise up to +/- margin
-        time = time + (torch.rand_like(time)*2-1)*time_margin
+        # move note-ons later, note-offs earlier
+        time = (time + 
+            torch.rand_like(time) * ((velocity==0).double()*2-1) * time_margin
+        )
         # random augment tempo
         time = time * (1 + random.random()*self.speed*2 - self.speed)
 
@@ -96,7 +113,7 @@ class MIDIDataset(Dataset):
         velocity = velocity.float()
         velocity = (
             velocity + 
-            (torch.rand_like(time)-0.5) * ((velocity>0) & (velocity<127)).float()
+            (torch.rand_like(time, dtype=torch.float)-0.5) * ((velocity>0) & (velocity<127)).float()
             ).clamp(0., 127.)
         # random velocity curve
         # take care not to map any positive values closer to 0 than 1
@@ -110,7 +127,7 @@ class MIDIDataset(Dataset):
         # sort (using argsort on time and indexing the rest)
         # compute delta time
         time, idx = time.sort()
-        time = torch.cat((time.new_zeros((1,)), time)).diff(1)
+        time = torch.cat((time.new_zeros((1,)), time)).diff(1).float()
         program = program[idx]
         pitch = pitch[idx]
         velocity = velocity[idx]
