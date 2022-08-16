@@ -91,65 +91,6 @@ class GLUMLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# class ModalityTransformer(nn.Module):
-#     """
-#     Model joint distribution of note modalities (e.g. pitch, time, velocity).
-
-#     This is an autoregressive Transformer model for the *internal* structure of notes.
-#     It is *not* autoregressive in time, but in modality.
-#     At training time, it executes in parallel over all timesteps and modalities, with
-#     time dependencies provided via the RNN backbone.
-
-#     At sampling time it is called serially, one modality at a time, 
-#     repeatedly at each time step.
-
-#     Inspired by XLNet: http://arxiv.org/abs/1906.08237
-#     """
-#     def __init__(self, input_size, hidden_size, heads=4, layers=1):
-#         super().__init__()
-#         self.net = nn.TransformerDecoder(
-#             nn.TransformerDecoderLayer(
-#                 input_size, heads, hidden_size, norm_first=False
-#                 ), layers)
-
-#     def forward(self, ctx, h_ctx, h_tgt):
-#         """
-#         Args:
-#             ctx: list of Tensor[batch x time x input_size], length note_dim-1
-#                 these are the embedded ground truth values
-#             h_ctx: Tensor[batch x time x input_size]
-#                 projection of RNN state (need something to attend to when ctx is empty)
-#             h_tgt: list of Tensor[batch x time x input_size], length note_dim
-#                 these are projections of the RNN state for each target,
-#                 which the Transformer will map to distribution parameters.
-#         """
-#         # explicitly broadcast
-#         h_ctx, *ctx = torch.broadcast_tensors(h_ctx, *ctx)
-#         h_ctx, *h_tgt = torch.broadcast_tensors(h_ctx, *h_tgt)
-
-#         # h_tgt is 'target' w.r.t TransformerDecoder
-#         # h_ctx and context are 'memory'
-#         batch_size = h_ctx.shape[0]*h_ctx.shape[1]
-#         # fold time into batch, stack modes
-#         tgt = torch.stack([
-#             item.reshape(batch_size,-1)
-#             for item in h_tgt
-#         ],0)
-#         mem = torch.stack([
-#             item.reshape(batch_size,-1)
-#             for item in [h_ctx, *ctx]
-#         ],0)
-#         # now "time"(mode) x "batch"(+time) x channel
-
-#         # generate a mask
-#         # this is both the target and memory mask
-#         # masking is such that each target can only depend on "previous" context
-#         n = len(h_tgt)
-#         mask = ~tgt.new_ones((n,n), dtype=bool).tril()
-
-#         x = self.net(tgt, mem, mask, mask)
-#         return list(x.reshape(n, *h_ctx.shape).unbind(0))
-
 
 class Notochord(nn.Module):
     # note: use named arguments only for benefit of training script

@@ -25,6 +25,13 @@ class MIDIDataset(Dataset):
         
     def __len__(self):
         return len(self.files)
+
+    def is_melodic(self, program):
+        orig_program = program%1000
+        return (orig_program<=128) | (orig_program>256)
+
+    def is_anon(self, program):
+        return program > 256
     
     def _remap_anonymous_instruments(self, program: torch.Tensor) -> torch.Tensor:
         """
@@ -32,9 +39,8 @@ class MIDIDataset(Dataset):
         with a probability of 10% per instrument, without replacement. 
         Also map any parts > 256 to appropriate anonymous ids.
         """
-        orig_program = program%1000
-        is_melodic = (orig_program<=128) | (orig_program>256)
-        is_anon = (program > 256)
+        is_melodic = self.is_melodic(program)
+        is_anon = self.is_anon(program)
         named_melodic = list(program.masked_select(is_melodic & ~is_anon).unique())
         anon_melodic = list(program.masked_select(is_melodic & is_anon).unique())
         named_drum = list(program.masked_select(~is_melodic & ~is_anon).unique())
@@ -92,7 +98,7 @@ class MIDIDataset(Dataset):
         transpose_up = min(self.transpose, 127-pitch.max())
         transpose = (
             random.randint(-transpose_down, transpose_up)
-            * (program<128) # don't transpose drums
+            * self.is_melodic(program).long() # don't transpose drums
         )
         pitch = pitch + transpose
 
