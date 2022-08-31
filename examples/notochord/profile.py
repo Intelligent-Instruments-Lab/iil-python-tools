@@ -10,7 +10,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import fire
 from time import time, sleep
 
-def main(checkpoint=None, n=10, warm=5, wait=0):
+def main(checkpoint=None, n=30, warm=10, wait=0):
     nc = Notochord.from_checkpoint(checkpoint)
     nc.eval()
     feed_t = query_t = predict_t = 0
@@ -34,7 +34,7 @@ def main(checkpoint=None, n=10, warm=5, wait=0):
         
         nonlocal feed_t, query_t, predict_t, r
         time
-        sleep(0.1)
+        # sleep(0.1)
         t = time()
         r = nc.predict(
             inst=r['instrument'], pitch=r['pitch'], 
@@ -43,18 +43,18 @@ def main(checkpoint=None, n=10, warm=5, wait=0):
         print(r)
         predict_t += time() - t
 
-        # t = time()
-        # nc.feed(
-        #     inst=r['instrument'], pitch=r['pitch'], 
-        #     time=r['time'], vel=r['velocity'])
-        # feed_t += time() - t
+        t = time()
+        nc.feed(
+            inst=r['instrument'], pitch=r['pitch'], 
+            time=r['time'], vel=r['velocity'])
+        feed_t += time() - t
 
-        # t = time()
-        # r = nc.query(
-        #     pitch_temp=0.5, rhythm_temp=0.5, timing_temp=0.1)
-        # print(r)
-        # query_t += time() - t
-        # # print(r.keys())
+        t = time()
+        r = nc.query(
+            pitch_temp=0.5, rhythm_temp=0.5, timing_temp=0.1)
+        print(r)
+        query_t += time() - t
+        # print(r.keys())
 
     for _ in range(warm):
         once()

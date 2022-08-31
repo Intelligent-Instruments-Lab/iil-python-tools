@@ -5,7 +5,8 @@ Quarks.install("API")
 (
 ///////// create Notochord API object /////////
 ~noto = Notochord();
-~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
+// ~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
+~noto.notochordPath = "/Users/victor/notochord_lakh_23G.pt";
 // ~noto.notochordPath = "/Users/victor/Downloads/1368.ckpt";
 ~noto.startNotochord; // run notochord in a terminal
 )
