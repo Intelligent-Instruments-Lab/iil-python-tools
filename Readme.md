@@ -66,7 +66,7 @@ In a terminal, start the python server as described above.
 In Supercollider, step through `examples/notochord/tidalcycles/tidal-notochord-demo.scd` which will receive from Tidal, talk to the python server, and send MIDI on to a synthesizer. There are two options, either send to fluidsynth to synthesize General MIDI, or specify your own mapping of instruments to channels and send on to your own DAW or synth.
 
 ### Install fluidsynth (optional)
-fluidsynth (https://github.com/FluidSynth/fluidsynth) is a General MIDI synthesizer which you can install from the package manager. On mac:
+fluidsynth (https://github.com/FluidSynth/fluidsynth) is a General MIDI synthesizer which you can install from the package manager. On macOS:
 ```
 brew install fluidsynth
 ```
@@ -92,3 +92,20 @@ add new dependencies to `environment.yml`, then run:
 ```
 conda env update -f environment.yml
 ```
+
+# Build
+
+single-download redistributable builds can be made using Nuitka (https://nuitka.net/index.html) 
+
+steps (for arm64 mac):
+
+install Nuitka into the conda environment (this is 1.1-rc10 at time of writing; 1.0 has a bug)
+`pip install -U "https://github.com/Nuitka/Nuitka/archive/develop.zip"`
+
+you can add `pip install ordered-set` and `brew install ccache` for best performance.
+
+pytorch 1.12.x has an issue with an x86 binary being included in arm64 pacakges: https://github.com/pytorch/pytorch/issues/84351
+
+to get around this, delete `_dl.*.so` from the torch install (which can be located with `python -c "import torch; from pathlib import Path; print(Path(torch.__file__).parent)"`)
+
+then `nuitka-build.sh`, and `zip-notochord.sh` should compile notochord with nuitka and produce a zip from the build directory, artifacts directory, and `notochord-osc-server.sh` entry point.
