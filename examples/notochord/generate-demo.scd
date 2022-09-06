@@ -22,7 +22,7 @@ Quarks.install("API")
 
 (
 ///////// define scheduler /////////
-~player_instrument = nil;
+~player_inst = nil;
 ~gate = true;
 
 // track the current predicted next event
@@ -64,7 +64,7 @@ Quarks.install("API")
 	~output.send(inst, pitch, vel);
 
     //get a new prediction in light of current note
-	~exclude_instrument = ~player_instrument!?([_]);
+	~exclude_instrument = ~player_inst!?([_]);
     ~noto.feedQuery(
 		\inst, inst, \pitch, pitch, \time, dt, \vel, vel,
 		\handle, event_time, *~noto.globalArgs);
@@ -229,8 +229,8 @@ Quarks.install("API")
 ~pitch_temp = 1;
 ~rhythm_temp = 1;
 ~timing_temp = 0.1;
-~min_time = 0.015;
-~max_time = 0.125;
+~min_time = nil;//0.015;
+~max_time = nil;//0.125;
 ~velocity_temp = 1;
 ~include_pitch = ([[0,3,7,9]]+[40,52,64,76]).flatten;
 ~clear_prediction.();
@@ -263,8 +263,8 @@ Quarks.install("API")
 ~last_event_time = nil;
 
 // choose instruments for the player and Notochord
-~player_inst = 12;
-~include_instrument = [55, 120,]; //notochord instruments
+~player_inst = 57;
+~include_instrument = [61]; //notochord instruments
 ~allow_end = true;
 
 ~instrument_temp = 1;

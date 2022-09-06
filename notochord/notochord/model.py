@@ -129,11 +129,11 @@ class Notochord(nn.Module):
         # embeddings for inputs
         self.instrument_emb = nn.Embedding(self.instrument_domain, emb_size)
         self.pitch_emb = nn.Embedding(self.pitch_domain, emb_size)
-        self.time_emb = torch.jit.script(
+        self.time_emb = (#torch.jit.script(
             SineEmbedding(
             time_sines, emb_size, 1e-3, 30, scale='log'))
         # self.vel_emb = MixEmbedding(emb_size, (0, 127))
-        self.vel_emb = torch.jit.script(
+        self.vel_emb = (#torch.jit.script(
             SineEmbedding(
             vel_sines, emb_size, 2, 512, scale='lin'))
 
@@ -149,7 +149,7 @@ class Notochord(nn.Module):
             for _ in range(2 if kind=='lstm' else 1)
         ])
 
-        mlp_cls = lambda *a: torch.jit.script(GLUMLP(*a))
+        mlp_cls = GLUMLP#lambda *a: torch.jit.script(GLUMLP(*a))
         # projection from RNN state to distribution parameters
         self.h_proj = mlp_cls(
                 rnn_hidden, emb_size, emb_size, 

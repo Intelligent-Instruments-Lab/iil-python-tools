@@ -2,6 +2,8 @@ import sys
 
 from iipyper import run
 
+from notochord.server import main as server
+
 def help():
     print("""
     available subcommands:
@@ -12,9 +14,8 @@ if __name__=='__main__':
     # print(sys.argv)
     try:
         if sys.argv[1] == 'server':
-            from .server import main
             sys.argv = sys.argv[1:]
-            run(main)
+            run(server)
         else:
             help()
     except IndexError:
