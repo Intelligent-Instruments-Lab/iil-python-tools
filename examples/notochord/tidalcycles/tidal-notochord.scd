@@ -120,7 +120,7 @@ OSCdef(\from_tidal, {
         );
     }
 
-}, "/notochord/tidal_feed").permanent_(true);;
+}, "/notochord/tidal_feed").permanent_(true);
 
 // create event handle,
 // schedule processing by notochord,
