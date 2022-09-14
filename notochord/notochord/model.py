@@ -717,7 +717,7 @@ class Notochord(nn.Module):
             and return result
         """
         r = self.query(*a, **kw)
-        self.feed(r['instrument'], r['pitch'], r['time'], r['velocity'])
+        self.feed(r['inst'], r['pitch'], r['time'], r['vel'])
         return r
 
     def feed_query_feed(self, inst, pitch, time, vel, **kw):
