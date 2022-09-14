@@ -9,7 +9,7 @@ Quarks.install("API")
 ~noto = Notochord();
 
 // ~noto.notochordCmd; // show the current notochord terminal command
-~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
+~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_50G_deep.ckpt";
 
 ~noto.startNotochord; // runs notochord for you in a terminal
 )

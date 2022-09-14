@@ -9,10 +9,10 @@
 (
 ///////// create Notochord API object /////////
 ~noto = Notochord();
-~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
-// ~noto.notochordPath = "/Users/victor/Downloads/1368.ckpt";
+~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
 ~noto.startNotochord; // run notochord in a terminal
 )
+
 
 (
 ///////// create FluidSynth MIDI output object /////////

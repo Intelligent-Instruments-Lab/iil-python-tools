@@ -12,14 +12,14 @@
 Quarks.install("API")
 //depends: IILinnstrument https://github.com/Intelligent-Instruments-Lab/IILinnstrument
 
+
 (
 ~noto = Notochord();
-
 // ~noto.notochordCmd; // show the current notochord terminal command
-~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
-
+~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
 ~noto.startNotochord; // runs notochord for you in a terminal
 )
+
 
 (
 ~synths = ();
