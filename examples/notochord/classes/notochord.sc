@@ -2,7 +2,7 @@
 
 NotoOutput {
 	var <port, <sema, <nAnon;
-    *new { | deviceName=nil, portName=nil, anonInstruments=8 |
+    *new { | deviceName=nil, portName=nil, anonInstruments=32 |
         ^super.new.init(deviceName, portName, anonInstruments)
     }
 
@@ -13,8 +13,8 @@ NotoOutput {
 				deviceName = deviceName?"IAC Driver";
 				portName = portName?"Bus 1";
 			},
-			\linux,   { "Notochord: TODO: default MIDI device on Linux".postln },
-			\windows, { "Notochord: TODO: default MIDI device on Windows".postln }
+			\linux,   { "Notochord: TODO: default MIDI output device on Linux".postln },
+			\windows, { "Notochord: TODO: default MIDI output device on Windows".postln }
 		);
 		nAnon = anonInstruments;
 		port = MIDIOut.newByName(deviceName, portName).latency_(0);
@@ -25,10 +25,37 @@ NotoOutput {
 		128.do{arg note; 16.do{arg chan;
 			port.noteOff(chan, note, vel)}}
 	}
+
+	isDrum { | inst |
+		inst;
+		^ ((inst>128)&&(inst<=256)) || (inst>(256+nAnon))
+	}
 }
 
-NotoDAWOutput : NotoOutput {
-	//TODO
+NotoMappingOutput : NotoOutput {
+	var <>instrumentMap, <>drumMap;
+
+	init { | deviceName, portName, anonInstruments |
+		super.init(deviceName, portName, anonInstruments);
+		instrumentMap = Dictionary.new;
+		drumMap = Dictionary.new;
+    }
+
+	send { | inst, pitch, vel | 
+		var channel;
+		channel = instrumentMap.at(inst);
+		(isDrum(inst) && drumMap.includesKey(pitch)).if{
+			pitch = drumMap.at(pitch)};
+		channel.isNil.if{
+			"WARNING: unmapped instrument in NotoDAWOutput.send".postln; ^nil};
+		// pitch.isNil.if{
+			// "WARNING: unmapped drum in NotoDAWOutput.send".postln; ^nil};
+		(vel>0).if{
+			port.noteOn(channel, pitch, vel);
+		}{
+			port.noteOff(channel, pitch);
+		};
+	}
 }
 
 NotoFluidOutput : NotoOutput {
@@ -42,15 +69,9 @@ NotoFluidOutput : NotoOutput {
 		instChannels = TwoWayIdentityDictionary.new;
     }
 
-	isDrum { | inst |
-		inst;
-		^ ((inst>128)&&(inst<=256)) || (inst>(256+nAnon))
-	}
-
 	send { | inst, pitch, vel |
 		var channel;
 		sema.wait;
-		inst;
 		// check if this instrument has a channel
 		channel = instChannels.at(inst);
 		channel.isNil.if{
@@ -99,27 +120,44 @@ NotoFluidOutput : NotoOutput {
 
 // MIDI input API
 NotoInput {
-	var <device;
+	var <deviceUID;
 
-	*new { | deviceName |
-		^super.new.init(deviceName)
+	*new { | deviceName, portName |
+		^super.new.init(deviceName, portName)
     }
 
-	init { | deviceName |
+	init { | deviceName, portName |
+		var device; 
 		MIDIClient.initialized.not.if{MIDIClient.init};
 		MIDIIn.connectAll;
 
+		Platform.case(
+			\osx,     {
+				deviceName = deviceName?"IAC Driver";
+			},
+			\linux,   { "Notochord: TODO: default MIDI input device on Linux".postln },
+			\windows, { "Notochord: TODO: default MIDI input device on Windows".postln }
+		);
+
 		device = MIDIClient.sources.detect{
-			|e| e.device.containsi(deviceName)
-		}.uid;
+			|e| e.device.containsi(deviceName) && portName.isNil.if{true}{e.device.containsi(portName)}
+		};
+		device.isNil.if{
+			"WARNING: NotoInput: MIDI input device not found".postln;
+			("available sources are: "++MIDIClient.sources).postln;
+			deviceUID=0;
+		}{
+			("NotoInput: using MIDI input device \""++deviceName++"\"").postln;
+			deviceUID=device.uid;
+		}
     }
 
 	noteOn { |fn|
-		MIDIdef.noteOn(\input_on++device, fn, srcID:device);
+		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 
 	noteOff { |fn|
-		MIDIdef.noteOff(\input_off++device, fn, srcID:device);
+		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 }
 
@@ -149,7 +187,7 @@ Notochord {
 				pendingQueries = 0;
 			};
 
-		}, "notochord/query_return");
+		}, "notochord/query_return").permanent_(true);
 
 		// initial handler which just prints the argument dict
 		handler = _.postln;
@@ -162,7 +200,8 @@ Notochord {
 		argKeys = [
 			\allow_end,
 			\min_time, \max_time, \min_vel, \max_vel,
-			\include_instrument, \exclude_instrument,
+			\include_inst, \exclude_inst,
+			\allow_anon,
 			\include_pitch, \exclude_pitch, \include_drum,
 			\instrument_temp, \pitch_temp,
 			\rhythm_temp, \timing_temp, \velocity_temp,
@@ -251,8 +290,8 @@ Notochord {
 //   C. forecasted events which may not play
 // A requires: schedule, once locked in: feed, finally play
 // B requires: schedule, once locked in: query_feed, finally play
-// C requires: schedule, if locked in: feed/lay (treat as A),
-//   -- if anything is scheduled between this event and the source event, cancel
+// C requires: schedule, once locked in: as A
+//   -- but if anything else gets scheduled before it, cancel
 
 // alternate view:
 //
@@ -277,15 +316,3 @@ Notochord {
 // a separate query would complete the event just-in-time, *only* if it isn't
 // first pre-empted, which prevents wasting time on other attributes
 // gets hairy when there are other constraints though
-
-
-/*(
-~noto = Notochord();
-~input = NotoInput();
-~output = NotoOutput();
-
-
-~input.callback = {};
-~noto.callback = {};
-
-)*/

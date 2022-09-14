@@ -68,7 +68,7 @@ def main(host="127.0.0.1", receive_port=9999, send_port=None,
                 t = time()
                 r = predictor.predict(**kw)
                 print(time() - t)
-                return '/prediction', r['instrument'], r['pitch'], r['time'], r['velocity'], r['end'], r['step']
+                return '/prediction', r['inst'], r['pitch'], r['time'], r['vel'], r['end'], r['step']
 
             elif cmd=="reset":
                 predictor.reset(**kw)

@@ -1,5 +1,3 @@
-Quarks.install("API")
-
 // in this example the Linnstrument displays an interface to perform pitches
 // by their likelihood under the NotePredictor model instead of by MIDI number
 
@@ -11,11 +9,13 @@ Quarks.install("API")
 
 // model predictions are conditioned on performed timing and velocity.
 
+Quarks.install("API")
+//depends: IILinnstrument https://github.com/Intelligent-Instruments-Lab/IILinnstrument
+
 (
 ~noto = Notochord();
 
 // ~noto.notochordCmd; // show the current notochord terminal command
-// ~noto.notochordPath = "/Users/victor/Downloads/1368.ckpt";
 ~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
 
 ~noto.startNotochord; // runs notochord for you in a terminal
@@ -113,8 +113,8 @@ s.waitForBoot{
 		~synths.add(key -> Synth(\pluck, [\vel, vel/127]));
 		// query for pitch
 		~noto.queryFeed(
-			\fix_instrument, ~instrument,
-			\fix_vel, vel, \fix_time, dt,
+			\next_inst, ~instrument,
+			\next_vel, vel, \next_time, dt,
 			\handle, key, *(~noto.globalArgs++pitch_args)
 		)
 	}

@@ -23,13 +23,9 @@
 
 
 (
-~noto = Notochord();
-~output = NotoFluidOutput();
-
-
 ///////// define scheduler /////////
-~player_instrument = 1;
-~noto_instrument = 1;
+~player_inst = 1;
+~noto_inst = 1;
 
 ~player_held = IdentityDictionary.new; // maps player notes to harmonizer notes
 
@@ -59,7 +55,7 @@
 		~player_held.add(handle -> \pending);
 		~noto.feedQueryFeed(
 			\inst, inst, \pitch, pitch, \time, dt, \vel, vel,
-			\fix_instrument, ~noto_instrument, \fix_time, 0, \fix_vel, vel,
+			\next_inst, ~noto_inst, \next_time, 0, \next_vel, vel,
 			\handle, handle, *~noto.globalArgs)
 	};
 	feed.if{
@@ -79,16 +75,16 @@
 ~input.noteOn{
     arg vel, pitch, chan, src;
 	//play the note on
-	~play_event.(~player_instrument, pitch, vel, query:true);
+	~play_event.(~player_inst, pitch, vel, query:true);
 };
 
 ~input.noteOff{
 	arg vel, pitch, chan, src;
-	var handle = ~get_handle.(~player_instrument, pitch);
+	var handle = ~get_handle.(~player_inst, pitch);
 	var hpitch;
 
 	// play the noteOff
-	~play_event.(~player_instrument, pitch, 0, feed:true);
+	~play_event.(~player_inst, pitch, 0, feed:true);
 
 	hpitch = ~player_held.removeAt(handle);
 	// play the harmonizing noteOff
@@ -98,7 +94,7 @@
 		"noteOff occurred before harmonizing NoteOn".postln;
 	}{
 		hpitch.notNil.if{
-			~play_event.(~noto_instrument, hpitch, 0, feed:true)
+			~play_event.(~noto_inst, hpitch, 0, feed:true)
 		}{
 			\error.postln;
 			handle.postln;
@@ -113,7 +109,7 @@
 	var pitch = args[\pitch];
 	// args.postln;
 	// start the harmonizing note
-	~play_event.(args[\instrument], pitch, args[\velocity]);
+	~play_event.(args[\inst], pitch, args[\vel]);
 	// store the pitch for later ending it
 	~player_held.add(args[\handle].asSymbol -> pitch);
 };
@@ -128,6 +124,6 @@
 ~output.releaseAll;
 ~noto.reset;
 
-~player_instrument = 55;
-~noto_instrument = 6;
+~player_inst = 55;
+~noto_inst = 6;
 )

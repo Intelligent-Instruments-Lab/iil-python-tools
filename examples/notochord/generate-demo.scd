@@ -1,4 +1,6 @@
 // in this example the model's predictions are fed back to it so it plays itself.
+// an instrument can also be assigned to a MIDI input to play along with Notochord
+
 Quarks.install("API")
 
 
@@ -6,9 +8,30 @@ Quarks.install("API")
 ///////// create Notochord API object /////////
 ~noto = Notochord();
 // ~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
-~noto.notochordPath = "/Users/victor/notochord_lakh_23G.pt";
-// ~noto.notochordPath = "/Users/victor/Downloads/1368.ckpt";
+// ~noto.notochordPath = "/Users/victor/notochord_lakh_23G.pt";
+~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
+// ~noto.notochordPath = "/Users/victor/notochord_lakh_30G_deep.pt";
 ~noto.startNotochord; // run notochord in a terminal
+)
+
+
+(
+///////// create MIDI input object /////////
+// this is just a convenience, you could use MIDIIn or MIDIdef directly instead
+// change this to the name of your MIDI controller
+~controller = "MPKmini2";
+// MIDI from controller
+~input = NotoInput(~controller);
+~input.noteOff{
+    arg vel, pitch, chan, src;
+	// play a note-off event into notochord on the player instrument
+	~player_inst!?(~event.(_, pitch, 0));
+};
+~input.noteOn{
+	arg vel, pitch, chan, src;
+	// play a note-on event into notochord on the player instrument
+	~player_inst!?(~event.(_, pitch, vel));
+};
 )
 
 
@@ -34,11 +57,13 @@ Quarks.install("API")
 ~noto.reset;
 ~noto.dropOldQueries = true;
 
+// cancel a predicted event before it happens
 ~clear_prediction = {
 	~predicted_event!?(_.stop);
 	~predicted_event = nil;
 };
 
+// stop playing predictions and release all notes
 ~hush = {
 	~gate = false;
 	~clear_prediction.();
@@ -64,7 +89,7 @@ Quarks.install("API")
 	~output.send(inst, pitch, vel);
 
     //get a new prediction in light of current note
-	~exclude_instrument = ~player_inst!?([_]);
+	~exclude_inst = ~player_inst!?([_]);
     ~noto.feedQuery(
 		\inst, inst, \pitch, pitch, \time, dt, \vel, vel,
 		\handle, event_time, *~noto.globalArgs);
@@ -72,18 +97,6 @@ Quarks.install("API")
     ~step = ~step + 1;
 
 	[\played, inst, pitch, vel].postln;
-};
-
-
-// MIDI from controller
-~input = NotoInput("MPKmini2");
-~input.noteOff{
-    arg vel, pitch, chan, src;
-	~player_inst!?(~event.(_, pitch, 0));
-};
-~input.noteOn{
-	arg vel, pitch, chan, src;
-	~player_inst!?(~event.(_, pitch, vel));
 };
 
 // OSC return from python
@@ -116,14 +129,12 @@ Quarks.install("API")
 			};
 			sleep_time.max(0).sleep;
 
-			// \prediction_reached.postln;
-
 			// if the Routine gets here without being canceled,
 			// the predicted event occurs
-			// fork the event into to different Routine so it doesn't
+			// fork the event into a different Routine so it doesn't
 			// cancel itself!
 			Routine{
-				~event.(args[\instrument], args[\pitch], args[\velocity])
+				~event.(args[\inst], args[\pitch], args[\vel])
 			}.play(SystemClock);
 			// and the Routine is not rescheduled
             nil
@@ -151,10 +162,10 @@ Quarks.install("API")
 ~last_event_time = nil;
 
 ~player_inst = nil;
-~include_instrument = nil;
+~include_inst = nil;
 
 ~allow_end = true;
-~instrument_temp = nil;
+~insrumentt_temp = nil;
 ~pitch_temp = nil;
 ~rhythm_temp = nil;
 ~timing_temp = nil;
@@ -163,6 +174,7 @@ Quarks.install("API")
 ~velocity_temp = nil;
 ~include_pitch = nil;
 ~clear_prediction.();
+~allow_anon = false;
 
 ~output.releaseAll;
 ~noto.reset;
@@ -189,14 +201,14 @@ Quarks.install("API")
 ~last_event_time = nil;
 
 ~player_inst = nil;
-~include_instrument = nil;
+~include_inst = nil;
 
 ~allow_end = true;
-~instrument_temp = 0.97;
-~pitch_temp = 0.9;
+~instrument_temp = 0.98;
+~pitch_temp = 0.95;
 ~rhythm_temp = 1;
 ~timing_temp = 0.1;
-~min_time = 0.015;
+~min_time = nil;//0.015;
 ~max_time = nil;
 ~velocity_temp = 0;
 ~include_pitch = nil;
@@ -222,7 +234,7 @@ Quarks.install("API")
 ~last_event_time = nil;
 
 ~player_inst = nil;
-~include_instrument = [5, 16, 21, 29, 35, 69, 74];
+~include_inst = [5, 16, 21, 29, 35, 69, 74];
 
 ~allow_end = false;
 ~instrument_temp = 1;
@@ -264,7 +276,7 @@ Quarks.install("API")
 
 // choose instruments for the player and Notochord
 ~player_inst = 57;
-~include_instrument = [61]; //notochord instruments
+~include_inst = [61]; //notochord instruments
 ~allow_end = true;
 
 ~instrument_temp = 1;
