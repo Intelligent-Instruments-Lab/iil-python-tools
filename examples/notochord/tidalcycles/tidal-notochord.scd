@@ -9,7 +9,7 @@ Quarks.install("API")
 ~noto = Notochord();
 
 // ~noto.notochordCmd; // show the current notochord terminal command
-~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_50G_deep.ckpt";
+~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
 
 ~noto.startNotochord; // runs notochord for you in a terminal
 )
@@ -99,7 +99,7 @@ OSCdef(\from_tidal, {
         \reset.postln;
         SystemClock.schedAbs(time-~ncLatency, {
             ~noto.reset;
-            ~output.resetAll;
+            ~output.releaseAll;
         });
     }{
         // note-on events should arrive from tidal in the order they happen
@@ -191,9 +191,11 @@ OSCdef(\from_tidal, {
     arg event;
     var query = List[];
     // if instrument is given
-    (event[\inst]>=0).if{query.add(\next_inst); query.add(event[\inst])};
+    (event[\inst]>=0).if{
+		query.add(\next_inst); query.add(event[\inst])};
     // if pitch is given
-    (event[\pitch]>=0).if{query.add(\next_pitch); query.add(event[\pitch])};
+    (event[\pitch]>=0).if{
+		query.add(\next_pitch); query.add(event[\pitch])};
     // if velocity is given
     (event[\vel]>=0).if{
         query.add(\next_vel); query.add(event[\vel])
@@ -203,15 +205,18 @@ OSCdef(\from_tidal, {
     };
     query.add(\next_time); query.add(event[\time]);
 	query.add(\allow_anon); query.add(~allow_anon);
-    ~output.instrumentMap.notNil.if{
+	(~output.class==NotoMappingOutput).if{
         query.add(\include_inst);
-        query.add("%JSON:"++JSON.stringify(~output.instrumentMap.keys.asList))
-    };
-    ~output.drumMap.notNil.if{
-        query.add(\include_drum);
-        query.add("%JSON:"++JSON.stringify(~output.drumMap.keys.asList))
-    };
-    query
+        query.add(
+			"%JSON:"++JSON.stringify(~output.instrumentMap.keys.asList));
+
+		~output.drumMap.notNil.if{
+			query.add(\include_drum);
+			query.add(
+				"%JSON:"++JSON.stringify(~output.drumMap.keys.asList))
+		};
+	};
+	query
 };
 
 // handle OSC return from python

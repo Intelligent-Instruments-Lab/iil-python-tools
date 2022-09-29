@@ -7,10 +7,7 @@ Quarks.install("API")
 (
 ///////// create Notochord API object /////////
 ~noto = Notochord();
-// ~noto.notochordPath = "/Users/victor/Downloads/notochord_lakh_20G.ckpt";
-// ~noto.notochordPath = "/Users/victor/notochord_lakh_23G.pt";
 ~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
-// ~noto.notochordPath = "/Users/victor/notochord_lakh_30G_deep.pt";
 ~noto.startNotochord; // run notochord in a terminal
 )
 
@@ -107,7 +104,8 @@ Quarks.install("API")
 
     // there may be multiple outstanding queries to the model.
 	// when there are, it means
-    // the earlier prediction is already voided, so it should be dropped
+    // the earlier prediction is already voided,
+	// so it should be dropped
     var gate_event = (
         ~gate
         && (end==0)
@@ -131,12 +129,12 @@ Quarks.install("API")
 
 			// if the Routine gets here without being canceled,
 			// the predicted event occurs
-			// fork the event into a different Routine so it doesn't
-			// cancel itself!
+			// fork the event into a different Routine so it
+			// doesn't cancel itself!
 			Routine{
 				~event.(args[\inst], args[\pitch], args[\vel])
 			}.play(SystemClock);
-			// and the Routine is not rescheduled
+			// return nil so the Routine is not rescheduled
             nil
         }.play(SystemClock);
     };
@@ -163,9 +161,10 @@ Quarks.install("API")
 
 ~player_inst = nil;
 ~include_inst = nil;
+~allow_anon = false;
 
 ~allow_end = true;
-~insrumentt_temp = nil;
+~instrument_temp = nil;
 ~pitch_temp = nil;
 ~rhythm_temp = nil;
 ~timing_temp = nil;
@@ -174,11 +173,12 @@ Quarks.install("API")
 ~velocity_temp = nil;
 ~include_pitch = nil;
 ~clear_prediction.();
-~allow_anon = false;
 
 ~output.releaseAll;
 ~noto.reset;
-~gate = true; ~noto.query(\handle, nil, *~noto.globalArgs);
+
+~gate = true;
+~noto.query(\handle, nil, *~noto.globalArgs);
 )
 
 
@@ -202,6 +202,7 @@ Quarks.install("API")
 
 ~player_inst = nil;
 ~include_inst = nil;
+~allow_anon = false;
 
 ~allow_end = true;
 ~instrument_temp = 0.98;
@@ -213,6 +214,7 @@ Quarks.install("API")
 ~velocity_temp = 0;
 ~include_pitch = nil;
 ~clear_prediction.();
+
 
 ~output.releaseAll;
 ~noto.reset;
@@ -237,14 +239,14 @@ Quarks.install("API")
 ~include_inst = [5, 16, 21, 29, 35, 69, 74];
 
 ~allow_end = false;
-~instrument_temp = 1;
-~pitch_temp = 1;
-~rhythm_temp = 1;
+~instrument_temp = 2;
+~pitch_temp = 3;
+~rhythm_temp = 0.9;
 ~timing_temp = 0.1;
 ~min_time = nil;//0.015;
-~max_time = nil;//0.125;
+~max_time = 0.125;
 ~velocity_temp = 1;
-~include_pitch = ([[0,3,7,9]]+[40,52,64,76]).flatten;
+~include_pitch = ([[0,7]]+[40,52,64,76]).flatten;
 ~clear_prediction.();
 
 ~output.releaseAll;
@@ -280,7 +282,7 @@ Quarks.install("API")
 ~allow_end = true;
 
 ~instrument_temp = 1;
-~pitch_temp = 1;//0.95;
+~pitch_temp = 1; //0.95;
 ~rhythm_temp = 1;
 ~timing_temp = 1;
 ~min_time = 0.015;
