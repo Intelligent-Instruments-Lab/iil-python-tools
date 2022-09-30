@@ -78,7 +78,7 @@ def main(host="127.0.0.1", receive_port=8888):#, send_port=None):
     @osc.args#(return_port=send_port)
     def query(address):
         """
-        feed data to the predictor
+        query data from the predictor
         """
         print(f"{address}")
 
@@ -89,7 +89,7 @@ def main(host="127.0.0.1", receive_port=8888):#, send_port=None):
     @osc.args#(return_port=send_port)
     def reset(address, kind=None):
         """
-        feed data to the predictor
+        reset the predictor
         """
         print(f"{address} {kind}")
 
