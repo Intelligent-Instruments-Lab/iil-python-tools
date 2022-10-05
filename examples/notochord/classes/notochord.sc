@@ -125,7 +125,7 @@ NotoFluidOutput : NotoOutput {
 
 // MIDI input API
 NotoInput {
-	var <deviceUID;
+	var <deviceUID, <noteOnFn, <noteOffFn;
 
 	*new { | deviceName, portName |
 		^super.new.init(deviceName, portName)
@@ -158,26 +158,53 @@ NotoInput {
     }
 
 	noteOn { |fn|
-		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID)//.permanent_(true);
+		noteOnFn = fn;
+		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 
 	noteOff { |fn|
-		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID)//.permanent_(true);
+		noteOffFn = fn;
+		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 }
 
+Promise {
+	var <fn, <next;
+	init { fn=nil; next=nil; }
+	then { arg function;
+		fn = function;
+		next = Promise.new;
+		^next
+	}
+	resolve { arg ...args;
+		var result;
+		fn.isNil.if{"promise resolved before `then`".postln; ^nil};
+		result = fn.(*args);
+		next?(_.resolve(result));
+	}
+}
 
 // Notochord API
+// TODO: pending dict should replace pendingqueries
+// TODO: handle case when promise resolves before `then`?
 Notochord {
-	var <python, <>handler, <>notochordPath, <>notochordEnv, <argKeys, <pendingQueries, <>dropOldQueries;
+	var <python, <>handler, <>notochordPath, <>notochordEnv, <argKeys, <pendingQueries, <>dropOldQueries, <count, <pending;
 
 	*new { |pythonHost="127.0.0.1", pythonPort=9999|
         ^super.new.init(pythonHost, pythonPort)
     }
 
     init { |pythonHost, pythonPort|
+		count = 0;
+		pending = Dictionary.new;
 		// address to send OSC to notochord
 		python = NetAddr.new(pythonHost, pythonPort);
+
+		// default handler for resolving promises
+		handler = { arg args;
+			["handling OSC return. pending:", pending].postln;
+			pending.removeAt(args[\handle]).resolve(args);
+		};
 
 		// handler for OSC from notochord
 		OSCdef(\notochord_from_python, {
@@ -193,9 +220,6 @@ Notochord {
 			};
 
 		}, "notochord/query_return").permanent_(true);
-
-		// initial handler which just prints the argument dict
-		handler = _.postln;
 
 		notochordEnv = "iil-python-tools"; //default conda env for notochord
 
@@ -222,6 +246,11 @@ Notochord {
 		dropOldQueries = false;
 	}
 
+	getHandle {
+		count = count + 1;
+		^count;
+	}
+
 	reset { |...args|
 		python.sendMsg("/notochord/reset", *args);
 	}
@@ -230,24 +259,27 @@ Notochord {
 		python.sendMsg("/notochord/feed", *args);
 	}
 
+	queryFn { |route ...args|
+		var promise;
+		var handle = this.getHandle;
+		// [\handle, handle].postln;
+		python.sendMsg(route, \handle, handle, *args);
+		pending[handle] = promise = Promise.new;
+		pendingQueries = pendingQueries+1;
+		^promise
+	}
+
 	query { |...args|
-		python.sendMsg("/notochord/query", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/query", *args);
 	}
-
 	queryFeed { |...args|
-		python.sendMsg("/notochord/query_feed", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/query_feed", *args);
 	}
-
 	feedQuery { |...args|
-		python.sendMsg("/notochord/feed_query", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/feed_query", *args);
 	}
-
 	feedQueryFeed { |...args|
-		python.sendMsg("/notochord/feed_query_feed", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/feed_query_feed", *args);
 	}
 
 	notochordCmd {
