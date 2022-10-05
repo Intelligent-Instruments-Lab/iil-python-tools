@@ -3,32 +3,11 @@
 
 Quarks.install("API")
 
-
 (
 ///////// create Notochord API object /////////
 ~noto = Notochord();
 ~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
 ~noto.startNotochord; // run notochord in a terminal
-)
-
-
-(
-///////// create MIDI input object /////////
-// this is just a convenience, you could use MIDIIn or MIDIdef directly instead
-// change this to the name of your MIDI controller
-~controller = "MPKmini2";
-// MIDI from controller
-~input = NotoInput(~controller);
-~input.noteOff{
-    arg vel, pitch, chan, src;
-	// play a note-off event into notochord on the player instrument
-	~player_inst!?(~event.(_, pitch, 0));
-};
-~input.noteOn{
-	arg vel, pitch, chan, src;
-	// play a note-on event into notochord on the player instrument
-	~player_inst!?(~event.(_, pitch, vel));
-};
 )
 
 (
@@ -41,10 +20,37 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~output = NotoFluidOutput();
 )
 
-
 (
+///////// create MIDI input object /////////
+// this is just a convenience, you could use MIDIIn or MIDIdef directly instead
+// change this to the name of your MIDI controller
+~controller = "MPKmini2";
+// MIDI from controller
+~input = NotoInput(~controller);
+MIDIdef.freeAll;
+~input.noteOff{
+    arg vel, pitch, chan, src;
+	// play a note-off event into notochord on the player instrument
+	(chan==0).if{~player_inst}{~player_drum}!?(~event.(_, pitch, 0));
+};
+~input.noteOn{
+	arg vel, pitch, chan, src;
+	~gate=true;
+	// ~gate.not.if{Routine{2.sleep; ~gate = true}.play};
+	// play a note-on event into notochord on the player instrument
+	(chan==0).if{~player_inst}{~player_drum}!?(~event.(_, pitch, vel));
+};
+// )
+
+
+
+// (
+~noto.isNil.if{~noto = Notochord()};
+~output.isNil.if{~output = NotoFluidOutput()};
+
 ///////// define scheduler /////////
 ~player_inst = nil;
+~player_drum = nil;
 ~gate = true;
 
 // track the current predicted next event
@@ -81,6 +87,11 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 		event_time-~last_event_time}{0};
     ~last_event_time = event_time;
 
+	// auto reset
+	(dt > 10).if{
+		~noto.reset;
+	};
+
     // cancel any pending events
 	~clear_prediction.();
 
@@ -88,8 +99,10 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	~output.send(inst, pitch, vel);
 
     //get a new prediction in light of current note
-	~exclude_inst = ~player_inst!?([_]);
-    ~noto.feedQuery(
+	// ~exclude_inst = [~player_inst, ~player_drum].removeEvery([nil]);
+	// ~include_inst = ~noto_inst++~soft_gate.if{[~player_inst, ~player_drum]}{[]};
+	~include_inst = ~noto_inst++[~player_inst, ~player_drum].reject(_.isNil);
+	~noto.feedQuery(
 		\inst, inst, \pitch, pitch, \time, dt, \vel, vel,
 		\handle, event_time, *~noto.globalArgs);
 
@@ -103,6 +116,8 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	var end = args[\end];
 	// absolute time of last event according to notochord
 	var last_event_notochord = args[\handle];
+
+	\hello.postln;
 
     // there may be multiple outstanding queries to the model.
 	// when there are, it means
@@ -121,21 +136,31 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 			// actual delta from now to scheduled time
 			var sleep_time = sched_time - Process.elapsedTime;
 
-            // wait until predicted time
-			(sleep_time<0).if{
-				[\late, sleep_time].postln
-			}{
-				[\waiting, sleep_time].postln
-			};
-			sleep_time.max(0).sleep;
 
-			// if the Routine gets here without being canceled,
-			// the predicted event occurs
-			// fork the event into a different Routine so it
-			// doesn't cancel itself!
-			Routine{
-				~event.(args[\inst], args[\pitch], args[\vel])
-			}.play(SystemClock);
+			~noto_inst.includes(args[\inst].postln).if{
+
+				// wait until predicted time
+				(sleep_time<0).if{
+					[\late, sleep_time].postln
+				}{
+					[\waiting, sleep_time].postln
+				};
+				sleep_time.max(0).sleep;
+
+				// if the Routine gets here without being canceled,
+				// the predicted event occurs
+				// fork the event into a different Routine so it
+				// doesn't cancel itself!
+				Routine{
+					~event.(args[\inst], args[\pitch], args[\vel])
+				}.play(SystemClock);
+			}{
+				\ignored.postln
+				(sleep_time+0.2).max(0).sleep;
+				Routine{
+					~noto.query(\handle, nil, *~noto.globalArgs);
+				}.play(SystemClock);
+			};
 			// return nil so the Routine is not rescheduled
             nil
         }.play(SystemClock);
@@ -143,18 +168,12 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	(end==1).if{
         //release the last note
         ~output.releaseAll(127);
+		// ~noto.reset;
+		~step = 0;
         \end.postln;
     };
 };
 )
-
-
-
-
-
-
-
-
 
 (
 // play the first note and let the model take over
@@ -162,7 +181,8 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~last_event_time = nil;
 
 ~player_inst = nil;
-~include_inst = nil;
+~player_drum = nil;
+~noto_inst = (1..129);
 ~allow_anon = false;
 
 ~allow_end = true;
@@ -184,109 +204,21 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 )
 
 
-~hush.()
-
-
-
-
-
-
-
-
-
-
-
-(
-// reduced sampling temperature,
-// uniformly random first instrument
-~gate = false;
-~last_event_time = nil;
-
-~player_inst = nil;
-~include_inst = nil;
-~allow_anon = false;
-
-~allow_end = true;
-~instrument_temp = 0.98;
-~pitch_temp = 0.95;
-~rhythm_temp = 1;
-~timing_temp = 0.1;
-~min_time = nil;//0.015;
-~max_time = nil;
-~velocity_temp = 0;
-~include_pitch = nil;
-~clear_prediction.();
-
-
-~output.releaseAll;
-~noto.reset;
-~gate = true; ~event.(128.rand+1, 60+12.rand, 100)
-)
-
-
-~hush.()
-
-
-
-
-
-
-
-(
-// restricted instrumentation and pitch set
-~gate = false;
-~last_event_time = nil;
-
-~player_inst = nil;
-~include_inst = [5, 16, 21, 29, 35, 69, 74];
-
-~allow_end = false;
-~instrument_temp = 2;
-~pitch_temp = 3;
-~rhythm_temp = 0.9;
-~timing_temp = 0.1;
-~min_time = nil;//0.015;
-~max_time = 0.125;
-~velocity_temp = 1;
-~include_pitch = ([[0,7]]+[40,52,64,76]).flatten;
-~clear_prediction.();
-
-~output.releaseAll;
-~noto.reset;
-~gate = true; ~noto.query(\handle, nil, *~noto.globalArgs);
-)
-
-~include_pitch = ~include_pitch+1;
-
-~include_pitch = (84..96);
-
-~include_pitch = (30..42);
-
-
-~hush.()
-
-
-
-
-
-
-
-
-
-
 (
 ~gate = false;
 ~last_event_time = nil;
 
 // choose instruments for the player and Notochord
-~player_inst = 57;
-~include_inst = [61]; //notochord instruments
+~player_inst = 8;
+~player_drum = 129;
+~exclude_inst = nil;
+~noto_inst = [12,26,47]; //notochord instruments
 ~allow_end = true;
 
-~instrument_temp = 1;
+~instrument_temp = 2;
 ~pitch_temp = 1; //0.95;
 ~rhythm_temp = 1;
-~timing_temp = 1;
+~timing_temp = 0.2;
 ~min_time = 0.015;
 ~max_time = nil;
 ~velocity_temp = 0;
@@ -295,7 +227,7 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~clear_prediction.();
 ~output.releaseAll;
 ~noto.reset;
-Routine{5.sleep; ~gate = true}.play;
+// Routine{5.sleep; ~gate = true}.play;
 )
 
 ~hush.()

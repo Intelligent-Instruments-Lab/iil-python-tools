@@ -7,17 +7,7 @@ NotoOutput {
     }
 
     init { | deviceName, portName, anonInstruments |
-		MIDIClient.initialized.not.if{MIDIClient.init};
-		Platform.case(
-			\osx,     {
-				deviceName = deviceName?"IAC Driver";
-				portName = portName?"Bus 1";
-			},
-			\linux,   { "Notochord: TODO: default MIDI output device on Linux".postln },
-			\windows, { "Notochord: TODO: default MIDI output device on Windows".postln }
-		);
-		nAnon = anonInstruments;
-		port = MIDIOut.newByName(deviceName, portName).latency_(0);
+		MIDIClient.init;// MIDIClient.initialized.not.if{MIDIClient.init};
 		sema = Semaphore(1);
     }
 
@@ -37,11 +27,21 @@ NotoMappingOutput : NotoOutput {
 
 	init { | deviceName, portName, anonInstruments |
 		super.init(deviceName, portName, anonInstruments);
+		Platform.case(
+			\osx,     {
+				deviceName = deviceName?"IAC Driver";
+				portName = portName?"Bus 1";
+			},
+			\linux,   { "Notochord: TODO: default MIDI output device on Linux".postln },
+			\windows, { "Notochord: TODO: default MIDI output device on Windows".postln }
+		);
+		nAnon = anonInstruments;
+		port = MIDIOut.newByName(deviceName, portName).latency_(0);
 		instrumentMap = Dictionary.new;
 		drumMap = Dictionary.new;
     }
 
-	send { | inst, pitch, vel | 
+	send { | inst, pitch, vel |
 		var channel;
 		channel = instrumentMap.at(inst);
 		(isDrum(inst) && drumMap.includesKey(pitch)).if{
@@ -58,12 +58,17 @@ NotoMappingOutput : NotoOutput {
 	}
 }
 
+
 NotoFluidOutput : NotoOutput {
 	// var <>bank_xg,
 	var <channelLRU, <instChannels, <>soundFontPath;
 
 	init { | deviceName, portName, anonInstruments |
 		super.init(deviceName, portName, anonInstruments);
+		deviceName = deviceName?"fluidsynth";
+		portName = portName?"fluidsynth";
+		nAnon = anonInstruments;
+		port = MIDIOut.newByName(deviceName, portName).latency_(0);
 		// bank_xg = true;
 		channelLRU = LinkedList.fill(16, {arg i; i});
 		instChannels = TwoWayIdentityDictionary.new;
@@ -107,13 +112,13 @@ NotoFluidOutput : NotoOutput {
 		sema.signal;
 	}
 
-	fluidSynthCmd {
-		^ "fluidsynth -v -o midi.autoconnect=1 -o synth.midi-bank-select=mma"
+	*fluidSynthCmd { | soundFontPath = nil |
+		^ "fluidsynth -v -o midi.autoconnect=0 -o midi.portname=fluidsynth -o synth.midi-bank-select=mma"
 		+ soundFontPath.isNil.if{""}{soundFontPath.shellQuote}
 	}
 
-	startFluidSynth {
-		this.fluidSynthCmd.runInTerminal
+	*startFluidSynth { | soundFontPath = nil |
+		this.fluidSynthCmd(soundFontPath).runInTerminal
 	}
 }
 
@@ -127,7 +132,7 @@ NotoInput {
     }
 
 	init { | deviceName, portName |
-		var device; 
+		var device;
 		MIDIClient.initialized.not.if{MIDIClient.init};
 		MIDIIn.connectAll;
 
@@ -153,11 +158,11 @@ NotoInput {
     }
 
 	noteOn { |fn|
-		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID).permanent_(true);
+		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID)//.permanent_(true);
 	}
 
 	noteOff { |fn|
-		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID).permanent_(true);
+		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID)//.permanent_(true);
 	}
 }
 
@@ -208,6 +213,12 @@ Notochord {
 		];
 
 		pendingQueries = 0;
+		// whether to ignore responses from notochord while
+		// there are more than one pending
+		// when using query and feed separately, probably want this true
+		// if using queryFeed, may want it false
+		// TODO: instead of this, maybe keep track of 'unfed' responses
+		// when deciding what to drop?
 		dropOldQueries = false;
 	}
 
