@@ -7,11 +7,9 @@ Authors:
 
 """
 TODO:
-- __init__: add settings arg
-- qualities: state updating
-- qualities: 'relative' arg for value updating
-- qualities: update all function
-- add remaining OSC messages
+- support relative updating of lists of qualities
+- add qualities descriptions as comments/help
+- add more tests
 """
 
 import mido
@@ -20,18 +18,28 @@ import copy
 NOTE_ON = True
 NOTE_OFF = False
 
+def clamp(n, smallest, largest):
+    return max(smallest, min(n, largest))
+
 class MRP(object):
     
-    def __init__(self, _osc):
-        # settings
+    def __init__(self, _osc, settings=None):
+        # default settings
         self.settings = {
             'voices': {
                 'max': 10, # for 10 cables
                 'rule': 'oldest' # oldest, lowest, highest, quietest...
             },
             'channel': 15, # real-time midi note ch (0-indexed)
-            'range': { 'start': 21, 'end': 108 } # MIDI for piano keys 0-88
+            'range': { 'start': 21, 'end': 108 }, # MIDI for piano keys 0-88
+            'qualities_max': 1.0
         }
+        # custom settings
+        if settings is not None:
+            for k, v in settings.items():
+                self.settings[k] = v
+        print('MRP starting with settings:', self.settings)
+
         # OSC reference and paths
         self.osc = _osc
         self.osc_paths = {
@@ -50,6 +58,10 @@ class MRP(object):
             },
             'misc': {
                 'allnotesoff': '/mrp/allnotesoff'
+            },
+            'ui': {
+                'volume': '/ui/volume'# float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
+                'volume_raw': '/ui/volume/raw'# float vol // 0-1, set volume directly
             }
         }
         # internal state
@@ -78,6 +90,10 @@ class MRP(object):
             'damper': 0,
             'sostenuto': 0
         }
+        self.ui = {
+            'volume': 0,
+            'volume_raw': 0
+        }
         self.program = 0 # current program (see MRP XML)
         # init sequence
         self.init_notes()
@@ -101,7 +117,7 @@ class MRP(object):
     """
     /mrp/midi
     """
-    def note_on(self, note, velocity, channel=None):
+    def note_on(self, note, velocity=0, channel=None):
         """
         check if note on is valid
         add it as an active voice
@@ -136,7 +152,8 @@ class MRP(object):
         construct a Note Off message & send over OSC
         """
         if self.note_off_is_valid(note) == True:
-            self.voices_remove(note)
+            if note in self.voices:
+                self.voices_remove(note)
             if channel is None:
                 channel = self.settings['channel']
             tmp = self.notes[self.note_index(note)]
@@ -267,114 +284,104 @@ class MRP(object):
     """
     /mrp/qualities
     """
-    def quality_brightness(self, note, brightness, channel=None):
+    def quality_update(self, note, quality, value, relative=False, channel=None):
         """
-        brightness is an independent map to harmonic content, 
-        reduced to a linear scale
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['brightness'] = brightness
-            path = self.osc_paths['qualities']['brightness']
-            print(path, channel, note, brightness)
-            self.osc.send(path, channel, note, brightness)
-            return tmp
-        else:
-            print('quality_brightness(): invalid message')
-            return None
+        Update a note's quality to a new value.
 
-    def quality_intensity(self, note, intensity, channel=None):
-        """
-        intensity is a map to amplitude and harmonic content, 
-        relative to the current intensity
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['intensity'] = intensity
-            path = self.osc_paths['qualities']['intensity']
-            print(path, channel, note, intensity)
-            self.osc.send(path, channel, note, intensity)
-            return tmp
-        else:
-            print('quality_intensity(): invalid message')
-            return None
+        Example
+            quality_update(48, 'brightness', 0.5)
 
-    def quality_pitch(self, note, pitch, channel=None):
+        Args
+            note (int): MIDI note number
+            quality (string): name of quality to update, must be same as key in osc_paths
+            value (float): value of quality
+            relative (bool): replace the value or add it to the current value
+            channel (int): which MIDI channel to send on
         """
-        Frequency base is relative to the fundamental frequency of the MIDI note
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['pitch'] = pitch
-            path = self.osc_paths['qualities']['pitch']
-            print(path, channel, note, pitch)
-            self.osc.send(path, channel, note, pitch)
-            return tmp
-        else:
-            print('quality_pitch(): invalid message')
-            return None
-
-    def quality_pitch_vibrato(self, note, pitch, channel=None):
-        """
-        Frequency vibrato is a periodic modulation in frequency, 
-        zero-centered (+/-1 maps to range)
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['pitch_vibrato'] = pitch
-            path = self.osc_paths['qualities']['pitch_vibrato']
-            print(path, channel, note, pitch)
-            self.osc.send(path, channel, note, pitch)
-            return tmp
-        else:
-            print('quality_pitch_vibrato(): invalid message')
-            return None
-
-    def quality_harmonic(self, note, harmonic, channel=None):
-        """
-        a single parameter that does what you hear when you shake 
-        the key in the usual MRP technique (harmonic series glissando)
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['harmonic'] = harmonic
-            path = self.osc_paths['qualities']['harmonic']
-            print(path, channel, note, harmonic)
-            self.osc.send(path, channel, note, harmonic)
-            return tmp
-        else:
-            print('quality_harmonic(): invalid message')
-            return None
-
-    def quality_harmonics_raw(self, note, harmonics, channel=None):
-        """
-        a list of amplitudes for each individual harmonic, 
-        which you could use to more precisely set the waveform.
-        """
-        if self.note_msg_is_valid(note) == True:
-            if (type(harmonics) is not list):
-                print('quality_harmonics_raw(): harmonics not of type List', harmonics)
+        if isinstance(quality, str):
+            if self.note_msg_is_valid(note) == True:
+                if channel is None:
+                    channel = self.settings['channel']
+                tmp = self.notes[self.note_index(note)]
+                if isinstance(value, list): # e.g. /harmonics/raw
+                    if relative is True:
+                        print('quality_update(): relative updating of lists not supported')
+                        # if (len(tmp['qualities'][quality]) > 0):
+                        #     for i, q in enumerate(tmp['qualities'][quality]):
+                        #         tmp['qualities'][quality][i] += self.quality_clamp(value[i])
+                        #         value.pop(i)
+                        #     for i, v in enumerate(value):
+                        #         tmp['qualities'][quality].append(value[i])
+                        # else:
+                        #     tmp['qualities'][quality] = [self.quality_clamp(v) for v in value]
+                    else:
+                        tmp['qualities'][quality] = [self.quality_clamp(v) for v in value]
+                    path = self.osc_paths['qualities'][quality]
+                    print(path, channel, note, *tmp['qualities'][quality])
+                    self.osc.send(path, channel, note, *tmp['qualities'][quality])
+                    return tmp
+                else:
+                    if relative is True:
+                        tmp['qualities'][quality] = self.quality_clamp(value + tmp['qualities'][quality])
+                    else:
+                        tmp['qualities'][quality] = self.quality_clamp(value)
+                    path = self.osc_paths['qualities'][quality]
+                    print(path, channel, note, tmp['qualities'][quality])
+                    self.osc.send(path, channel, note, tmp['qualities'][quality])
+                    return tmp
+            else:
+                print('quality_update(): invalid message:', quality, note, value)
                 return None
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['qualities']['harmonics_raw'] = harmonics
-            path = self.osc_paths['qualities']['harmonics_raw']
-            print(path, channel, note, harmonics)
-            self.osc.send(path, channel, note, *harmonics)
-            return tmp
         else:
-            print('quality_harmonics_raw(): invalid message')
+            print('quality_update(): "quality" is not a string:', quality)
+            return None
+
+    def qualities_update(self, note, qualities, relative=False, channel=None):
+        """
+        Update a note's qualities to a new set of values.
+
+        Example
+            qualities_update(48, {
+                'brightness': 0.5,
+                'intensity': 0.6,
+                'harmonics_raw': [0.2, 0.3, 0.4]
+            })
+        
+        Args
+            note (int): MIDI note number
+            qualities (dict): dict of qualities in key (string):value (float) pairs to update, 
+                              must be same as key in osc_paths
+            relative (bool): replace the value or add it to the current value
+            channel (int): which MIDI channel to send on
+        """
+        if isinstance(qualities, dict):
+            if self.note_msg_is_valid(note) == True:
+                if channel is None:
+                    channel = self.settings['channel']
+                tmp = self.notes[self.note_index(note)]
+                for q, v in qualities.items():
+                    if isinstance(v, list): # e.g. /harmonics/raw
+                        if relative is True:
+                            print('quality_update(): relative updating of lists not supported')
+                        else:
+                            tmp['qualities'][q] = [self.quality_clamp(i) for i in v]
+                        path = self.osc_paths['qualities'][q]
+                        print(path, channel, note, *tmp['qualities'][q])
+                        self.osc.send(path, channel, note, *tmp['qualities'][q])
+                    else:
+                        if relative is True:
+                            tmp['qualities'][q] = self.quality_clamp(v, tmp['qualities'][q])
+                        else:
+                            tmp['qualities'][q] = self.quality_clamp(v)
+                        path = self.osc_paths['qualities'][q]
+                        print(path, channel, note, tmp['qualities'][q])
+                        self.osc.send(path, channel, note, tmp['qualities'][q])
+                return tmp
+            else:
+                print('quality_update(): invalid message:', qualities, note, value)
+                return None
+        else:
+            print('quality_update(): "qualities" is not an object:', qualities)
             return None
 
     """
@@ -387,7 +394,7 @@ class MRP(object):
         self.pedal.sostenuto = sostenuto
         path = self.osc_paths['pedal']['sostenuto']
         print(path, sostenuto)
-        # self.osc.send(path, sostenuto)
+        self.osc.send(path, sostenuto)
 
     def pedal_damper(self, damper):
         """
@@ -396,7 +403,7 @@ class MRP(object):
         self.pedal.damper = damper
         path = self.osc_paths['pedal']['damper']
         print(path, damper)
-        # self.osc.send(path, damper)
+        self.osc.send(path, damper)
 
     """
     /mrp/* miscellaneous
@@ -404,17 +411,39 @@ class MRP(object):
     def all_notes_off(self):
         """
         turn all notes off
-        TODO: reset notes and voices state
         """
-        print(self.osc_paths['misc']['allnotesoff'])
-        # self.osc.send(self.osc_paths['misc']['allnotesoff'])
+        path = self.osc_paths['misc']['allnotesoff']
+        print(path)
+        self.osc.send(path)
+        self.init_notes()
+        self.voices_reset()
+
+    """
+    /mrp/ui
+    """
+    def ui_volume(self, value):
+        """
+        float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
+        """
+        self.ui.volume = value
+        path = self.osc_paths['ui']['volume']
+        print(path, value)
+        self.osc.send(path, value)
+
+    def ui_volume_raw(self, value):
+        """
+        float vol // 0-1, set volume directly
+        """
+        self.ui.volume_raw = value
+        path = self.osc_paths['ui']['volume_raw']
+        print(path, value)
+        self.osc.send(path, value)
 
     """
     note methods
     """
     def note_create(self, note, velocity, channel=None):
         """
-        TODO: match default values in mrp app
         create and return a note object
         """
         if channel is None:
@@ -448,7 +477,7 @@ class MRP(object):
 
     def note_on_numbers(self):
         """
-        TODO: return numbers of notes that are on
+        return numbers of notes that are on
         """
         on_numbers = []
         for note in enumerate(self.notes):
@@ -488,6 +517,12 @@ class MRP(object):
             return False
 
     """
+    qualities methods
+    """
+    def quality_clamp(self, value):
+        return clamp(value, 0, self.settings['qualities_max'])
+
+    """
     voice methods
     """
     def voices_add(self, note):
@@ -504,8 +539,11 @@ class MRP(object):
             rule = self.settings['voices']['rule']
             match rule:
                 case 'oldest':
+                    oldest = self.voices[0]
+                    print('voices_add(): removing oldest', oldest)
                     self.voices.pop(0)
                     self.voices.append(note)
+                    self.note_off(oldest)
                     return self.voices
                 case _: # lowest, highest, quietest, ...
                     return self.voices

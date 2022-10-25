@@ -16,6 +16,8 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
     mrp = None
     note = 48
     note_on = False
+    count=0
+    test='params'#'voices'
 
     @osc.args(return_port=7777)
     def reset(address, kind=None):
@@ -28,14 +30,32 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
     
     @repeat(1)
     def _():
-        nonlocal note_on, note
+        nonlocal note_on, note, count, test
         if note_on == False:
-            mrp.note_on(note, 127)
-            mrp.quality_brightness(note, 1)
-            mrp.quality_intensity(note, 1)
+            count+=1
+            if test == 'params':
+                mrp.note_on(note)
+                mrp.quality_update(note, 'brightness', 0.5+count/10)
+                mrp.quality_update(note, 'intensity', 1.9)
+                mrp.quality_update(note, 'brightness', 1.5, relative=True)
+                mrp.quality_update(note, 'intensity', 1.9, relative=True)
+                mrp.quality_update(note, 'harmonics_raw', [1.1, 0.2, 0.3])
+                mrp.quality_update(note, 'harmonics_raw', [i/10 for i in range(0, count, 1)])
+                mrp.qualities_update(note, {
+                    'brightness': 1.5,
+                    'intensity': 1.0,
+                    'harmonics_raw': [1.2, 0.3, 0.4]
+                })
+            else if test == 'voices':
+                mrp.note_on(note+count)
+                print(len(mrp.voices), 'voices:', mrp.voices)
             note_on = True
         else:
-            mrp.note_off(note, 0)
+            if test == 'params':
+                mrp.note_off(note)
+            else if test == 'voices':
+                if count % 2:
+                    mrp.note_off(note+int(count/2))
             note_on = False
 
     reset(None)
