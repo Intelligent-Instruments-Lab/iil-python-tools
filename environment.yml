@@ -17,3 +17,4 @@ dependencies:
     - mido
     - python-rtmidi
     - python-osc
+    - taichi
