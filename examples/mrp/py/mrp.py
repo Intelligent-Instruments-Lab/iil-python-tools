@@ -32,7 +32,8 @@ class MRP(object):
             },
             'channel': 15, # real-time midi note ch (0-indexed)
             'range': { 'start': 21, 'end': 108 }, # MIDI for piano keys 0-88
-            'qualities_max': 1.0
+            'qualities_max': 1.0,
+            'qualities_min': -1.0
         }
         # custom settings
         if settings is not None:
@@ -45,12 +46,12 @@ class MRP(object):
         self.osc_paths = {
             'midi': '/mrp/midi',
             'qualities': {
-                'brightness':    '/quality/brightness',
-                'intensity':     '/quality/intensity',
-                'pitch':         '/quality/pitch',
-                'pitch_vibrato': '/quality/pitch/vibrato',
-                'harmonic':      '/quality/harmonic',
-                'harmonics_raw': '/quality/harmonics/raw'
+                'brightness':    '/mrp/quality/brightness',
+                'intensity':     '/mrp/quality/intensity',
+                'pitch':         '/mrp/quality/pitch',
+                'pitch_vibrato': '/mrp/quality/pitch/vibrato',
+                'harmonic':      '/mrp/quality/harmonic',
+                'harmonics_raw': '/mrp/quality/harmonics/raw'
             },
             'pedal': {
                 'damper':    '/mrp/pedal/damper',
@@ -117,7 +118,7 @@ class MRP(object):
     """
     /mrp/midi
     """
-    def note_on(self, note, velocity=0, channel=None):
+    def note_on(self, note, velocity=1, channel=None):
         """
         check if note on is valid
         add it as an active voice
@@ -521,7 +522,7 @@ class MRP(object):
     qualities methods
     """
     def quality_clamp(self, value):
-        return clamp(value, 0, self.settings['qualities_max'])
+        return float(clamp(value, self.settings['qualities_min'], self.settings['qualities_max']))
 
     """
     voice methods
