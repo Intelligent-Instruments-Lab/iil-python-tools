@@ -8,6 +8,9 @@ Authors:
 from iipyper import OSC, run, repeat
 from mrp import MRP
 
+def loop():
+    print('loop')
+
 def main(host="127.0.0.1", receive_port=8888, send_port=7770):
 
     osc = OSC(host, receive_port, send_port)
@@ -17,7 +20,8 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
     note = 48
     note_on = False
     count=0
-    test='params'#'voices'
+    test='code'#'voices', 'qualities'
+    qualities=['brightness', 'intensity', 'pitch', 'pitch_vibrato', 'harmonic', 'harmonics_raw']
 
     @osc.args(return_port=7777)
     def reset(address, kind=None):
@@ -33,7 +37,7 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
         nonlocal note_on, note, count, test
         if note_on == False:
             count+=1
-            if test == 'params':
+            if test == 'code':
                 mrp.note_on(note)
                 mrp.quality_update(note, 'brightness', 0.5+count/10)
                 mrp.quality_update(note, 'intensity', 1.9)
@@ -49,9 +53,12 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
             else if test == 'voices':
                 mrp.note_on(note+count)
                 print(len(mrp.voices), 'voices:', mrp.voices)
+            else if test == 'qualities':
+                mrp.note_on(note)
+                mrp.quality_update(qualities[0], count/10)
             note_on = True
         else:
-            if test == 'params':
+            if test == 'code':
                 mrp.note_off(note)
             else if test == 'voices':
                 if count % 2:
