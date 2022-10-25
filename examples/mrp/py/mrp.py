@@ -70,11 +70,11 @@ class MRP(object):
             'channel': self.settings['channel'],
             'status': NOTE_OFF,
             'midi': {
-                'number': 0,
-                'velocity': 0,
-                'aftertouch_poly': 0,
-                'aftertouch_channel': 0,
-                'pitch_bend': 0
+                'number': 0, # MIDI note number, not piano key number
+                'velocity': 0, # not in use by MRP PLL synth
+                'aftertouch_poly': 0, # not in use by MRP PLL synth
+                'aftertouch_channel': 0, # not in use by MRP PLL synth
+                'pitch_bend': 0 # not in use by MRP PLL synth
             },
             'qualities': {
                 'brightness': 0,
@@ -449,7 +449,7 @@ class MRP(object):
         if channel is None:
             channel = self.settings['channel']
         note = copy.deepcopy(self.note)
-        note['midi']['note'] = note
+        note['midi']['number'] = note
         note['midi']['velocity'] = velocity
         return note
 
