@@ -46,6 +46,10 @@ def main(host="127.0.0.1", receive_port=8888, send_port=7770):
             counter=0
         print(counter, count, counter/count)
 
+    @cleanup
+    def _():
+        mrp.cleanup()
+
     reset(None)
 
 if __name__=='__main__':

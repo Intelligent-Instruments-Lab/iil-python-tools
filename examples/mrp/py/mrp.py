@@ -584,3 +584,10 @@ class MRP(object):
         else:
             print('voices_note_age(): note', note, 'is off')
             return -1
+
+    """
+    misc methods
+    """
+    def cleanup(self):
+        print('MRP exiting...')
+        self.all_notes_off()
