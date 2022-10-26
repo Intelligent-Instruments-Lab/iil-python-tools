@@ -62,12 +62,12 @@ class Predictor(object):
         return (y)
 
 
-def main(host="127.0.0.1", receive_port=8888):#, send_port=None):
-    osc = OSC(host, receive_port)
+def main(host="127.0.0.1", receive_port=8888, send_port=7777):
+    osc = OSC(host, receive_port, send_port)
 
     predictor = None
  
-    @osc.args#(return_port=send_port)
+    @osc.args(return_port=7777)
     def feed(address, value):
         """
         feed data to the predictor
@@ -75,10 +75,10 @@ def main(host="127.0.0.1", receive_port=8888):#, send_port=None):
         print(f"{address} {value}")
         predictor.feed(value)
 
-    @osc.args#(return_port=send_port)
+    @osc.args(return_port=7777)
     def query(address):
         """
-        feed data to the predictor
+        query data from the predictor
         """
         print(f"{address}")
 
@@ -86,10 +86,10 @@ def main(host="127.0.0.1", receive_port=8888):#, send_port=None):
         predictor.feed(value)
         return '/query_return', value
 
-    @osc.args#(return_port=send_port)
+    @osc.args(return_port=7777)
     def reset(address, kind=None):
         """
-        feed data to the predictor
+        reset the predictor
         """
         print(f"{address} {kind}")
 
