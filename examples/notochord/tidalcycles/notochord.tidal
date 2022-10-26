@@ -1,0 +1,144 @@
+-- Notochord feed demo patterns
+:set
+
+do
+  once $ ncreset "1"
+  p "choosevel"
+    $ ncinst "161"
+    <| ncpitch "[-1]*4"
+    # cps "<1 2 0.667 0.5>"
+    # legato 0.5
+
+hush
+
+-- these patterns work with the default MIDI mappings
+-- in tidal-notochord.scd
+
+-- this resets the notochord state so it "forgets"
+-- what was going on
+once $ ncreset "1"
+-- use it in a do block to get a fresh start
+
+-- drums; notochord chooses the velocities
+do
+  once $ ncreset "1"
+  -- here we use instrument 129 (standard drumkit)
+  -- and drums 36 (kick), 42 (hat), and 40 (snare)
+  -- velocity is not specified, so notochord fills it in
+  p "choosevel"
+    $ ncinst "129"
+    <| ncpitch "[36*4, 42*8, [~ 40]*2]"
+    # cps 1
+    # legato 0.99
+
+do
+  once $ ncreset "1"
+  -- here notochord chooses the pitch,
+  -- anchored by the mallet at MIDI pitch 60
+  -- instrument is patterned: clavinet, marimba, organ, jazz guitar
+  -- in MIDI mapping mode, these will appear on MIDI
+  -- channels 2,3,4,5 with the default map in
+  -- tidal-notochord.scd
+  p "choosepitch"
+    $ ncinst  " 8 [ 13*3      [17 27]]"
+    # ncpitch "-1 [[60 -1 60]  -1    ]"
+    # ncvel (range 120 70 $ sine)
+    # cps 1
+    # legato 3.99
+
+hush
+
+do
+  once $ ncreset "1"
+  -- notochord chooses pitch and velocity
+  -- marimba / jazz guitar
+  --(channels 3 and 5 in tidal-notochord.scd)
+  p "chooseperf"
+    $ ncinst (slow 1 "13 [13*3 [27 27]]")
+    # legato 0.99
+    # cps 1
+    -- # cps "<1 2 0.3333 0.6667>"
+
+hush
+
+do
+  once $ ncreset "1"
+  -- notochord chooses the velocities and drums (except kick)
+  p "choosedrum"
+    $ ncinst "129"
+    <| stack [ncpitch "36*4" # ncvel "100", ncpitch "[-1*8, [~ -1]*2]" # ncvel "-1" # nudge "0.003"]
+    # cps 1
+    # legato 0.99
+
+do
+  once $ ncreset "1"
+  -- notochord chooses the instrumentation
+  p "chooseinst"
+    $ ncinst "-1"
+    <| ncpitch (slow 4 (run 32 + 36))
+    # ncvel (range 30 99 $ slow 4 saw)
+    # cps 1
+    # legato 0.99
+
+do
+  once $ ncreset "1"
+  -- velocity ramp; notochord chooses the instrumentation + pitch
+  p "dynamicsonly"
+    $ ncinst "[-1]*8"
+    # ncvel (range 1 127 $ slow 2 saw)
+    # cps 1
+    # legato 3.99
+
+--
+-- below examples are for fluidsynth only
+--
+
+hush
+
+do
+  once $ ncreset "1"
+  -- jazz drums; notochord chooses pitch and velocity
+  p "choosedrum"
+    $ ncinst "234"
+    <| ncpitch "[-1]*12"
+    # cps 1
+    # legato 2.99
+    # nudge "0.003"
+
+hush
+
+--  sound effects kit
+p "sfx"
+  $ ncinst "185"
+  <| ncpitch "[[~ -1]*4]"
+  # cps 1
+  # legato 1.99
+  # nudge "0.003"
+
+hush
+once $ ncreset "1"
+
+-- drumkits in the "timbres of heaven" soundfont:
+-- 129 = Don's Std Kit
+-- 130 = Std Kit 2
+-- 137 = Room Drum Kit
+-- 145 = Power Drums
+-- 153 = Electronic Kit
+-- 154 = TR-808 Elec. Kit
+-- 155 = TR-909 Elec. Kit
+-- 156 = Dance Kit
+-- 161 = Jazz Drum Kit
+-- 169 = Brush Kit
+-- 177 = Orchestra Kit
+-- 179 = Symphony Kit
+-- 185 = GM2 SFX Kit
+-- 228 = PSR-520 Std kit
+-- 229 = Don's XG Std Kit
+-- 230 = XG Room Kit
+-- 231 = XG Rock Kit
+-- 232 = XG Electronic Kit
+-- 233 = XG Analog Kit
+-- 234 = XG Jazz Kit
+-- 235 = XG Brush Kit
+-- 236 = XG Symphony Kit
+-- 256 = CM-64/32L (SC-55)
