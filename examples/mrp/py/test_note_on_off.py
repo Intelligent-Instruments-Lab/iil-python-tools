@@ -5,7 +5,7 @@ Authors:
   Intelligent Instruments Lab 2022
 """
 
-from iipyper import OSC, run, repeat
+from iipyper import OSC, run, repeat, cleanup
 from mrp import MRP
 
 def main(host="127.0.0.1", receive_port=8888, send_port=7770):

@@ -61,7 +61,7 @@ class MRP(object):
                 'allnotesoff': '/mrp/allnotesoff'
             },
             'ui': {
-                'volume': '/ui/volume', # float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
+                'volume':     '/ui/volume', # float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
                 'volume_raw': '/ui/volume/raw' # float vol // 0-1, set volume directly
             }
         }
