@@ -32,7 +32,8 @@ class MRP(object):
             },
             'channel': 15, # real-time midi note ch (0-indexed)
             'range': { 'start': 21, 'end': 108 }, # MIDI for piano keys 0-88
-            'qualities_max': 1.0
+            'qualities_max': 1.0,
+            'qualities_min': -1.0
         }
         # custom settings
         if settings is not None:
@@ -45,12 +46,12 @@ class MRP(object):
         self.osc_paths = {
             'midi': '/mrp/midi',
             'qualities': {
-                'brightness':    '/mrp/qualities/brightness',
-                'intensity':     '/mrp/qualities/intensity',
-                'pitch':         '/mrp/qualities/pitch',
-                'pitch_vibrato': '/mrp/qualities/pitch/vibrato',
-                'harmonic':      '/mrp/qualities/harmonic',
-                'harmonics_raw': '/mrp/qualities/harmonics/raw'
+                'brightness':    '/mrp/quality/brightness',
+                'intensity':     '/mrp/quality/intensity',
+                'pitch':         '/mrp/quality/pitch',
+                'pitch_vibrato': '/mrp/quality/pitch/vibrato',
+                'harmonic':      '/mrp/quality/harmonic',
+                'harmonics_raw': '/mrp/quality/harmonics/raw'
             },
             'pedal': {
                 'damper':    '/mrp/pedal/damper',
@@ -60,8 +61,8 @@ class MRP(object):
                 'allnotesoff': '/mrp/allnotesoff'
             },
             'ui': {
-                'volume': '/ui/volume'# float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
-                'volume_raw': '/ui/volume/raw'# float vol // 0-1, set volume directly
+                'volume': '/ui/volume', # float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
+                'volume_raw': '/ui/volume/raw' # float vol // 0-1, set volume directly
             }
         }
         # internal state
@@ -117,7 +118,7 @@ class MRP(object):
     """
     /mrp/midi
     """
-    def note_on(self, note, velocity=0, channel=None):
+    def note_on(self, note, velocity=1, channel=None):
         """
         check if note on is valid
         add it as an active voice
@@ -489,15 +490,16 @@ class MRP(object):
         """
         check if the note is on & in range
         """
-        if self.note_is_off(note) == True:
-            if self.note_is_in_range(note) == True:
+        if self.note_is_in_range(note) == True:
+            if self.note_is_off(note) == True:
                 return True
             else:
-                print('note_on_is_valid(): note', note, 'out of range')
+                print('note_on_is_valid(): note', note, 'is already on')
                 return False
         else:
-            print('note_on_is_valid(): note', note, 'is already on')
+            print('note_on_is_valid(): note', note, 'out of range')
             return False
+            
 
     def note_msg_is_valid(self, note):
         return self.note_off_is_valid(note)
@@ -520,7 +522,7 @@ class MRP(object):
     qualities methods
     """
     def quality_clamp(self, value):
-        return clamp(value, 0, self.settings['qualities_max'])
+        return float(clamp(value, self.settings['qualities_min'], self.settings['qualities_max']))
 
     """
     voice methods
@@ -582,3 +584,10 @@ class MRP(object):
         else:
             print('voices_note_age(): note', note, 'is off')
             return -1
+
+    """
+    misc methods
+    """
+    def cleanup(self):
+        print('MRP exiting...')
+        self.all_notes_off()
