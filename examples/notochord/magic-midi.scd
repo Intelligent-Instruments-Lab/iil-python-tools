@@ -25,9 +25,12 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 )*/
 
 
+~output.instChannels
+
 (
 ~noto.isNil.if{~noto = Notochord()};
-~output.isNil.if{~output = NotoFluidOutput()};
+// ~output.isNil.if{~output = NotoFluidOutput()};
+~output = NotoFluidOutput();
 ///////// define scheduler /////////
 ~player_held = IdentityDictionary.new; // maps player notes to harmonizer notes
 
@@ -39,6 +42,21 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~hush = {
 	~output.releaseAll;
 };
+
+~key_drums = (
+	0:[35,36], // kick
+	1:[37,38,40,39], //snare, clap
+	2:[42,44,46], //hat
+	3:[41,43,64], //low skin
+	4:[45,47,65,78,61,62], //mid skin
+	5:[48,50,66,79,60,63], //hi skin
+	6:[49,52,55,57], //crash, splash, china
+	7:[51,53,56,59,67,68], //ride, bell
+	8:[75,76,77], //wood
+	9:[54,69,70], //shake
+	10:[58,73,74], // texture
+	11:[71,72,80,81] //whistle, triangle
+);
 
 ~play_event = {
 	arg pitch, vel, inst=nil, chan=nil;
@@ -60,12 +78,12 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 		//(which will be played when it returns from Notochord)
 		~player_held.add(handle -> \pending);
 		~include_inst = (chan==1).if{(129..256)}{(1..128)};
+		~include_pitch = (pitch-1..pitch+1)++(pitch-13..pitch-11)++(pitch+11..pitch+13);
 		~noto.queryFeed(
 			\next_time, dt, \next_vel, vel,
-			\include_pitch, (pitch-1..pitch+1),
 			*~noto.globalArgs
 		).then{ |res|
-			["updating event with completion:", res].postln;
+			["completed event:", res].postln;
 			~output.send(res[\inst], res[\pitch], res[\vel]);
 			// store the inst and pitch for later ending it
 			~player_held.add(handle -> [res[\inst], res[\pitch]]);
@@ -83,8 +101,11 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	(chan.asString++"_"++pitch.asString).asSymbol;
 };
 
+
 // MIDI from controller
 ~input = NotoInput("MPKmini2");
+
+MIDIdef.freeAll;
 
 ~input.noteOn{
     arg vel, pitch, chan, src;
@@ -135,7 +156,8 @@ Routine{
 (
 // reset
 ~last_event_time = nil;
-~pitch_temp = 0.9;
+~pitch_temp = 1;
+~instrument_temp = 1.2;
 ~player_held.clear;
 
 ~output.releaseAll;

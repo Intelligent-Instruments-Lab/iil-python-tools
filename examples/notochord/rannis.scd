@@ -116,13 +116,7 @@ MIDIdef.freeAll;
 	var end = args[\end];
 	// absolute time of last event according to notochord
 	var last_event_notochord = args[\handle];
-
-	\hello.postln;
-
-    // there may be multiple outstanding queries to the model.
-	// when there are, it means
-    // the earlier prediction is already voided,
-	// so it should be dropped
+	// stop if the global gate is closed or end is predicted
     var gate_event = (
         ~gate
         && (end==0)
@@ -155,7 +149,7 @@ MIDIdef.freeAll;
 					~event.(args[\inst], args[\pitch], args[\vel])
 				}.play(SystemClock);
 			}{
-				\ignored.postln
+				// \ignored.postln;
 				(sleep_time+0.2).max(0).sleep;
 				Routine{
 					~noto.query(\handle, nil, *~noto.globalArgs);
