@@ -1,6 +1,6 @@
 import mido
 
-from iipyper import OSC, MIDI, repeat, run
+from iipyper import OSC, MIDI, repeat, run, cleanup
 
 def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     # loop API:
@@ -72,7 +72,7 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
 
     # you can also give the OSC address explicitly to the decorator,
     # instead of using the function name.
-    # this supporting wildcards and other aspects of OSC addresses:
+    # this supports wildcards and other aspects of OSC addresses:
     @osc.args('/math/*')
     def _(address, a, b):
         print(address, a, b)
@@ -97,6 +97,14 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     osc.send('/other_send_test', 2, client='supercollider2')
     # # alternate send syntax:
     osc('supercollider2', '/other_send_test', 3)
+
+    # functions with the @cleanup decorator will run before exit on KeyboardInterrupt
+    @cleanup
+    def _():
+        print('exiting...')
+        osc.send('/default_send_test', 'bye')
+
+
 
 # it may be possible to have async/threaded option for both OSC and MIDI?
 # MIDI handlers are threaded in mido and OSC handlers as async in pythonosc.
