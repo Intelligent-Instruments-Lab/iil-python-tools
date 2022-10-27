@@ -9,7 +9,9 @@ Authors:
 TODO:
 - support relative updating of lists of qualities
 - add qualities descriptions as comments/help
+- qualities_update([note arr], qualities with arr)
 - add more tests
+- add timer to turn off notes after 90s
 """
 
 import mido
@@ -27,13 +29,13 @@ class MRP(object):
         # default settings
         self.settings = {
             'voices': {
-                'max': 10, # for 10 cables
+                'max': 16, # for 16 cables
                 'rule': 'oldest' # oldest, lowest, highest, quietest...
             },
             'channel': 15, # real-time midi note ch (0-indexed)
             'range': { 'start': 21, 'end': 108 }, # MIDI for piano keys 0-88
             'qualities_max': 1.0,
-            'qualities_min': -1.0
+            'qualities_min': 0.0
         }
         # custom settings
         if settings is not None:
@@ -61,7 +63,7 @@ class MRP(object):
                 'allnotesoff': '/mrp/allnotesoff'
             },
             'ui': {
-                'volume': '/ui/volume', # float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
+                'volume':     '/ui/volume', # float vol // 0-1, >0.5 ? 4^((vol-0.5)/0.5) : 10^((vol-0.5)/0.5)
                 'volume_raw': '/ui/volume/raw' # float vol // 0-1, set volume directly
             }
         }
@@ -379,10 +381,10 @@ class MRP(object):
                         self.osc.send(path, channel, note, tmp['qualities'][q])
                 return tmp
             else:
-                print('quality_update(): invalid message:', qualities, note, value)
+                print('quality_update(): invalid message:', note, qualities)
                 return None
         else:
-            print('quality_update(): "qualities" is not an object:', qualities)
+            print('quality_update(): "qualities" is not an object:', note, qualities)
             return None
 
     """

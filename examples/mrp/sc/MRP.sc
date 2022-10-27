@@ -1,18 +1,51 @@
 
+
+/*
+Questions:
+- Is there a default value for brightness, intensity, pitch, etc.
+- what is the range in all of those?
+*/
+
 MRP {
 	var osc;
 	var midich=0;
 	var midikeyboardview, guiFlag = false;
+	var settings, notes, activeNotes;
 
-	*new { |ip="127.0.0.1", port=57120|
+	*new { |ip="127.0.0.1", port=7770|
 		^super.new.initMRP(ip, port);
 	}
 
 	initMRP { |ip, port|
-		osc = NetAddr(ip, port); // what is the MRP address?
-		MIDIClient.init;
-		MIDIIn.connectAll;
-		this.defineMIDIdefs;
+		osc = NetAddr(ip, port); // MRP address is 7770 by default?
+
+		settings =  ().put('voices', ().put('max', 10).put('rule', 'oldest')).put('channel', 15).put('range', ().put('start', 21).put('end', 108)).put('qualities_max', 1.0).put('qualities_min', -1.0);
+
+		notes = { arg i;
+			().put('channel', settings.channel)
+			.put('status', \note_off)
+			.put('midi', ()
+				.put('number', i+1)
+				.put('velocity', 0) // not in use by MRP PLL synth
+				.put('aftertouch_poly', 0) //  not in use by MRP PLL synth
+				.put('aftertouch_channel', 0) //  not in use by MRP PLL synth
+				.put('pitch_bend', 0) // # not in use by MRP PLL synth
+			)
+			.put('qualities', ()
+				.put('brightness', 0)
+				.put('intensity', 0)
+				.put('pitch', 0)
+				.put('pitch_vibrato', 0)
+				.put('harmonic', 0)
+				.put('harmonics_raw', [])
+			)
+		}!128; // Creating a dict for all the possible midi notes (ignoring piano range)
+			//}!(settings.range.end-settings.range.start);
+
+		activeNotes = [];
+		//MIDIClient.init;
+		//MIDIIn.connectAll;
+		//this.defineMIDIdefs;
 	}
 
 	defineMIDIdefs {
@@ -21,49 +54,84 @@ MRP {
 		MIDIdef.noteOn(\mrp_noteon, {arg ...args;
 			args.postln;
 			midich = midich + 1 % 16;
-			this.noteOn(midich, args[1], args[0]);
+			this.noteOn(args[1], args[0]);
 			if(guiFlag, { {midikeyboardview.keyDown(args[1])}.defer });
 		});
 
 		MIDIdef.noteOff(\mrp_noteoff, {arg ...args;
 			args.postln;
-			this.noteOn(midich, args[1], args[0]);
+			this.noteOn(args[1], args[0]);
 			if(guiFlag, { {midikeyboardview.keyUp(args[1])}.defer });
 		});
 	}
 
-	noteOn { |channel, note, vel|
-		osc.sendMsg("/mrp/midi", channel, note, vel);
+	noteOn { |note, vel|
+		if((notes[note].status == \note_off) && ((note >= settings.range.start) && (note <= settings.range.end)), {
+			if(activeNotes.size < settings.voices.max, {
+				notes[note].status = \note_on;
+				activeNotes = activeNotes.insert(0, note); // adds a new note in the first slot
+			}, {
+				this.noteOff(activeNotes.pop); // removes the last index in the array and turns the note off
+				activeNotes = activeNotes.insert(0, note); // adds a new note in the first slot
+			});
+			osc.sendMsg("/mrp/midi", 0x9F, note, vel);
+		}, {
+			"Note is already ON or out of keyboard range".postln;
+		});
 	}
 
-	noteOff { |channel, note|
-		osc.sendMsg("/mrp/midi", channel, note, 0); // Thor guessing that midi vel 0 = noteOff
+	noteOff { |note|
+		if((notes[note].status == \note_on) && ((note >= settings.range.start) && (note <= settings.range.end)), {
+			notes[note].status = \note_off;
+			osc.sendMsg("/mrp/midi", 0x8F, note, 0); // We leave 0 here in val for the MRP simulator
+		});
 	}
 
 	// brightness is an independent map to harmonic content, reduced to a linear scale
-	brightness{ |channel, note, val|
-		osc.sendMsg("/mrp/quality/brightness", channel, note, val);
+	brightness { |note, val|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.brightness = val;
+			osc.sendMsg("/mrp/quality/brightness", settings.channel, note, val);
+		});
 	}
 
 	// intensity is a map to amplitude and harmonic content, relative to the current intensity
-	intensity{ |channel, note, val|
-		osc.sendMsg("/mrp/quality/intensity", channel, note, val);
+	intensity { |note, val|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.intensity = val;
+			osc.sendMsg("/mrp/quality/intensity", settings.channel, note, val);
+		});
 	}
 
 	// Frequency base is relative to the fundamental frequency of the MIDI note
-	pitch{ |channel, note, val|
-		osc.sendMsg("/mrp/quality/pitch", channel, note, val);
+	pitch { | note, val|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.pitch = val;
+			osc.sendMsg("/mrp/quality/pitch", settings.channel, note, val);
+		});
 	}
 
 	// Frequency vibrato is a periodic modulation in frequency, zero-centered (+/-1 maps to range loaded from XML)
-	vibrato{ |channel, note, val|
-		osc.sendMsg("/mrp/quality/pitch/vibrato", channel, note, val);
+	vibrato { |note, val|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.vibrato = val;
+			osc.sendMsg("/mrp/quality/pitch/vibrato", settings.channel, note, val);
+		});
 	}
 
-	harmonic{ |channel, note, val|
-		osc.sendMsg("/mrp/quality/harmonic", channel, note, val);
+	harmonic { |note, val|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.harmonic = val;
+			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val);
+		});
 	}
 
+	harmonicsraw { |note, valarray|
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.harmonics_raw = valarray;
+			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, valarray);
+		});
+	}
 	// change damper value
 	pedaldamper { |val|
 		osc.sendMsg("/mrp/pedal/damper", val);
@@ -74,8 +142,73 @@ MRP {
 		osc.sendMsg("/mrp/pedal/sostenuto", val);
 	}
 
-	allNotesOff { |val|
-		osc.sendMsg("/mrp/ui/allnotesoff", val);
+	allNotesOff {
+		notes.do({arg note; note.status = \note_off});
+		osc.sendMsg("/mrp/ui/allnotesoff");
+	}
+
+	simulator_ {arg boolean; if( boolean==true, { this.startMRPSimulator }, { this.stopMRPSimulator }) }
+
+	startMRPSimulator {
+		Server.default.boot;
+
+		osc = NetAddr("127.0.0.1", 57120); // we now listen on SC port
+		notes.do({arg note; note.put(\simsynth, nil) }); // add a slot for an SC synth in dict
+
+		SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1;
+			var piano, lpf, bpf, env;
+			piano = MdaPiano.ar(freq, 1, 100, decay: 10000, release: 1);
+			lpf = RLPF.ar(piano, freq * brightness.linlin(0,1, 1,44), 0.6);
+			bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+			env = EnvGen.ar(Env.adsr(vel.linlin(0, 127, 3, 0.00000001), 0.3, 0.88, 1), gate, doneAction:2);
+			Out.ar(0, Pan2.ar((lpf+bpf)*env*intensity, 0));
+		}).add;
+
+		/*
+a =		Synth(\mrp, [\freq, 33.midicps, \vel, 1, \intensity, 1]);
+a.set(\brightness, 0.15)
+a.set(\harmonic, 2)
+a.set(\harmonic, 6)
+a.set(\intensity, 0.1)
+a.set(\intensity, 0.2)
+a.set(\intensity, 0.7)
+*/
+
+
+		OSCdef(\midi, {|msg, time, addr, recvPort|
+			msg.postln;
+			if(msg[3] != 0, {
+				notes[msg[2]].simsynth = Synth(\mrp, [\freq, msg[2].midicps, \vel, msg[3]]);
+			}, {
+				notes[msg[2]].simsynth.release;
+			});
+		}, '/mrp/midi', osc);
+
+		OSCdef(\brightness, {|msg, time, addr, recvPort|
+			msg.postln;
+			"brightness in simulation mode".postln;
+			notes[msg[2]].simsynth.set(\brightness, msg[3]);
+		}, '/mrp/quality/brightness', osc); // def style
+
+		OSCdef(\harmonic, {|msg, time, addr, recvPort|
+			msg.postln;
+			"harmonic in simulation mode".postln;
+			notes[msg[2]].simsynth.set(\harmonic, msg[3]);
+		}, '/mrp/quality/harmonic', osc); // def style
+
+		OSCdef(\intensity, {|msg, time, addr, recvPort|
+			msg.postln;
+			"intensity in simulation mode".postln;
+			notes[msg[2]].simsynth.set(\intensity, msg[3]);
+		}, '/mrp/quality/intensity', osc); // def style
+
+	}
+
+	stopMRPSimulator {
+		osc = NetAddr("127.0.0.1", 7770); // back to MRP port
+		OSCdef(\midi).free;  // unregister OSCdef
+		OSCdef(\brightness).free;  // unregister OSCdef
+		// ... etc   TODO
 	}
 
 	createGUI {
@@ -88,21 +221,20 @@ MRP {
 		win.alwaysOnTop = true;
 		midikeyboardview = MIDIKeyboard.new(win, Rect(10, 70, 990, 160), 5, 36)
 				.keyDownAction_({arg key;
-			        midich =  midich + 1 % 16 ;
-			        this.noteOn(midich, key, 60);
+			        this.noteOn(key, 60);
 	                "Note ON :".post; key.postln;
 
 				})
 				.keyTrackAction_({arg key, x, y;
 			        if(key.isNil.not, {
 				        midich =  midich + 1 % 16;
-				        this.noteOn(midich, key, 60);
+				        this.noteOn(key, 60);
 			        });
                 	"Key TRACK :".post; [key, x, y].postln;
 				})
 				.keyUpAction_({arg key;
 			        "Note OFF :".post; key.postln;
-				     this.noteOff(midich, key);
+				     this.noteOff(key);
 				});
        // midikeyboardview.keyTrackFlag = true;
 
@@ -147,12 +279,31 @@ MRP {
 
 testing MRP class
 
-m = MRP.new;
-m.noteOn(1, 60, 80)
-m.noteOff(1, 60);
+m = MRP.new("127.0.0.1", 7770); // 7770 is the MRP port I believe
+m.noteOn(33, 1)
+m.noteOff(33);
 m.pedaldamper(0.1);
-
 m.createGUI();
+
+
+// testing the MRP SIMULATOR
+
+m = MRP.new("127.0.0.1", 57120); // test sending OSC to SuperCollider
+m.simulator = true
+m.noteOn(36, 1)
+m.brightness(36, 0.1)
+m.brightness(36, 0.9)
+m.intensity(36, 0.1)
+m.intensity(36, 0.6)
+m.harmonic(36, 2)
+m.harmonic(36, 3)
+m.harmonic(36, 4)
+m.harmonic(36, 5)
+m.harmonic(36, 6)
+m.createGUI()
+
+m.noteOff(36);
+
 
 
 
