@@ -12,6 +12,8 @@
     - faust: [Faust](https://faustdoc.grame.fr/) examples
     - tidalcycles [TidalCycles](https://tidalcycles.org) examples
     - puredata: [Pure Data](https://puredata.info) examples
+    - mrp: [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html) clients and examples
+    - alife: artificial life examples using Taichi Lang
 <!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
 
 # Setup
