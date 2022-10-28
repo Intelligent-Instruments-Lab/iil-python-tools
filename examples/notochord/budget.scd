@@ -1,6 +1,14 @@
 // in this example the model's predictions are fed back to it so it plays itself.
 // an instrument can also be assigned to a MIDI input to play along with Notochord
 
+// this version allows Notochord a 'budget' of NoteOn events equal to the number
+// played on the controller
+
+// issue: the budget can grow very large if the player is playing chords
+// issue: the budget does not grow while the player sustains notes
+
+// might be better to measure 'recent player activity' rather than number of events?
+
 Quarks.install("API")
 
 (
@@ -9,6 +17,7 @@ Quarks.install("API")
 ~noto.notochordPath = "/Users/victor/notochord_lakh_50G_deep.pt";
 ~noto.startNotochord; // run notochord in a terminal
 )
+
 
 (
 // run fluidsynth in a terminal
@@ -20,6 +29,7 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ///////// create FluidSynth MIDI output object /////////
 ~output = NotoFluidOutput();
 )
+
 
 (
 ///////// create MIDI input object /////////
@@ -43,6 +53,17 @@ MIDIdef.freeAll;
 	(chan==0).if{~player_inst}{~player_drum}!?(~event.(_, pitch, vel));
 };
 // )
+
+MIDIdef.bend(\stick, {arg val, chan, src;
+	~noto.reset;
+	~hush.();
+}, chan:0);
+MIDIdef.cc(\stick2, {arg val, num, chan, src;
+	(num==1).if{
+		~noto.reset;
+		~hush.();
+	};
+}, chan:0);
 
 ~budget = 0;
 
@@ -233,7 +254,7 @@ MIDIdef.freeAll;
 ~last_event_time = nil;
 
 // choose instruments for the player and Notochord
-~player_inst = 8;
+~player_inst = 13;
 ~player_drum = 129;
 ~exclude_inst = nil;
 ~noto_inst = [7,8,16,25,26,33,34,35,36,46,105,106,107,108,130]; //notochord instruments
