@@ -155,13 +155,16 @@ MRP {
 		osc = NetAddr("127.0.0.1", 57120); // we now listen on SC port
 		notes.do({arg note; note.put(\simsynth, nil) }); // add a slot for an SC synth in dict
 
-		SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1;
-			var piano, lpf, bpf, env;
+		SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1, harmonics_raw=[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3];
+			var piano, lpf, env, dyn;
 			piano = MdaPiano.ar(freq, 1, 100, decay: 10000, release: 1);
 			lpf = RLPF.ar(piano, freq * brightness.linlin(0,1, 1,44), 0.6);
-			bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+			// bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+			dyn = DynKlank.ar(`[[freq*1, freq*2, freq*3, freq*4, freq*5, freq*6, freq*7, freq*8], harmonics_raw, [1,1,1,1,1,1,1,1]], lpf);
+			// dyn = DynKlank.ar(`[[freq*1, freq*2, freq*3, freq*4, freq*5, freq*6, freq*7, freq*8], harmonics_raw, [1,1,1,1,1,1,1,1]], piano);
 			env = EnvGen.ar(Env.adsr(vel.linlin(0, 127, 3, 0.00000001), 0.3, 0.88, 1), gate, doneAction:2);
-			Out.ar(0, Pan2.ar((lpf+bpf)*env*intensity, 0));
+			Out.ar(0, Pan2.ar((lpf+dyn)*env*intensity, 0));
+			// Out.ar(0, Pan2.ar((dyn)*env*intensity, 0));
 		}).add;
 
 		/*
