@@ -1,19 +1,26 @@
 # Repository Structure
 
+## Python packages
+
+See Setup below for how to install these.
+
 - iipyper: python package for easy MIDI, OSC, event loops
 - notochord: python package for the Notochord MIDI performance model
     - notochord: package source code
     - scripts: helper scripts for training, data preprocessing etc
-- examples:
-    - iipyper: basic usage for iipyper
-    - notochord: interactive MIDI apps with notochord and SuperCollider
-        - tidalcycles: notochord interface to TidalCycles
-    - bela: [Bela](https://bela.io) examples in C++, Pure Data and so on
-    - faust: [Faust](https://faustdoc.grame.fr/) examples
-    - tidalcycles [TidalCycles](https://tidalcycles.org) examples
-    - puredata: [Pure Data](https://puredata.info) examples
-    - mrp: [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html) clients and examples
-    - alife: artificial life examples using Taichi Lang
+- mrp: interface to [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html)
+
+## Examples
+
+- iipyper: basic usage for iipyper
+- notochord: interactive MIDI apps with notochord and SuperCollider
+    - tidalcycles: notochord interface to TidalCycles
+- bela: [Bela](https://bela.io) examples in C++, Pure Data and so on
+- faust: [Faust](https://faustdoc.grame.fr/) examples
+- tidalcycles [TidalCycles](https://tidalcycles.org) examples
+- puredata: [Pure Data](https://puredata.info) examples
+- mrp: tests and examples, including SuperCollider Class
+- alife: artificial life examples using Taichi Lang
 <!-- - clients: templates for SuperCollider, Bela (C++), Pure Data, ... -->
 
 # Setup
