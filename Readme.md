@@ -39,6 +39,10 @@ now set up a python environment:
 ```
 conda env create -f environment.yml
 conda activate iil-python-tools
+```
+
+You can then install any Python packages you wish to use:
+```
 pip install -e notochord
 pip install -e iipyper
 pip install -e mrp
