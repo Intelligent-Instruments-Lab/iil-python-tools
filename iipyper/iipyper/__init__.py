@@ -5,6 +5,13 @@ import fire
 from .midi import *
 from .osc import *
 
+import sounddevice as sd
+class Audio:
+    instances = [] # 
+    def __init__(self, *a, **kw):
+        self.stream = sd.InputStream(*a, **kw) # TODO
+        Audio.instances.append(self)
+
 _loop_fns = []
 # decorator to make a function loop
 def repeat(time):
@@ -49,13 +56,8 @@ async def _run_async():
         for f in _loop_fns:
             asyncio.create_task(f())
 
-    # try:
     while True:
         await asyncio.sleep(1)
-    # except KeyboardInterrupt:
-        # for f in _exit_fns:
-            # f()
-        # raise
 
     # clean up
     # for osc in OSC.instances:
@@ -65,8 +67,15 @@ def run(main=None):
     try:
         if main is not None:
             fire.Fire(main)
-        asyncio.run(_run_async())
+        for a in Audio.instances:
+            a.stream.start()
+        while True:
+            pass
+        # asyncio.run(_run_async())
     except KeyboardInterrupt:
+        for a in Audio.instances:
+            a.stream.stop()
+            a.stream.close()
         for f in _exit_fns:
             f()
         raise
