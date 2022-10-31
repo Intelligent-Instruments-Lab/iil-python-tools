@@ -1,6 +1,7 @@
 
 
 /*
+XiiQuarks.new
 Questions:
 - Is there a default value for brightness, intensity, pitch, etc.
 - what is the range in all of those?
@@ -22,7 +23,13 @@ x = {|pitchshift=0|
 	({|i|if(i==0,{f=i+1},{f=f*2});{|j|{|k|(2.pow(j/12)*(27.5+pitchshift.linlin(-1,1,-1.6, 1.6))*f)*(k+1)}!12}!12}!8).flatten[0..87];
 }
 
+x.(0)
 
+x = {|pitchshift=0|
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|2.pow(j/12)*27.5+pitchshift.linlin(-1,1,-1.6, 1.6)*f}!12}!8).flatten[0..87]
+}
+
+x.(0.5)
 
 */
 
@@ -39,7 +46,7 @@ MRP {
 	initMRP { |ip, port|
 		osc = NetAddr(ip, port); // MRP address is 7770 by default?
 
-		settings =  ().put('voices', ().put('max', 10).put('rule', 'oldest')).put('channel', 15).put('range', ().put('start', 21).put('end', 108)).put('qualities_max', 1.0).put('qualities_min', -1.0);
+		settings =  ().put('voices', ().put('max', 10).put('rule', 'oldest')).put('channel', 15).put('range', ().put('start', 21).put('end', 108)).put('qualities_max', 1.0).put('qualities_min', -1.0).put('maxHarmonics', 36);
 
 		notes = { arg i;
 			().put('channel', settings.channel)
@@ -139,10 +146,21 @@ MRP {
 		});
 	}
 
-	harmonic { |note, val|
+	harmonicSweep { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.harmonic = val;
 			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val.asFloat);
+		});
+	}
+
+	harmonic { |note, val, amp=1|
+		var valarray;
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.harmonics_raw = valarray;
+			valarray = {0}!(settings.maxHarmonics+1);
+			valarray[val] = amp;
+			// make an array out of value
+			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, *valarray.asFloat);
 		});
 	}
 

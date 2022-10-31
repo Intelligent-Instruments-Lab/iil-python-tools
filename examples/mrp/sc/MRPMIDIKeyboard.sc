@@ -43,14 +43,14 @@ MRPMIDIKeyboard {
 							0,
 							bounds.width/octaves/10,
 							bounds.height/1.7);
-					keys.add(MIDIKey.new(startnote+i+(j*12), r, Color.black));
+					keys.add(MRPMIDIKey.new(startnote+i+(j*12), r, Color.black));
 				}, { // white keys
 					r = Rect(((pix[i]*((bounds.width/octaves) -
 								(bounds.width/octaves/7))).round(1) + ((bounds.width/octaves)*j)).round(1),
 							0,
 							bounds.width/octaves/7,
 							bounds.height);
-					keys.add(MIDIKey.new(startnote+i+(j*12), r, Color.white));
+					keys.add(MRPMIDIKey.new(startnote+i+(j*12), r, Color.white));
 				});
 			});
 		});
@@ -269,7 +269,7 @@ MRPMIDIKeyboard {
 
 }
 
-MIDIKey {
+MRPMIDIKey {
 	var <rect, <>color, <note, <type;
 	var <>scalecolor, <>inscale;
 
