@@ -1,7 +1,7 @@
 // (c) 2006-2022, Thor Magnusson - www.ixi-audio.net
 // GNU license - google it.
 
-MIDIKeyboard {
+MRPMIDIKeyboard {
 
 	var <>keys;
 	var trackKey, chosenkey, mouseTracker;
