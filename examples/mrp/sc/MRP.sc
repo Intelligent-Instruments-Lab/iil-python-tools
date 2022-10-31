@@ -43,9 +43,9 @@ MRP {
 			//}!(settings.range.end-settings.range.start);
 
 		activeNotes = [];
-		//MIDIClient.init;
-		//MIDIIn.connectAll;
-		//this.defineMIDIdefs;
+		MIDIClient.init;
+		MIDIIn.connectAll;
+		this.defineMIDIdefs;
 	}
 
 	defineMIDIdefs {
@@ -60,12 +60,12 @@ MRP {
 
 		MIDIdef.noteOff(\mrp_noteoff, {arg ...args;
 			args.postln;
-			this.noteOn(args[1], args[0]);
+			this.noteOff(args[1], args[0]);
 			if(guiFlag, { {midikeyboardview.keyUp(args[1])}.defer });
 		});
 	}
 
-	noteOn { |note, vel|
+	noteOn { |note, vel=1|
 		if((notes[note].status == \note_off) && ((note >= settings.range.start) && (note <= settings.range.end)), {
 			if(activeNotes.size < settings.voices.max, {
 				notes[note].status = \note_on;
@@ -91,7 +91,7 @@ MRP {
 	brightness { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.brightness = val;
-			osc.sendMsg("/mrp/quality/brightness", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/brightness", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -99,7 +99,7 @@ MRP {
 	intensity { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.intensity = val;
-			osc.sendMsg("/mrp/quality/intensity", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/intensity", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -107,7 +107,7 @@ MRP {
 	pitch { | note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.pitch = val;
-			osc.sendMsg("/mrp/quality/pitch", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/pitch", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -115,21 +115,21 @@ MRP {
 	vibrato { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.vibrato = val;
-			osc.sendMsg("/mrp/quality/pitch/vibrato", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/pitch/vibrato", settings.channel, note, val.asFloat);
 		});
 	}
 
 	harmonic { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.harmonic = val;
-			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val.asFloat);
 		});
 	}
 
 	harmonicsraw { |note, valarray|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.harmonics_raw = valarray;
-			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, valarray);
+			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, *valarray.asFloat);
 		});
 	}
 	// change damper value
