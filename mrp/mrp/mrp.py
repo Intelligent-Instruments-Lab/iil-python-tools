@@ -12,9 +12,12 @@ TODO:
 - qualities_update([note arr], qualities with arr)
 - add more tests
 - add timer to turn off notes after 90s
+- custom max/min ranges for qualities
+- harmonics_raw dict and functions
+- add simulator via sc3 lib
+- remove mido
 """
 
-import mido
 import copy
 
 NOTE_ON = True
@@ -28,6 +31,10 @@ class MRP(object):
     def __init__(self, _osc, settings=None):
         # default settings
         self.settings = {
+            'address': {
+                'port': 7770,
+                'ip': '127.0.0.1'
+            },
             'voices': {
                 'max': 16, # for 16 cables
                 'rule': 'oldest' # oldest, lowest, highest, quietest...
@@ -37,6 +44,8 @@ class MRP(object):
             'qualities_max': 1.0,
             'qualities_min': 0.0
         }
+        self.note_on_hex = 0x9F
+        self.note_off_hex = 0x8F
         # custom settings
         if settings is not None:
             for k, v in settings.items():
@@ -134,16 +143,10 @@ class MRP(object):
             tmp['status'] = NOTE_ON
             tmp['channel'] = channel
             tmp['midi']['velocity'] = velocity
-            m = mido.Message(
-                'note_on',
-                channel=channel,
-                note=note,
-                velocity=velocity
-            )
             path = self.osc_paths['midi']
             print(path, 'Note On:', note, ', Velocity:', velocity)
-            self.osc.send(path, *m.bytes())
-            return tmp, m
+            self.osc.send(path, self.note_on_hex, note, velocity)
+            return tmp
         else:
             print('note_on(): invalid Note On', note)
             return None
@@ -163,126 +166,47 @@ class MRP(object):
             tmp['status'] = NOTE_OFF
             tmp['channel'] = channel
             tmp['midi']['velocity'] = velocity
-            m = mido.Message(
-                'note_off',
-                channel=channel,
-                note=note,
-                velocity=velocity
-            )
             path = self.osc_paths['midi']
             print(path, 'Note Off:', note)
-            self.osc.send(path, *m.bytes())
-            return tmp, m
+            self.osc.send(path, self.note_off_hex, note, velocity)
+            return tmp
         else:
             print('note_off(): invalid Note Off', note)
             return None
     
-    def note_aftertouch_poly(self, note, value, channel=None):
-        """
-        check if note message is valid
-        update note aftertouch_poly state
-        construct MIDI message & send over OSC
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['aftertouch_poly'] = value
-            m = mido.Message(
-                'polytouch',
-                channel=channel,
-                note=note,
-                value=value
-            )
-            path = self.osc_paths['midi']
-            print(path, 'Note Aftertouch Poly:', *m.bytes())
-            self.osc.send(path, *m.bytes())
-            return tmp, m
-        else:
-            print('note_aftertouch_poly(): invalid message')
-            return None
-    
-    def note_aftertouch_channel(self, value, channel=None):
-        """
-        check if note message is valid
-        update note aftertouch_channel state
-        construct MIDI message & send over OSC
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['aftertouch_channel'] = value
-            m = mido.Message(
-                'aftertouch',
-                channel=channel,
-                value=value
-            )
-            path = self.osc_paths['midi']
-            print(path, 'Note Aftertouch Channel:', *m.bytes())
-            self.osc.send(path, *m.bytes())
-            return tmp, m
-        else:
-            print('note_aftertouch_channel(): invalid message')
-            return None
-        
-    def note_pitch_bend(self, pitch, channel=None):
-        """
-        check if note message is valid
-        update note pitch_bend state
-        construct MIDI message & send over OSC
-        """
-        if self.note_msg_is_valid(note) == True:
-            if channel is None:
-                channel = self.settings['channel']
-            tmp = self.notes[self.note_index(note)]
-            tmp['pitch_bend'] = value
-            m = mido.Message(
-                'pitchwheel',
-                channel=channel,
-                pitch=pitch
-            )
-            path = self.osc_paths['midi']
-            print(path, 'Note Pitch Bend:', *m.bytes())
-            self.osc.send(path, *m.bytes())
-            return tmp, m
-        else:
-            print('note_pitch_bend(): invalid message')
-            return None
-    
-    def control_change(self, controller, value, channel=None):
-        """
-        construct MIDI CC message & send over OSC
-        """
-        if channel is None:
-            channel = self.settings['channel']
-        m = mido.Message(
-            'control_change',
-            channel=channel,
-            controller=controller,
-            value=value
-        )
-        path = self.osc_paths['midi']
-        print(path, 'Control Change:', *m.bytes())
-        self.osc.send(path, *m.bytes())
+    # def control_change(self, controller, value, channel=None):
+    #     """
+    #     construct MIDI CC message & send over OSC
+    #     """
+    #     if channel is None:
+    #         channel = self.settings['channel']
+    #     m = mido.Message(
+    #         'control_change',
+    #         channel=channel,
+    #         controller=controller,
+    #         value=value
+    #     )
+    #     path = self.osc_paths['midi']
+    #     print(path, 'Control Change:', *m.bytes())
+    #     self.osc.send(path, *m.bytes())
 
-    def program_change(self, program, channel=None):
-        """
-        update program state
-        construct MIDI program change message 
-        & send over OSC
-        """
-        if channel is None:
-            channel = self.settings['channel']
-        self.program = program
-        m = mido.Message(
-            'program_change',
-            channel=channel,
-            program=program
-        )
-        path = self.osc_paths['midi']
-        print(path, 'Program Change:', *m.bytes())
-        self.osc.send(path, *m.bytes())
+    # def program_change(self, program, channel=None):
+    #     """
+    #     update program state
+    #     construct MIDI program change message 
+    #     & send over OSC
+    #     """
+    #     if channel is None:
+    #         channel = self.settings['channel']
+    #     self.program = program
+    #     m = mido.Message(
+    #         'program_change',
+    #         channel=channel,
+    #         program=program
+    #     )
+    #     path = self.osc_paths['midi']
+    #     print(path, 'Program Change:', *m.bytes())
+    #     self.osc.send(path, *m.bytes())
     
     """
     /mrp/qualities

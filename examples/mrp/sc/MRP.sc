@@ -1,9 +1,36 @@
 
 
 /*
+XiiQuarks.new
 Questions:
 - Is there a default value for brightness, intensity, pitch, etc.
 - what is the range in all of those?
+
+// et12 tuning octave
+t = {|i| 2.pow(i/12)}!12
+
+// tunings of all 8 octaves
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|2.pow(j/12)*27.5*f}!12}!8).flatten[0..87]
+
+// the 12 harmonics of each key of the piano
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|{|k|(2.pow(j/12)*27.5*f)*(k+1)}!12}!12}!8).flatten[0..87]
+
+Post << a
+
+// with pitchshift
+x = {|pitchshift=0|
+
+	({|i|if(i==0,{f=i+1},{f=f*2});{|j|{|k|(2.pow(j/12)*(27.5+pitchshift.linlin(-1,1,-1.6, 1.6))*f)*(k+1)}!12}!12}!8).flatten[0..87];
+}
+
+x.(0)
+
+x = {|pitchshift=0|
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|2.pow(j/12)*27.5+pitchshift.linlin(-1,1,-1.6, 1.6)*f}!12}!8).flatten[0..87]
+}
+
+x.(0.5)
+
 */
 
 MRP {
@@ -19,7 +46,7 @@ MRP {
 	initMRP { |ip, port|
 		osc = NetAddr(ip, port); // MRP address is 7770 by default?
 
-		settings =  ().put('voices', ().put('max', 10).put('rule', 'oldest')).put('channel', 15).put('range', ().put('start', 21).put('end', 108)).put('qualities_max', 1.0).put('qualities_min', -1.0);
+		settings =  ().put('voices', ().put('max', 10).put('rule', 'oldest')).put('channel', 15).put('range', ().put('start', 21).put('end', 108)).put('qualities_max', 1.0).put('qualities_min', -1.0).put('maxHarmonics', 36);
 
 		notes = { arg i;
 			().put('channel', settings.channel)
@@ -43,9 +70,9 @@ MRP {
 			//}!(settings.range.end-settings.range.start);
 
 		activeNotes = [];
-		//MIDIClient.init;
-		//MIDIIn.connectAll;
-		//this.defineMIDIdefs;
+		MIDIClient.init;
+		MIDIIn.connectAll;
+		this.defineMIDIdefs;
 	}
 
 	defineMIDIdefs {
@@ -60,12 +87,12 @@ MRP {
 
 		MIDIdef.noteOff(\mrp_noteoff, {arg ...args;
 			args.postln;
-			this.noteOn(args[1], args[0]);
+			this.noteOff(args[1], args[0]);
 			if(guiFlag, { {midikeyboardview.keyUp(args[1])}.defer });
 		});
 	}
 
-	noteOn { |note, vel|
+	noteOn { |note, vel=1|
 		if((notes[note].status == \note_off) && ((note >= settings.range.start) && (note <= settings.range.end)), {
 			if(activeNotes.size < settings.voices.max, {
 				notes[note].status = \note_on;
@@ -91,7 +118,7 @@ MRP {
 	brightness { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.brightness = val;
-			osc.sendMsg("/mrp/quality/brightness", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/brightness", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -99,7 +126,7 @@ MRP {
 	intensity { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.intensity = val;
-			osc.sendMsg("/mrp/quality/intensity", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/intensity", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -107,7 +134,7 @@ MRP {
 	pitch { | note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.pitch = val;
-			osc.sendMsg("/mrp/quality/pitch", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/pitch", settings.channel, note, val.asFloat);
 		});
 	}
 
@@ -115,21 +142,32 @@ MRP {
 	vibrato { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.vibrato = val;
-			osc.sendMsg("/mrp/quality/pitch/vibrato", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/pitch/vibrato", settings.channel, note, val.asFloat);
 		});
 	}
 
-	harmonic { |note, val|
+	harmonicSweep { |note, val|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.harmonic = val;
-			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val);
+			osc.sendMsg("/mrp/quality/harmonic", settings.channel, note, val.asFloat);
+		});
+	}
+
+	harmonic { |note, val, amp=1|
+		var valarray;
+		if(notes[note].status == \note_on, {
+			notes[note].qualities.harmonics_raw = valarray;
+			valarray = {0}!(settings.maxHarmonics+1);
+			valarray[val] = amp;
+			// make an array out of value
+			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, *valarray.asFloat);
 		});
 	}
 
 	harmonicsraw { |note, valarray|
 		if(notes[note].status == \note_on, {
 			notes[note].qualities.harmonics_raw = valarray;
-			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, valarray);
+			osc.sendMsg("/mrp/quality/harmonics/raw", settings.channel, note, *valarray.asFloat);
 		});
 	}
 	// change damper value
@@ -155,13 +193,16 @@ MRP {
 		osc = NetAddr("127.0.0.1", 57120); // we now listen on SC port
 		notes.do({arg note; note.put(\simsynth, nil) }); // add a slot for an SC synth in dict
 
-		SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1;
-			var piano, lpf, bpf, env;
+		SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1, harmonics_raw=[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3];
+			var piano, lpf, env, dyn;
 			piano = MdaPiano.ar(freq, 1, 100, decay: 10000, release: 1);
 			lpf = RLPF.ar(piano, freq * brightness.linlin(0,1, 1,44), 0.6);
-			bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+			// bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+			dyn = DynKlank.ar(`[[freq*1, freq*2, freq*3, freq*4, freq*5, freq*6, freq*7, freq*8], harmonics_raw, [1,1,1,1,1,1,1,1]], lpf);
+			// dyn = DynKlank.ar(`[[freq*1, freq*2, freq*3, freq*4, freq*5, freq*6, freq*7, freq*8], harmonics_raw, [1,1,1,1,1,1,1,1]], piano);
 			env = EnvGen.ar(Env.adsr(vel.linlin(0, 127, 3, 0.00000001), 0.3, 0.88, 1), gate, doneAction:2);
-			Out.ar(0, Pan2.ar((lpf+bpf)*env*intensity, 0));
+			Out.ar(0, Pan2.ar((lpf+dyn)*env*intensity, 0));
+			// Out.ar(0, Pan2.ar((dyn)*env*intensity, 0));
 		}).add;
 
 		/*
@@ -208,6 +249,8 @@ a.set(\intensity, 0.7)
 		osc = NetAddr("127.0.0.1", 7770); // back to MRP port
 		OSCdef(\midi).free;  // unregister OSCdef
 		OSCdef(\brightness).free;  // unregister OSCdef
+		OSCdef(\harmonic).free;  // unregister OSCdef
+		OSCdef(\intensity).free;  // unregister OSCdef
 		// ... etc   TODO
 	}
 
