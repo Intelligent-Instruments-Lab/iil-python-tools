@@ -124,9 +124,10 @@ def main(host="127.0.0.1", port=7563):
             lenia.slice_world(int(res/2))
             # world_slice = [lenia.world_slice[i] for i in list(range(res))]
             world_slice = lenia.world_slice.to_numpy()
-            world_slice = [(2 * float(i) -1) for i in world_slice]
-            # print(type(world_slice[0]))
-            mrp.qualities_update(48, {'harmonics_raw': world_slice})
+            # world_slice = [(2 * float(i) -1) for i in world_slice]
+            # print('world', type(world_slice.astype(float)))
+            # mrp.qualities_update(48, {'harmonics_raw': world_slice.astype(float).flatten()})
+            mrp.quality_update(48, 'harmonics_raw', world_slice.astype(float))
 
         window.show()
 

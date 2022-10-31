@@ -18,6 +18,7 @@ TODO:
 - remove mido
 """
 
+import numpy as np
 import copy
 
 NOTE_ON = True
@@ -230,7 +231,7 @@ class MRP(object):
                 if channel is None:
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
-                if isinstance(value, list): # e.g. /harmonics/raw
+                if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
                     if relative is True:
                         print('quality_update(): relative updating of lists not supported')
                         # if (len(tmp['qualities'][quality]) > 0):
@@ -287,7 +288,7 @@ class MRP(object):
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
                 for q, v in qualities.items():
-                    if isinstance(v, list): # e.g. /harmonics/raw
+                    if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
                         if relative is True:
                             print('quality_update(): relative updating of lists not supported')
                         else:
