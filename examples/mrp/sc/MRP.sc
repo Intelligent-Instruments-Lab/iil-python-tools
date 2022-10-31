@@ -4,6 +4,26 @@
 Questions:
 - Is there a default value for brightness, intensity, pitch, etc.
 - what is the range in all of those?
+
+// et12 tuning octave
+t = {|i| 2.pow(i/12)}!12
+
+// tunings of all 8 octaves
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|2.pow(j/12)*27.5*f}!12}!8).flatten[0..87]
+
+// the 12 harmonics of each key of the piano
+a = ({|i|if(i==0,{f=i+1},{f=f*2});{|j|{|k|(2.pow(j/12)*27.5*f)*(k+1)}!12}!12}!8).flatten[0..87]
+
+Post << a
+
+// with pitchshift
+x = {|pitchshift=0|
+
+	({|i|if(i==0,{f=i+1},{f=f*2});{|j|{|k|(2.pow(j/12)*(27.5+pitchshift.linlin(-1,1,-1.6, 1.6))*f)*(k+1)}!12}!12}!8).flatten[0..87];
+}
+
+
+
 */
 
 MRP {
@@ -211,6 +231,8 @@ a.set(\intensity, 0.7)
 		osc = NetAddr("127.0.0.1", 7770); // back to MRP port
 		OSCdef(\midi).free;  // unregister OSCdef
 		OSCdef(\brightness).free;  // unregister OSCdef
+		OSCdef(\harmonic).free;  // unregister OSCdef
+		OSCdef(\intensity).free;  // unregister OSCdef
 		// ... etc   TODO
 	}
 
