@@ -16,6 +16,7 @@ TODO:
 - harmonics_raw dict and functions
 - add simulator via sc3 lib
 - remove mido
+- rename harmonic -> harmonic_sweep and add harmonic(note, partial, amplitude)
 """
 
 import numpy as np
@@ -174,6 +175,19 @@ class MRP(object):
         else:
             print('note_off(): invalid Note Off', note)
             return None
+
+    def notes_on(self, notes, velocities=None):
+        vmax = self.settings['voices']['max']
+        if len(notes)+1 > vmax:
+            if velocities == None:
+                [self.note_on(n) for n in notes]
+            else:
+                [self.note_on(n, velocities[i]) for i,n in enumerate(notes)]
+        else:
+            print('notes_on(): too many notes', notes)
+
+    def notes_off(self, notes, channel=None):
+        [self.note_off(n) for n in notes]
     
     # def control_change(self, controller, value, channel=None):
     #     """
