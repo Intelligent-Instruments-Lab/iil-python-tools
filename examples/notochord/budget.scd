@@ -57,11 +57,14 @@ MIDIdef.freeAll;
 MIDIdef.bend(\stick, {arg val, chan, src;
 	~noto.reset;
 	~hush.();
+	~budget = 0;
 }, chan:0);
 MIDIdef.cc(\stick2, {arg val, num, chan, src;
 	(num==1).if{
 		~noto.reset;
 		~hush.();
+		~budget = 0;
+
 	};
 }, chan:0);
 
