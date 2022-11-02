@@ -197,27 +197,26 @@ MRP {
 SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harmonic=1, pitch=0, harmonics_raw(#[ 0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1 ]);
 	var piano, pitchednote, lpf, env, dyn;
 	piano = MdaPiano.ar(freq, 1, 100, decay: 10000, release: 1);
-//	pitchednote = PitchShift.ar(piano, 0.02, pitch.linlin(-1,1, 0.9405369056407, 1.0594630943593));
-	lpf = RLPF.ar(piano, freq * brightness.linlin(0,1, 1,44), 0.6);
-	// bpf = BPF.ar(lpf, freq * harmonic, 0.3);
+	pitchednote = PitchShift.ar(piano, 0.1, pitch.linlin(-1,1, 0.9405369056407, 1.0594630943593), 0, 0.004);
+	lpf = RLPF.ar(pitchednote, freq * brightness.linlin(0,1,1,44), 0.6);
 	dyn = DynKlank.ar(`[{|i|freq*(i+1)}!32, harmonics_raw, {0.1}!32], lpf*0.01);
-	pitchednote = PitchShift.ar(dyn, 0.02, pitch.linlin(-1,1, 0.4405369056407, 1.4594630943593), 0, 0.0001);
-
+	pitchednote = PitchShift.ar(dyn, 0.1, MouseX.kr(0,2), 0, 0.004);
 	env = EnvGen.ar(Env.adsr(vel.linlin(0, 127, 3, 0.00000001), 0.3, 0.88, 1), gate, doneAction:2);
-	Out.ar(0, Pan2.ar(dyn, 0));
+	Out.ar(0, Pan2.ar(dyn*env*intensity, 0));
 }).add;
 
-
-
-		/*
-
+			/*
 a =	Synth(\mrp, [\freq, 33.midicps, \vel, 1, \intensity, 1]);
 
-a.set(\brightness, 0.3)
+a.set(\brightness, 0.1)
+a.set(\intensity, 2)
 a.set(\harmonics_raw, [0, 0, 0.2, 0.9, 0.9])
 a.set(\harmonics_raw, {1.0.rand}!32)
 a.set(\harmonics_raw, {[1,0].wchoose([0.2, 0.8])}!32)
-a.set(\pitch, 1.4) // NOT WORKING - probably a rubbish pitch shifter
+a.set(\pitch, -1)
+a.set(\pitch, 0)
+a.set(\pitch, 1)
+
 
 a =		Synth(\mrp, [\freq, 33.midicps, \vel, 1, \intensity, 1]);
 a.set(\brightness, 0.15)
