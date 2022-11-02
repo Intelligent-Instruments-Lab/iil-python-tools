@@ -1,8 +1,15 @@
 // in this example the model's predictions are fed back to it so it plays itself.
 // an instrument can also be assigned to a MIDI input to play along with Notochord
 
-Quarks.install("API")
+// this version allows Notochord a 'budget' of NoteOn events equal to the number
+// played on the controller
 
+// issue: the budget can grow very large if the player is playing chords
+// issue: the budget does not grow while the player sustains notes
+
+// might be better to measure 'recent player activity' rather than number of events?
+
+Quarks.install("API")
 
 (
 ///////// create Notochord API object /////////
@@ -13,27 +20,9 @@ Quarks.install("API")
 
 
 (
-///////// create MIDI input object /////////
-// this is just a convenience, you could use MIDIIn or MIDIdef directly instead
-// change this to the name of your MIDI controller
-~controller = "MPKmini2";
-// MIDI from controller
-~input = NotoInput(~controller);
-~input.noteOff{
-    arg vel, pitch, chan, src;
-	// play a note-off event into notochord on the player instrument
-	~player_inst!?(~event.(_, pitch, 0));
-};
-~input.noteOn{
-	arg vel, pitch, chan, src;
-	// play a note-on event into notochord on the player instrument
-	~player_inst!?(~event.(_, pitch, vel));
-};
-)
-
-(
 // run fluidsynth in a terminal
 NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres of Heaven (XGM) 4.00(G).sf2");
+
 )
 
 (
@@ -43,8 +32,51 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 
 
 (
+///////// create MIDI input object /////////
+// this is just a convenience, you could use MIDIIn or MIDIdef directly instead
+// change this to the name of your MIDI controller
+~controller = "MPKmini2";
+// MIDI from controller
+~input = NotoInput(~controller);
+MIDIdef.freeAll;
+~input.noteOff{
+    arg vel, pitch, chan, src;
+	// play a note-off event into notochord on the player instrument
+	(chan==0).if{~player_inst}{~player_drum}!?(~event.(_, pitch, 0));
+};
+~input.noteOn{
+	arg vel, pitch, chan, src;
+	~gate=true;
+	~budget = ~budget + 1;
+	// ~gate.not.if{Routine{2.sleep; ~gate = true}.play};
+	// play a note-on event into notochord on the player instrument
+	(chan==0).if{~player_inst}{~player_drum}!?(~event.(_, pitch, vel));
+};
+// )
+
+MIDIdef.bend(\stick, {arg val, chan, src;
+	~noto.reset;
+	~hush.();
+	~budget = 0;
+}, chan:0);
+MIDIdef.cc(\stick2, {arg val, num, chan, src;
+	(num==1).if{
+		~noto.reset;
+		~hush.();
+		~budget = 0;
+
+	};
+}, chan:0);
+
+~budget = 0;
+
+// (
+~noto.isNil.if{~noto = Notochord()};
+~output.isNil.if{~output = NotoFluidOutput()};
+
 ///////// define scheduler /////////
 ~player_inst = nil;
+~player_drum = nil;
 ~gate = true;
 
 // track the current predicted next event
@@ -81,6 +113,11 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 		event_time-~last_event_time}{0};
     ~last_event_time = event_time;
 
+	// auto reset
+	(dt > 10).if{
+		~noto.reset;
+	};
+
     // cancel any pending events
 	~clear_prediction.();
 
@@ -88,8 +125,10 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	~output.send(inst, pitch, vel);
 
     //get a new prediction in light of current note
-	~exclude_inst = ~player_inst!?([_]);
-    ~noto.feedQuery(
+	// ~exclude_inst = [~player_inst, ~player_drum].removeEvery([nil]);
+	// ~include_inst = ~noto_inst++~soft_gate.if{[~player_inst, ~player_drum]}{[]};
+	~include_inst = ~noto_inst++[~player_inst, ~player_drum].reject(_.isNil);
+	~noto.feedQuery(
 		\inst, inst, \pitch, pitch, \time, dt, \vel, vel,
 		\handle, event_time, *~noto.globalArgs);
 
@@ -103,11 +142,7 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 	var end = args[\end];
 	// absolute time of last event according to notochord
 	var last_event_notochord = args[\handle];
-
-    // there may be multiple outstanding queries to the model.
-	// when there are, it means
-    // the earlier prediction is already voided,
-	// so it should be dropped
+	// stop if the global gate is closed or end is predicted
     var gate_event = (
         ~gate
         && (end==0)
@@ -120,41 +155,71 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 			var sched_time = last_event_notochord + args[\time];
 			// actual delta from now to scheduled time
 			var sleep_time = sched_time - Process.elapsedTime;
+			var wait_time = sleep_time + 0.2;
 
-            // wait until predicted time
-			(sleep_time<0).if{
-				[\late, sleep_time].postln
-			}{
-				[\waiting, sleep_time].postln
+
+			var query_new = {
+				Routine{
+					// TODO: this is ugly. should rethink globalArgs
+					// to be overridden by explicit vals...
+					var tmp_min_time = ~min_time;
+					~min_time = wait_time;
+					~noto.query(\handle, last_event_notochord, *~noto.globalArgs);
+					~min_time = tmp_min_time;
+				}.play(SystemClock)
 			};
-			sleep_time.max(0).sleep;
 
-			// if the Routine gets here without being canceled,
-			// the predicted event occurs
-			// fork the event into a different Routine so it
-			// doesn't cancel itself!
-			Routine{
-				~event.(args[\inst], args[\pitch], args[\vel])
-			}.play(SystemClock);
+			~noto_inst.includes(args[\inst].postln).if{
+
+				// wait until predicted time
+				(sleep_time<0).if{
+					[\late, sleep_time].postln
+				}{
+					[\waiting, sleep_time].postln
+				};
+				sleep_time.max(0).sleep;
+
+				// if the Routine gets here without being canceled,
+				// and there is budget,
+				// the predicted event occurs
+				// fork the event into a different Routine so it
+				// doesn't cancel itself!
+				((~budget > 0) || (args[\vel]==0)).if{
+					(args[\vel]>0).if{~budget = ~budget - 1};
+					[\budget, ~budget].postln;
+					Routine{
+						~event.(args[\inst], args[\pitch], args[\vel])
+					}.play(SystemClock);
+				}//{
+					// query_new.();
+			// };
+			}{
+				//player event is predicted
+				// \ignored.postln;
+				wait_time.max(0).sleep;
+				query_new.();
+				/*Routine{
+					// TODO: this is ugly. should rethink globalArgs
+					// to be overridden by explicit vals...
+					var tmp_min_time = ~min_time;
+					~min_time = wait_time;
+					~noto.query(\handle, nil, *~noto.globalArgs);
+					~min_time = tmp_min_time;
+				}.play(SystemClock);*/
+			};
 			// return nil so the Routine is not rescheduled
             nil
         }.play(SystemClock);
     };
-	(end==1).if{
+	(end==1 || (~step > 500)).if{
         //release the last note
         ~output.releaseAll(127);
+		// ~noto.reset;
+		~step = 0;
         \end.postln;
     };
 };
 )
-
-
-
-
-
-
-
-
 
 (
 // play the first note and let the model take over
@@ -162,7 +227,8 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~last_event_time = nil;
 
 ~player_inst = nil;
-~include_inst = nil;
+~player_drum = nil;
+~noto_inst = (1..129);
 ~allow_anon = false;
 
 ~allow_end = true;
@@ -180,113 +246,27 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~noto.reset;
 
 ~gate = true;
-~noto.query(\handle, nil, *~noto.globalArgs);
+~budget = inf;
+~noto.query(\handle, Process.elapsedTime, *~noto.globalArgs);
 )
 
 
-~hush.()
-
-
-
-
-
-
-
-
-
-
-
 (
-// reduced sampling temperature,
-// uniformly random first instrument
-~gate = false;
-~last_event_time = nil;
-
-~player_inst = nil;
-~include_inst = nil;
-~allow_anon = false;
-
-~allow_end = true;
-~instrument_temp = 0.98;
-~pitch_temp = 0.95;
-~rhythm_temp = 1;
-~timing_temp = 0.1;
-~min_time = nil;//0.015;
-~max_time = nil;
-~velocity_temp = 0;
-~include_pitch = nil;
-~clear_prediction.();
-
-
-~output.releaseAll;
-~noto.reset;
-~gate = true; ~event.(128.rand+1, 60+12.rand, 100)
-)
-
-
-~hush.()
-
-
-
-
-
-
-
-(
-// restricted instrumentation and pitch set
-~gate = false;
-~last_event_time = nil;
-
-~player_inst = nil;
-~include_inst = [5, 16, 21, 29, 35, 69, 74];
-
-~allow_end = false;
-~instrument_temp = 2;
-~pitch_temp = 3;
-~rhythm_temp = 0.9;
-~timing_temp = 0.1;
-~min_time = nil;//0.015;
-~max_time = 0.125;
-~velocity_temp = 1;
-~include_pitch = ([[0,7]]+[40,52,64,76]).flatten;
-~clear_prediction.();
-
-~output.releaseAll;
-~noto.reset;
-~gate = true; ~noto.query(\handle, nil, *~noto.globalArgs);
-)
-
-~include_pitch = ~include_pitch+1;
-
-~include_pitch = (84..96);
-
-~include_pitch = (30..42);
-
-
-~hush.()
-
-
-
-
-
-
-
-
-
-
-(
+~budget = 0;
 ~gate = false;
 ~last_event_time = nil;
 
 // choose instruments for the player and Notochord
-~player_inst = 57;
-~include_inst = [61]; //notochord instruments
+~player_inst = 13;
+~player_drum = 129;
+~exclude_inst = nil;
+~noto_inst = [7,8,16,25,26,33,34,35,36,46,105,106,107,108,130]; //notochord instruments
 ~allow_end = true;
 
-~instrument_temp = 1;
+~instrument_temp = 2;
 ~pitch_temp = 1; //0.95;
 ~rhythm_temp = 1;
-~timing_temp = 1;
+~timing_temp = 0.2;
 ~min_time = 0.015;
 ~max_time = nil;
 ~velocity_temp = 0;
@@ -295,8 +275,14 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~clear_prediction.();
 ~output.releaseAll;
 ~noto.reset;
-Routine{5.sleep; ~gate = true}.play;
+// Routine{5.sleep; ~gate = true}.play;
 )
+
+~budget = -inf;
+~gate = true;
+Routine{~input.noteOnFn.(99, 35, 1); 0.2.sleep; ~input.noteOffFn.(0, 35, 1)}.play;
+// ~noto.query(\handle, nil, *~noto.globalArgs);
+
 
 ~hush.()
 

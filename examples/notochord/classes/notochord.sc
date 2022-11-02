@@ -7,17 +7,7 @@ NotoOutput {
     }
 
     init { | deviceName, portName, anonInstruments |
-		MIDIClient.initialized.not.if{MIDIClient.init};
-		Platform.case(
-			\osx,     {
-				deviceName = deviceName?"IAC Driver";
-				portName = portName?"Bus 1";
-			},
-			\linux,   { "Notochord: TODO: default MIDI output device on Linux".postln },
-			\windows, { "Notochord: TODO: default MIDI output device on Windows".postln }
-		);
-		nAnon = anonInstruments;
-		port = MIDIOut.newByName(deviceName, portName).latency_(0);
+		MIDIClient.init;// MIDIClient.initialized.not.if{MIDIClient.init};
 		sema = Semaphore(1);
     }
 
@@ -37,11 +27,21 @@ NotoMappingOutput : NotoOutput {
 
 	init { | deviceName, portName, anonInstruments |
 		super.init(deviceName, portName, anonInstruments);
+		Platform.case(
+			\osx,     {
+				deviceName = deviceName?"IAC Driver";
+				portName = portName?"Bus 1";
+			},
+			\linux,   { "Notochord: TODO: default MIDI output device on Linux".postln },
+			\windows, { "Notochord: TODO: default MIDI output device on Windows".postln }
+		);
+		nAnon = anonInstruments;
+		port = MIDIOut.newByName(deviceName, portName).latency_(0);
 		instrumentMap = Dictionary.new;
 		drumMap = Dictionary.new;
     }
 
-	send { | inst, pitch, vel | 
+	send { | inst, pitch, vel |
 		var channel;
 		channel = instrumentMap.at(inst);
 		(isDrum(inst) && drumMap.includesKey(pitch)).if{
@@ -58,12 +58,17 @@ NotoMappingOutput : NotoOutput {
 	}
 }
 
+
 NotoFluidOutput : NotoOutput {
 	// var <>bank_xg,
 	var <channelLRU, <instChannels, <>soundFontPath;
 
 	init { | deviceName, portName, anonInstruments |
 		super.init(deviceName, portName, anonInstruments);
+		deviceName = deviceName?"fluidsynth";
+		portName = portName?"fluidsynth";
+		nAnon = anonInstruments;
+		port = MIDIOut.newByName(deviceName, portName).latency_(0);
 		// bank_xg = true;
 		channelLRU = LinkedList.fill(16, {arg i; i});
 		instChannels = TwoWayIdentityDictionary.new;
@@ -107,27 +112,27 @@ NotoFluidOutput : NotoOutput {
 		sema.signal;
 	}
 
-	fluidSynthCmd {
-		^ "fluidsynth -v -o midi.autoconnect=1 -o synth.midi-bank-select=mma"
+	*fluidSynthCmd { | soundFontPath = nil |
+		^ "fluidsynth -v -o midi.autoconnect=0 -o midi.portname=fluidsynth -o synth.midi-bank-select=mma"
 		+ soundFontPath.isNil.if{""}{soundFontPath.shellQuote}
 	}
 
-	startFluidSynth {
-		this.fluidSynthCmd.runInTerminal
+	*startFluidSynth { | soundFontPath = nil |
+		this.fluidSynthCmd(soundFontPath).runInTerminal
 	}
 }
 
 
 // MIDI input API
 NotoInput {
-	var <deviceUID;
+	var <deviceUID, <noteOnFn, <noteOffFn;
 
 	*new { | deviceName, portName |
 		^super.new.init(deviceName, portName)
     }
 
 	init { | deviceName, portName |
-		var device; 
+		var device;
 		MIDIClient.initialized.not.if{MIDIClient.init};
 		MIDIIn.connectAll;
 
@@ -153,26 +158,53 @@ NotoInput {
     }
 
 	noteOn { |fn|
+		noteOnFn = fn;
 		MIDIdef.noteOn(\input_on++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 
 	noteOff { |fn|
+		noteOffFn = fn;
 		MIDIdef.noteOff(\input_off++deviceUID, fn, srcID:deviceUID).permanent_(true);
 	}
 }
 
+Promise {
+	var <fn, <next;
+	init { fn=nil; next=nil; }
+	then { arg function;
+		fn = function;
+		next = Promise.new;
+		^next
+	}
+	resolve { arg ...args;
+		var result;
+		fn.isNil.if{"promise resolved before `then`".postln; ^nil};
+		result = fn.(*args);
+		next?(_.resolve(result));
+	}
+}
 
 // Notochord API
+// TODO: pending dict should replace pendingqueries
+// TODO: handle case when promise resolves before `then`?
 Notochord {
-	var <python, <>handler, <>notochordPath, <>notochordEnv, <argKeys, <pendingQueries, <>dropOldQueries;
+	var <python, <>handler, <>notochordPath, <>notochordEnv, <argKeys, <pendingQueries, <>dropOldQueries, <count, <pending;
 
 	*new { |pythonHost="127.0.0.1", pythonPort=9999|
         ^super.new.init(pythonHost, pythonPort)
     }
 
     init { |pythonHost, pythonPort|
+		count = 0;
+		pending = Dictionary.new;
 		// address to send OSC to notochord
 		python = NetAddr.new(pythonHost, pythonPort);
+
+		// default handler for resolving promises
+		handler = { arg args;
+			["handling OSC return. pending:", pending].postln;
+			pending.removeAt(args[\handle]).resolve(args);
+		};
 
 		// handler for OSC from notochord
 		OSCdef(\notochord_from_python, {
@@ -188,9 +220,6 @@ Notochord {
 			};
 
 		}, "notochord/query_return").permanent_(true);
-
-		// initial handler which just prints the argument dict
-		handler = _.postln;
 
 		notochordEnv = "iil-python-tools"; //default conda env for notochord
 
@@ -208,7 +237,18 @@ Notochord {
 		];
 
 		pendingQueries = 0;
+		// whether to ignore responses from notochord while
+		// there are more than one pending
+		// when using query and feed separately, probably want this true
+		// if using queryFeed, may want it false
+		// TODO: instead of this, maybe keep track of 'unfed' responses
+		// when deciding what to drop?
 		dropOldQueries = false;
+	}
+
+	getHandle {
+		count = count + 1;
+		^count;
 	}
 
 	reset { |...args|
@@ -219,24 +259,27 @@ Notochord {
 		python.sendMsg("/notochord/feed", *args);
 	}
 
+	queryFn { |route ...args|
+		var promise;
+		var handle = this.getHandle;
+		// [\handle, handle].postln;
+		python.sendMsg(route, \handle, handle, *args);
+		pending[handle] = promise = Promise.new;
+		pendingQueries = pendingQueries+1;
+		^promise
+	}
+
 	query { |...args|
-		python.sendMsg("/notochord/query", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/query", *args);
 	}
-
 	queryFeed { |...args|
-		python.sendMsg("/notochord/query_feed", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/query_feed", *args);
 	}
-
 	feedQuery { |...args|
-		python.sendMsg("/notochord/feed_query", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/feed_query", *args);
 	}
-
 	feedQueryFeed { |...args|
-		python.sendMsg("/notochord/feed_query_feed", *args);
-		pendingQueries = pendingQueries+1;
+		^ this.queryFn("/notochord/feed_query_feed", *args);
 	}
 
 	notochordCmd {

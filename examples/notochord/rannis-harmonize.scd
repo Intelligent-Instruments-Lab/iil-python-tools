@@ -128,8 +128,8 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 ~output.releaseAll;
 ~noto.reset;
 
-~player_inst = 8;
-~noto_inst = 8;
+~player_inst = 25;
+~noto_inst = 25;
 )
 
 
