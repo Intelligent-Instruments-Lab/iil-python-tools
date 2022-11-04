@@ -19,14 +19,8 @@ Quarks.install("API")
 )
 
 
-(
-// run fluidsynth in a terminal
-NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres of Heaven (XGM) 4.00(G).sf2");
-)
-
-
 ( //////// OUTPUT MIDI mappings ////////
-~output = NotoMappingOutput();
+~output = NotoMappingOutput("Kjartan", "Bluetooth (internal)");
 // this will automatically restrict the instruments notochord can sample
 // to the keys of instrumentMap, and send each instrument to the given MIDI channel
 // (but make sure not to use any other instruments in tidal either)
@@ -36,17 +30,32 @@ NotoFluidOutput.startFluidSynth(soundFontPath: "/Users/victor/soundfonts/Timbres
 // different notochord instruments.
 ~output.instrumentMap = (
     // notochord instrument (1-320): midi channel (1-16)
-    // 1: 1, //grand piano -> channel 1
-    // 257: 1 //first anonymous instrument -> channel 1
-      8: 2, //clavinet -> channel 2
-     13: 3, //marimba -> channel 3
-     17: 4, //drawbar organ -> channel 4
-     27: 5, //jazz guitar -> channel 5
+	// 1: 1, //grand piano -> channel 1
+	257: 1, //first anonymous instrument -> channel 1
+	258: 2,
+	259: 3,
+	260: 4,
+	261: 5,
+	262: 6,
+	263: 7,
+	264: 8,
+	265: 9,
+	129: 10,
+	266: 11,
+	267: 12,
+	268: 13,
+	269: 14,
+	270: 15,
+	271: 16,
+	// 8: 2, //clavinet -> channel 2
+	// 13: 3, //marimba -> channel 3
+	// 17: 4, //drawbar organ -> channel 4
+	// 27: 5, //jazz guitar -> channel 5
     // 39: 6, //synth bass 1 -> channel 6
     // 47: 7, //harp -> channel 7
     // 54: 8, //voice oohs -> channel 8
     // 57: 9, //trumpet -> channel 9
-    129:10, //standard drumkit -> channel 10 (drums)
+	// 129:10, //standard drumkit -> channel 10 (drums)
     // 67:11, //tenor sax -> channel 11
     // 76:12, //pan flute -> channel 12
     // 82:13, //saw lead -> channel 13
@@ -104,7 +113,7 @@ MIDIdef.freeAll;
 };
 // )
 
-MIDIdef.bend(\stick, {arg val, chan, src;
+/*MIDIdef.bend(\stick, {arg val, chan, src;
 	~noto.reset;
 	~hush.();
 }, chan:0);
@@ -113,7 +122,7 @@ MIDIdef.cc(\stick2, {arg val, num, chan, src;
 		~noto.reset;
 		~hush.();
 	};
-}, chan:0);
+}, chan:0);*/
 
 ~budget = 0;
 
@@ -274,8 +283,8 @@ MIDIdef.cc(\stick2, {arg val, num, chan, src;
 ~last_event_time = nil;
 
 // choose instruments for the player and Notochord
-~player_inst = 13;
-~player_drum = 129;
+~player_inst = 272;
+~player_drum = 300;
 ~exclude_inst = nil;
 ~noto_inst = ~output.instrumentMap.keys; //notochord instruments
 // ~noto_inst = [7,8,16,25,26,33,34,35,36,46,105,106,107,108,130]; //notochord instruments

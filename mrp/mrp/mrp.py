@@ -411,12 +411,11 @@ class MRP(object):
         """
         return numbers of notes that are on
         """
-        on_numbers = []
-        for note in self.notes:
-            if note['status'] == NOTE_ON:
-                on_numbers.append(note['midi']['number'])
-        return on_numbers
-
+        return [
+            note['midi']['number'] 
+            for note in self.notes 
+            if note['status']==NOTE_ON]
+# 
     def note_on_is_valid(self, note):
         """
         check if the note is on & in range
