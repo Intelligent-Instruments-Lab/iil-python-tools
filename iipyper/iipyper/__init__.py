@@ -69,9 +69,9 @@ def run(main=None):
             fire.Fire(main)
         for a in Audio.instances:
             a.stream.start()
-        while True:
-            pass
-        # asyncio.run(_run_async())
+        # while True:
+            # pass
+        asyncio.run(_run_async())
     except KeyboardInterrupt:
         for a in Audio.instances:
             a.stream.stop()
