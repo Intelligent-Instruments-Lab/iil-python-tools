@@ -267,7 +267,7 @@ MIDIdef.cc(\stick2, {arg val, num, chan, src;
 ~pitch_temp = 1; //0.95;
 ~rhythm_temp = 1;
 ~timing_temp = 0.2;
-~min_time = 0.015;
+~min_time = 0;//0.015;
 ~max_time = nil;
 ~velocity_temp = 0;
 ~include_pitch = nil;
@@ -278,7 +278,7 @@ MIDIdef.cc(\stick2, {arg val, num, chan, src;
 // Routine{5.sleep; ~gate = true}.play;
 )
 
-~budget = -inf;
+~budget = inf;
 ~gate = true;
 Routine{~input.noteOnFn.(99, 35, 1); 0.2.sleep; ~input.noteOffFn.(0, 35, 1)}.play;
 // ~noto.query(\handle, nil, *~noto.globalArgs);

@@ -1,30 +1,26 @@
-import asyncio
+import functools as ft
 
 import mido
 
-# not sure why this didn't work in MIDI class.
-async def midi_coroutine(self):
-    while True:
-        for port_name, port in self.in_ports.items():
-            # print(port_name, port)
-            for m in port.iter_pending():
-                # print(port_name, m)
-                for filters, f in self.handlers:
-                    use_handler = (
-                        'port' not in filters or port_name in filters.pop('port'))
-                    use_handler &= all(
-                        filt is None 
-                        or not hasattr(m, k)
-                        or getattr(m, k) in filt
-                        for k,filt in filters.items())
-                    if use_handler: f(m)
-                    # print([(
-                    #     filt is None,
-                    #     not hasattr(m, k),
-                    #     getattr(m, k) in filt, k, filt)
-                    #     for k,filt in filters.items()])
+# # not sure why this didn't work in MIDI class.
+# async def midi_coroutine(self):
+#     while True:
+#         for port_name, port in self.in_ports.items():
+#             # print(port_name, port)
+#             for msg in port.iter_pending():
+#                 # print(port_name, m)
+#                 for filters, f in self.handlers:
+#                     use_handler = (
+#                         'port' not in filters 
+#                         or port_name in filters.pop('port'))
+#                     use_handler &= all(
+#                         filt is None 
+#                         or not hasattr(msg, k)
+#                         or getattr(msg, k) in filt
+#                         for k,filt in filters.items())
+#                     if use_handler: f(msg)
 
-        await asyncio.sleep(self.sleep_time)
+#         await asyncio.sleep(self.sleep_time)
 
 def _get_filter(item):
     if item is None:
@@ -35,13 +31,30 @@ def _get_filter(item):
 
 class MIDI:
     """"""
+    @classmethod
+    def print_ports(cls):
+        print('Available MIDI inputs:')
+        for s in mido.get_input_names():
+            print(f'\t{s}')
+        print('Available MIDI outputs:')
+        for s in mido.get_output_names():
+            print(f'\t{s}')
+        MIDI.ports_printed = True
+
     instances = []
+    ports_printed = False
+
     def __init__(self, in_ports=None, out_ports=None, verbose=True, sleep_time=0.0005):
         """
         Args:
             in_ports: list of input devices (uses all by default)
             out_ports: list of output devices (uses all by default)
         """
+        if not MIDI.ports_printed and verbose:
+            MIDI.print_ports()
+
+        self.running = False
+
         self.verbose = verbose
         self.sleep_time = sleep_time
         # type -> list[Optional[set[port], Optional[set[channel]], function]
@@ -50,7 +63,7 @@ class MIDI:
         if in_ports is None or len(in_ports)==0:
             in_ports = mido.get_input_names()  
         self.in_ports = {# mido.ports.MultiPort([
-            port: mido.open_input(port)#, callback=self.get_midi_callback())
+            port: mido.open_input(port, callback=self.get_callback(port))
             for port in in_ports
         }
 
@@ -69,6 +82,10 @@ class MIDI:
 
         # self.handle = MIDIHandlers(self)
         MIDI.instances.append(self)
+
+    def start(self):
+        self.running = True
+
 
     def handle(self, *a, **kw):
         """MIDI handler decorator"""
@@ -96,6 +113,23 @@ class MIDI:
         
         return decorator if f is None else decorator(f)
 
+    def get_callback(self, port_name):
+        # print(port_name)
+        def callback(msg):
+            if not self.running:
+                return
+            for filters, f in self.handlers:
+                use_handler = (
+                    'port' not in filters 
+                    or port_name in filters.pop('port'))
+                use_handler &= all(
+                    filt is None 
+                    or not hasattr(msg, k)
+                    or getattr(msg, k) in filt
+                    for k,filt in filters.items())
+                if use_handler: f(msg)
+        return callback
+
     def _send_msg(self, port, m):
         """send on a specific port or all output ports"""
         ports = self.out_ports.values() if port is None else [self.out_ports[port]]
@@ -115,6 +149,16 @@ class MIDI:
                 self._send_msg(port, mido.Message(m, *a, **kw))
             except Exception:
                 print('MIDI send failed: bad arguments to mido.Message')
+                raise
         else:
             print('MIDI send failed: first argument should be a mido.Message or str')
+
+    def __getattr__(self, name):
+        if name=='cc': name = 'control_change'
+        if name=='pc': name = 'program_change'
+        if name in (
+            'note_on', 'note_off', 'cc', 'polytouch', 'control_change', 
+            'program_change', 'aftertouch', 'pitchwheel', 'sysex'):
+            return lambda *a, **kw: self.send(name, *a, **kw)
+        
 

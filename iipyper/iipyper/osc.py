@@ -1,9 +1,11 @@
 from typing import Tuple
 import time
 import json
+from threading import Thread
 
 from pythonosc import osc_packet
-from pythonosc.osc_server import AsyncIOOSCUDPServer
+# from pythonosc.osc_server import AsyncIOOSCUDPServer
+from pythonosc.osc_server import BlockingOSCUDPServer, ThreadingOSCUDPServer
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.udp_client import SimpleUDPClient
 
@@ -59,7 +61,8 @@ class OSC():
     TODO: Allow multiple servers and clients
     """
     instances = []
-    def __init__(self, host="127.0.0.1", port=9999, verbose=True):
+    def __init__(self, host="127.0.0.1", port=9999, verbose=True,
+         concurrent=False):
         """
         TODO: Expand to support multiple IPs + ports
 
@@ -67,8 +70,12 @@ class OSC():
             host (str): IP address
             port (int): port to receive on
             verbose (bool): whether to print activity
+            concurrent (bool): if True, handle each incoming OSC message on 
+                its own thread. otherwise, incoming OSC is handled serially on 
+                one thread for the whole OSC object.
         """
         self.verbose = verbose
+        self.concurrent = concurrent
         self.host = host
         self.port = port
         self.dispatcher = Dispatcher()
@@ -76,11 +83,9 @@ class OSC():
         self.clients = {} # (host,port) -> client
         self.client_names = {} # (name) -> (host,port)
 
-        # self._pending_handlers = []
-
         OSC.instances.append(self)
 
-    async def create_server(self, event_loop):#, host=None, port=None):
+    def create_server(self):#, host=None, port=None):
         """
         Create the server
         """
@@ -88,25 +93,27 @@ class OSC():
         #     host = self.host
         # if (port is None):
         #     port = self.port
+        cls = ThreadingOSCUDPServer if self.concurrent else BlockingOSCUDPServer
+
         if (self.server is None):
-            self.server = AsyncIOOSCUDPServer(
-                (self.host, self.port), self.dispatcher, event_loop)
-            self.transport, self.protocol = await self.server.create_serve_endpoint()
+            self.server = cls((self.host, self.port), self.dispatcher)
             if self.verbose:
                 print(f"OSC server created {self.host}:{self.port}")
-            # for item in self._pending_handlers:
-                # self.add_handler(*item)
+
+            # start the OSC server on its own thread
+            Thread(target = self.server.serve_forever).start()
+            # self.server.serve_forever()
         else:
             print("OSC server already exists")
 
-    def close_server(self):
-        """
-        Close the server
-        """
-        if (self.server is not None):
-            self.transport.close()
-        else:
-            print("OSC server does not exist")
+    # def close_server(self):
+    #     """
+    #     Close the server
+    #     """
+    #     if (self.server is not None):
+    #         self.transport.close()
+    #     else:
+    #         print("OSC server does not exist")
 
     def add_handler(self, address, handler):
         """
@@ -114,9 +121,6 @@ class OSC():
         """
         # if (self.server is not None):
         self.dispatcher.map(address, handler, needs_reply_address=True)
-        # else:
-            # self._pending_handlers.append((address, handler))
-            # print("OSC server does not exist")
 
     def create_client(self, name, host=None, port=None):
         """
