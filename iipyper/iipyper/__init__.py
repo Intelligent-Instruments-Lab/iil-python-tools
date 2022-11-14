@@ -2,8 +2,11 @@ import fire
 
 from .midi import *
 from .osc import *
+from .lock import _lock
+
 
 from threading import Timer
+
 
 # Audio WIP
 import sounddevice as sd
@@ -22,7 +25,8 @@ def repeat(time):
         # define the task
 
         def g():
-            f()
+            with _lock:
+                f()
             Timer(time, g).start()
 
         # track the coroutine in a global list

@@ -1,27 +1,34 @@
+import time
 import mido
 
 from iipyper import OSC, MIDI, repeat, run, cleanup
 
-def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
+def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello'):
     # loop API:
     # use the @repeat decorator to define functions which run every n seconds
-    @repeat(loop_time)
+    @repeat(repeat_time)
     def _():
-        print(f'looping every {loop_time} sec: "{loop_msg}"')
+        print(f'repeating every {repeat_time} sec: "{repeat_msg}"')
 
     @repeat(1.5)
     def _():
-        print('looping every 1.5 sec')
+        print('repeating every 1.5 sec')
 
     ### MIDI API
     # create a MIDI object
     midi = MIDI()
     # NOTE: you probably will want to specify the MIDI outputs and inputs:
-    # midi = MIDI(out_ports = ['IAC Driver Bus 1'])
+    # midi = MIDI(out_ports=['IAC Driver Bus 1'])
 
     # # decorator to make a midi handler:
     # # here filtering for type='note_on', note > 0, channel = 0
     @midi.handle(type='note_on', note=range(1,128), channel=0)
+    def _(msg):
+        print(msg)
+        # time.sleep(0.2)
+        # print('end of sleep\n')
+
+    @midi.handle(type='control_change')
     def _(msg):
         print(msg)
 
@@ -33,7 +40,9 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
 
     @repeat(1)
     def _():
+        # print('sending note on')
         midi.note_on(note=60, velocity=100, channel=0)
+        # print('sending cc')
         midi.cc(control=0, value=127, channel=1)
 
     # NOTE: by default, iipyper sends and receives on all MIDI ports -- 

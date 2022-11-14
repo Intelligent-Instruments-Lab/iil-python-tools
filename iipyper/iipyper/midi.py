@@ -2,6 +2,8 @@ import functools as ft
 
 import mido
 
+from .lock import _lock
+
 # # not sure why this didn't work in MIDI class.
 # async def midi_coroutine(self):
 #     while True:
@@ -34,10 +36,10 @@ class MIDI:
     @classmethod
     def print_ports(cls):
         print('Available MIDI inputs:')
-        for s in mido.get_input_names():
+        for s in set(mido.get_input_names()):
             print(f'\t{s}')
         print('Available MIDI outputs:')
-        for s in mido.get_output_names():
+        for s in set(mido.get_output_names()):
             print(f'\t{s}')
         MIDI.ports_printed = True
 
@@ -61,7 +63,7 @@ class MIDI:
         self.handlers = []
 
         if in_ports is None or len(in_ports)==0:
-            in_ports = mido.get_input_names()  
+            in_ports = set(mido.get_input_names())  
         self.in_ports = {# mido.ports.MultiPort([
             port: mido.open_input(port, callback=self.get_callback(port))
             for port in in_ports
@@ -71,7 +73,7 @@ class MIDI:
             print(f"""opened MIDI input ports: {list(self.in_ports)}""")
 
         if out_ports is None or len(out_ports)==0:
-            out_ports = mido.get_output_names()  
+            out_ports = set(mido.get_output_names())  
         self.out_ports = {# mido.ports.MultiPort([
             port: mido.open_output(port)
             for port in out_ports
@@ -85,7 +87,6 @@ class MIDI:
 
     def start(self):
         self.running = True
-
 
     def handle(self, *a, **kw):
         """MIDI handler decorator"""
@@ -116,6 +117,7 @@ class MIDI:
     def get_callback(self, port_name):
         # print(port_name)
         def callback(msg):
+            print(f'{msg=}')
             if not self.running:
                 return
             for filters, f in self.handlers:
@@ -127,7 +129,9 @@ class MIDI:
                     or not hasattr(msg, k)
                     or getattr(msg, k) in filt
                     for k,filt in filters.items())
-                if use_handler: f(msg)
+                if use_handler:
+                    with _lock:
+                        f(msg)
         return callback
 
     def _send_msg(self, port, m):

@@ -9,6 +9,8 @@ from pythonosc.osc_server import BlockingOSCUDPServer, ThreadingOSCUDPServer
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.udp_client import SimpleUDPClient
 
+from .lock import _lock
+
 # leaving this here for now. seems like it may not be useful since nested bundles
 # do not appear to work in sclang.
 # class BundleDispatcher(Dispatcher):
@@ -57,8 +59,7 @@ class OSC():
     """
     TODO: Handshake between server and clients
     TODO: Polling clients after handshake
-    TODO: Enqueuing and buffering messages
-    TODO: Allow multiple servers and clients
+    TODO: Enqueuing and buffering messages (?)
     """
     instances = []
     def __init__(self, host="127.0.0.1", port=9999, verbose=True,
@@ -225,7 +226,9 @@ class OSC():
                     args = []
                 else:
                     kwargs = {}
-                r = f(address, *args, **kwargs)
+                    
+                with _lock:
+                    r = f(address, *args, **kwargs)
                 # if there was a return value,
                 # send it as a message back to the sender
                 if r is not None:
