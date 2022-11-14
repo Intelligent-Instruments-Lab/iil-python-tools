@@ -1,11 +1,12 @@
+from threading import Timer
+import time
+
 import fire
 
 from .midi import *
 from .osc import *
-from .lock import _lock
+from .state import _lock
 
-
-from threading import Timer
 
 
 # Audio WIP
@@ -16,21 +17,58 @@ class Audio:
         self.stream = sd.InputStream(*a, **kw) # TODO
         Audio.instances.append(self)
 
-_repeat_timers = []
+_repeat_threads = []
 # decorator to make a function loop
-def repeat(time):
+# def repeat(interval):
+#     """@repeat decorator"""
+#     # close the decorator over time argument
+#     def decorator(f):
+#         def g():
+#             t = time.monotonic_ns()
+#             # with _lock:
+#             f()
+#             dt = (time.monotonic_ns() - t)/1e9
+#             wait_time = interval - dt
+#             if wait_time < 0:
+#                 print(f'late {-wait_time*1e3} ms')
+#                 wait_time = 0
+#             print(f'{wait_time=}')
+#             print(f'{dt=}')
+#             tt = time.monotonic()
+#             Timer(wait_time, g).start()
+#             dtt = (time.monotonic_ns() - tt)/1e6
+#             print(dtt)
+
+#         # track the coroutine in a global list
+#         _repeat_timers.append(Timer(interval, g))
+
+class Clock:
+    def __init__(self):
+        self.begin = time.perf_counter()
+
+    def tick(self):
+        return int((time.perf_counter() - self.begin)/self.interval)
+
+    def __call__(self, interval):
+        self.interval = interval
+        r = self.tick() + 1
+        while self.tick() < r:
+            time.sleep(5e-4)
+
+#     return decorator
+def repeat(interval):
     """@repeat decorator"""
-    # close the decorator over time argument
+    # close the decorator over interval argument
     def decorator(f):
-        # define the task
-
         def g():
-            with _lock:
+            clock = Clock()
+            while True:
+                # with _lock:
                 f()
-            Timer(time, g).start()
+                clock(interval)
 
-        # track the coroutine in a global list
-        _repeat_timers.append(Timer(time, g))
+        # track the Thread in a global list
+        _repeat_threads.append(Thread(target=g))
 
     return decorator
 
@@ -83,7 +121,7 @@ def run(main=None):
         for midi in MIDI.instances:
             midi.start()
         
-        for t in _repeat_timers:
+        for t in _repeat_threads:
             t.start()
 
     except KeyboardInterrupt:

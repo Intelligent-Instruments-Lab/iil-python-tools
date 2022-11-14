@@ -10,9 +10,15 @@ def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello')
     def _():
         print(f'repeating every {repeat_time} sec: "{repeat_msg}"')
 
-    @repeat(1.5)
-    def _():
-        print('repeating every 1.5 sec')
+    class timer():
+        def __init__(self):
+            self.t = time.monotonic_ns()
+        def __call__(self):
+            new_t = time.monotonic_ns()
+            # print(new_t)
+            print(f'{1e9/(new_t-self.t)} fps')
+            self.t = new_t
+    repeat(1/120)(timer())
 
     ### MIDI API
     # create a MIDI object
@@ -27,6 +33,9 @@ def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello')
         print(msg)
         # time.sleep(0.2)
         # print('end of sleep\n')
+
+        # 200_000 ns = 200 us = .2 ms
+        # 60fps = ~15ms
 
     @midi.handle(type='control_change')
     def _(msg):

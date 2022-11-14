@@ -9,7 +9,7 @@ from pythonosc.osc_server import BlockingOSCUDPServer, ThreadingOSCUDPServer
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.udp_client import SimpleUDPClient
 
-from .lock import _lock
+from .state import _lock
 
 # leaving this here for now. seems like it may not be useful since nested bundles
 # do not appear to work in sclang.
@@ -226,7 +226,7 @@ class OSC():
                     args = []
                 else:
                     kwargs = {}
-                    
+
                 with _lock:
                     r = f(address, *args, **kwargs)
                 # if there was a return value,

@@ -2,7 +2,7 @@ import functools as ft
 
 import mido
 
-from .lock import _lock
+from .state import _lock
 
 # # not sure why this didn't work in MIDI class.
 # async def midi_coroutine(self):
