@@ -5,9 +5,9 @@ import taichi.math as tm
 
 from iipyper import OSC, repeat, run, cleanup, Lag
 
-def main(osc_host='127.0.0.1', osc_port=9999, size=512):
+def main(osc_host='127.0.0.1', osc_port=9999, size=512, verbose=True):
 
-    osc = OSC(osc_host, osc_port)
+    osc = OSC(osc_host, osc_port, verbose=verbose)
     osc.create_client('self', port=osc_port) # uses same host as server
 
     ti.init(arch=ti.gpu)
