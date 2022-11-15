@@ -127,10 +127,5 @@ def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello')
         osc.send('/default_send_test', 'bye')
 
 
-
-# it may be possible to have async/threaded option for both OSC and MIDI?
-# MIDI handlers are threaded in mido and OSC handlers as async in pythonosc.
-# currently MIDI is enqueued and handled async.
-
 if __name__=='__main__':
     run(main)

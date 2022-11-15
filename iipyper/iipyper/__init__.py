@@ -15,6 +15,20 @@ class Audio:
         self.stream = sd.InputStream(*a, **kw) # TODO
         Audio.instances.append(self)
 
+
+class Lag:
+    def __init__(self, coef, val=None):
+        self.coef = coef
+        self.val = val
+
+    def __call__(self, val):
+        if self.val is None:
+            self.val = val
+        else:
+            self.val = self.val*self.coef + val*(1-self.coef)
+        return self.val
+        
+
 class Clock:
     def __init__(self):
         self.begin = time.perf_counter()
@@ -65,7 +79,6 @@ def run(main=None):
 
         for a in Audio.instances:
             a.stream.start()
-
 
     except KeyboardInterrupt:
         for a in Audio.instances:
