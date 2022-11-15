@@ -84,7 +84,8 @@ class OSC():
         self.clients = {} # (host,port) -> client
         self.client_names = {} # (name) -> (host,port)
 
-        OSC.instances.append(self)
+        # OSC.instances.append(self)
+        self.create_server()
 
     def create_server(self):#, host=None, port=None):
         """

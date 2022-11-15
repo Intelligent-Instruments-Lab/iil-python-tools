@@ -43,7 +43,6 @@ class MIDI:
             print(f'\t{s}')
         MIDI.ports_printed = True
 
-    instances = []
     ports_printed = False
 
     def __init__(self, in_ports=None, out_ports=None, verbose=True, sleep_time=0.0005):
@@ -82,8 +81,7 @@ class MIDI:
         if self.verbose:
             print(f"""opened MIDI output ports: {list(self.out_ports)}""")
 
-        # self.handle = MIDIHandlers(self)
-        MIDI.instances.append(self)
+        self.start()
 
     def start(self):
         self.running = True
