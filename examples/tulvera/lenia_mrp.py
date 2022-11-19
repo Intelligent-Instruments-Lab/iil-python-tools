@@ -16,17 +16,7 @@ def main(host="127.0.0.1", port=7563):
     osc = OSC(host, port, verbose=False)
     osc.create_client("mrp", host="127.0.0.1", port=7770)
     mrp = MRP(osc)
-    notes = [
-        24, 29, 31, 
-        36, 41, 43, 
-        48, 53, 55, 
-        60, 65, 67, 
-        72, 77, 79, 
-        84
-    ]
-    mrp.notes_on(notes)
-    # [mrp.note_on(n) for n in notes]
-    [mrp.quality_update(n, 'intensity', 1) for n in notes]
+    mrp.note_on(48)
 
     # @osc.args("/*")
     # def _(address, *args):
@@ -38,9 +28,6 @@ def main(host="127.0.0.1", port=7563):
 
     res = 256
     scatter = 4
-
-    for i,n in enumerate(notes):
-        print('world slice indexes:',res,i,n,int(res*(i/len(notes))))
 
     window = ti.ui.Window("Taichi-Lenia", (res * scatter, res * scatter))
     canvas = window.get_canvas()
@@ -133,10 +120,13 @@ def main(host="127.0.0.1", port=7563):
 
         if not lenia.paused:
             lenia.update()
-            for i,n in enumerate(notes):
-                lenia.slice_world(int(res*(i/len(notes))))
-                world_slice = lenia.world_slice.to_numpy().astype(float)
-                mrp.quality_update(n, 'harmonics_raw', world_slice)
+            # world_slice = [(2.0 * lenia.world_old[int(res/2), i]-1.0) for i in list(range(res))]
+            lenia.slice_world(int(res/2))
+            # world_slice = [lenia.world_slice[i] for i in list(range(res))]
+            world_slice = lenia.world_slice.to_numpy()
+            world_slice = [(2 * float(i) -1) for i in world_slice]
+            # print(type(world_slice[0]))
+            mrp.qualities_update(48, {'harmonics_raw': world_slice})
 
         window.show()
 

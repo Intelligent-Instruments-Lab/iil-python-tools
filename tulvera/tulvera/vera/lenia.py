@@ -76,6 +76,7 @@ class Lenia:
         self.total = ti.field(ti.f32, ())
         self.brush = ti.field(ti.f32, ())
         self.brush[None] = 0.03
+        self.brush_mode = None
 
         # self.kernel_beta = ti.field(ti.f32, self.kernel_rank)
         self.kernel_beta = ti.Vector([1/2, 1, 1/3])
@@ -85,6 +86,8 @@ class Lenia:
         self.world_slice = ti.field(ti.f32, (self.res))
         self.world_save = ti.field(ti.f32, (self.res, self.res))
         self.world_new = ti.field(ti.f32, (self.res, self.res))
+        self.samples = ti.field(ti.f32, (self.res, 8)) # 8 samples
+        self.samples_loc = ti.field(ti.i32, (8)) # x1y1 x2y2
 
         self.kernel = ti.field(ti.f32,
                                (2 * self.max_conv_r, 2 * self.max_conv_r))
@@ -203,20 +206,71 @@ class Lenia:
     def slice_world(self, index: ti.i32):
         for i in ti.ndrange(self.res):
             self.world_slice[i] = self.world_old[index, i]
+    
+    # @ti.kernel
+    # def sample(self, index, shape, pts, show=None):
+    #     match shape:
+    #         case "row":    # x
+    #             self.samples_loc[index] = pts
+    #             for i in ti.ndrange(self.res):
+    #                 self.samples[index, i] = self.world_old[i, pts]
+    #         case "column": # y
+    #             self.samples_loc[index] = pts
+    #             for i in ti.ndrange(self.res):
+    #                 self.samples[index, i] = self.world_old[pts, i]
+    #         # case "point":  # x1, y1
+    #         # case "line":   # x1, y1, x2, y2
+    #         # case "rect":   # x1, y1, x2, y2
+    #         # case "circle": # x1, y1, r
+    #         # case _:
+    #         #     return
+
+
+    # TODO: index slots
+        # save/load world shape
+        # overlay world mode
 
     def save_world(self):
         self.world_save.copy_from(self.world_old)
+        self.render()
 
     def load_world(self):
         self.world_old.copy_from(self.world_save)
+        self.render()
+
+    def set_pause(self, state):
+        if state == 0:
+            self.paused = False
+        elif state == 1:
+            self.paused = True
+        else:
+            print('Bad pause:', f"{state}")
+
+    def set_time(self, time):
+        self.time = time # 1-20
+
+    def set_conv_r(self, conv_r):
+        self.conv_r = conv_r # 5-40
+
+    def set_grow_miu(self, grow_miu):
+        self.grow_miu[None] = grow_miu # 0.01-0.30
+
+    def set_grow_sig(self, grow_sig):
+        self.grow_sig[None] = grow_sig # 0.001-0.030
+
+    def set_brush(self, mode, radius, x, y, show=None):
+        self.brush[None] = radius # 0.01-0.06
+        self.cursor[0] = x # 0-1
+        self.cursor[1] = y # 0-1
+        self.brush_mode = mode
+        # if show is not None:
+        #     lenia.brush_show = show # bool
+        
 
     def init(self):
         self.world_init()
-
         self.kernel_build()
-
         self.kernel_norm(self.kernel)
-
         self.render()
         print(
             "Current parameter: kernel radius:{}, dt:{}, miu:{}, sig:{}, kr:{}, kb:{}"
@@ -229,114 +283,5 @@ class Lenia:
             self.world_update()
             self.world_old.copy_from(self.world_new)
         # print(self.world_old)
-
         # self.paused = not self.paused
         self.render()
-
-
-if __name__ == "__main__":
-
-    res = 256
-    scatter = 4
-
-    window = ti.ui.Window("Taichi-Lenia", (res * scatter, res * scatter))
-    canvas = window.get_canvas()
-    lenia = Taichi_Lenia(res=res,
-                         scatter=scatter,
-                         conv_r=20,
-                         time=10,
-                         miu=0.15,
-                         sig=0.016,
-                         kr=1,
-                         kb=ti.Vector([1]))
-
-    lenia.init()
-
-    while window.running:
-        for e in window.get_events(ti.ui.PRESS):
-            if e.key in [ti.ui.ESCAPE]:
-                exit()
-            elif e.key == 'p':
-                lenia.paused = not lenia.paused
-                print('Pause state:{}'.format(lenia.paused))
-            elif e.key == 'r':
-                lenia.init()
-                print("Reset world")
-            elif e.key == 's':
-                lenia.save_world()
-                print("Saved current world")
-                lenia.render()
-            elif e.key == 'l':
-                lenia.load_world()
-                print("Loaded saved world")
-                lenia.render()
-
-        if window.is_pressed(ti.ui.LMB):
-            lenia.cursor[1] = window.get_cursor_pos()[1]
-            lenia.cursor[0] = window.get_cursor_pos()[0]
-            lenia.draw()
-            lenia.render()
-        elif window.is_pressed(ti.ui.RMB):
-            lenia.cursor[1] = window.get_cursor_pos()[1]
-            lenia.cursor[0] = window.get_cursor_pos()[0]
-            lenia.erase()
-            lenia.render()
-
-        canvas.set_image(lenia.pixels)
-
-        window.GUI.begin("Taichi Lenia", 0.01, 0.01, 0.6, 0.15)
-        window.GUI.text("LB press: draw, RB press clear")
-        window.GUI.text("r : Reset, SPACE : pause")
-        window.GUI.text("S : save, L : load")
-        # lenia.conv_r = window.GUI.slider(
-        #     "Convolution kernel radius",
-        #     lenia.conv_r, 5, 40
-        # )
-        # lenia.time = window.GUI.slider(
-        #     "time step",
-        #     lenia.time, 1, 20
-        # )
-        lenia.grow_miu[None] = window.GUI.slider_float("Growth function miu",
-                                                       lenia.grow_miu[None],
-                                                       0.01, 0.30)
-        lenia.grow_sig[None] = window.GUI.slider_float("Growth function sigma",
-                                                       lenia.grow_sig[None],
-                                                       0.001, 0.0300)
-        lenia.brush[None] = window.GUI.slider_float("Brush radius",
-                                                    lenia.brush[None], 0.01,
-                                                    0.06)
-        window.GUI.end()
-
-        if not lenia.paused:
-            lenia.update()
-
-        window.show()
-
-    # gui = ti.GUI("Lenia", (res*scatter, res*scatter))
-    # lenia = Taichi_Lenia(res=res, scatter=scatter, conv_r=13)
-    # lenia.init()
-
-    # while gui.running:
-    # # for i in range(1000):
-    #     for e in gui.get_events(ti.GUI.PRESS):
-    #         if e.key == ti.GUI.ESCAPE:
-    #             exit()
-    #         elif e.key == ti.GUI.SPACE:
-    #             lenia.paused = not lenia.paused
-    #             print('state:{}'.format(lenia.paused))
-    #         elif e.key == 'r':
-    #             print('Reset')
-    #             lenia.init()
-
-    #     gui.get_event()
-    #     if(gui.is_pressed(ti.GUI.LMB)):
-    #         lenia.cursor[1]=gui.get_cursor_pos()[1]
-    #         lenia.cursor[0]=gui.get_cursor_pos()[0]
-    #         lenia.draw()
-    #         lenia.render()
-
-    #     gui.set_image(lenia.pixels)
-
-    #     if not lenia.paused:
-    #         lenia.update()
-    #     gui.show()
