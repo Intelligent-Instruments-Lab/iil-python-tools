@@ -200,13 +200,14 @@ SynthDef(\mrp, {arg freq=440, vel=1, intensity=0.6, gate=1, brightness=0.8, harm
 	pitchednote = PitchShift.ar(piano, 0.1, pitch.linlin(-1,1, 0.9405369056407, 1.0594630943593), 0, 0.004);
 	lpf = RLPF.ar(pitchednote, freq * brightness.linlin(0,1,1,44), 0.6);
 	dyn = DynKlank.ar(`[{|i|freq*(i+1)}!32, harmonics_raw, {0.1}!32], lpf*0.01);
-	pitchednote = PitchShift.ar(dyn, 0.1, MouseX.kr(0,2), 0, 0.004);
+	//pitchednote = PitchShift.ar(dyn, 0.1, MouseX.kr(0,2), 0, 0.004);
 	env = EnvGen.ar(Env.adsr(vel.linlin(0, 127, 3, 0.00000001), 0.3, 0.88, 1), gate, doneAction:2);
 	Out.ar(0, Pan2.ar(dyn*env*intensity, 0));
 }).add;
 
 			/*
-a =	Synth(\mrp, [\freq, 33.midicps, \vel, 1, \intensity, 1]);
+
+a =	Synth(\mrp, [\freq, 60.midicps, \vel, 1, \intensity, 1]);
 
 a.set(\brightness, 0.1)
 a.set(\intensity, 2)
@@ -216,6 +217,7 @@ a.set(\harmonics_raw, {[1,0].wchoose([0.2, 0.8])}!32)
 a.set(\pitch, -1)
 a.set(\pitch, 0)
 a.set(\pitch, 1)
+a =	Synth(\mrp, [\freq, 59.midicps, \vel, 1, \intensity, 1]);
 
 
 a =		Synth(\mrp, [\freq, 33.midicps, \vel, 1, \intensity, 1]);
