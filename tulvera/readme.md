@@ -6,6 +6,8 @@ Tulvera = number being
 
 Part of the Agential Scores project https://iil.is/research/agential-scores
 
+Demo videos: https://www.youtube.com/playlist?list=PL8bdQleKUA1vNez5gw-pfQB21Q1-vHn3x
+
 ## 'Beings'
 
 For now, the `verur` (beings) are under their own namespace:

@@ -9,7 +9,7 @@ See Setup below for how to install these.
     - notochord: package source code
     - scripts: helper scripts for training, data preprocessing etc
 - mrp: interface to [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html)
-- tulvera: an experimental artificial life simulator for agential musical instruments
+- tulvera: an experimental artificial life simulator for agential musical instruments, see [readme](https://github.com/Intelligent-Instruments-Lab/iil-python-tools/blob/master/tulvera/readme.md) for more details
 
 ## Examples
 
