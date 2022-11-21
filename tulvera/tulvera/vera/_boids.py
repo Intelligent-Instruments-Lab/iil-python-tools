@@ -92,13 +92,14 @@ def main():
     canvas = window.get_canvas()
     while window.running:
         boids.update()
-        # update(boids) # jurigged
+        update(boids) # jurigged
         canvas.set_image(boids.world.to_numpy().astype(np.uint8))
         window.show()
 
 # `jurigged -v tulvera/tulvera/vera/_boids.py`
-# def update(b):
-#     b.max_speed[None] = 10.0
+def update(b):
+    pass
+    # b.max_speed[None] = 10.0
 
 if __name__ == '__main__':
     main()

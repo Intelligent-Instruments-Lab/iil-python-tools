@@ -23,14 +23,14 @@ def gui_loop(d=0.5, i=0):
 
 @swim
 def param_loop(d=16, i=0):
-    boids.vis_radius[None] = P('40.0,80.0,150.0',i)
-    # boids.max_speed[None] = P('1.0,2.0,3.0',i)
-    boids.max_speed[None] = P('2*sin($/2)')
+    boids.vis_radius[None] = P('100*cos($/3)')
+    boids.dt[None]         = P('2*cos($/5)')
+    boids.max_speed[None]  = P('2*sin($/2)')
     a(param_loop, d=8, i=i+1)
 
 hush()
 
-boids.dt[None]           = 0.5
-boids.vis_radius[None]   = 100.0
-boids.max_speed[None]    = 10.0
+boids.dt[None]           = 1
+boids.vis_radius[None]   = 40.0
+boids.max_speed[None]    = 3.0
 boids.boids_radius[None] = 2
