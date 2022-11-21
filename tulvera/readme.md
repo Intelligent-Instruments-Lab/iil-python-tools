@@ -1,8 +1,8 @@
 # Tulvera
 
-Tölvu = computer, from tala (number) + völva (prophetess)
-Vera = being
-Tulvera = number being
+- Tölvu = computer, from tala (number) + völva (prophetess)
+- Vera = being
+- Tulvera = number being
 
 Part of the Agential Scores project https://iil.is/research/agential-scores
 
@@ -33,15 +33,15 @@ See individual source files for code credits.
 
 ## Install
 
+Like all packages in this repository, this one shares a `conda` environment with the rest of `iil-python-tools`:
+
 ```py
+git clone git@github.com:Intelligent-Instruments-Lab/iil-python-tools.git
+cd iil-python-tools
 conda env create -f environment.yml
 conda activate iil-python-tools
 pip install -e tulvera
 ```
-
-Live coding can be achieved via:
-- [sardine](https://github.com/Bubobubobubobubo/sardine)
-- [jurigged](https://github.com/breuleux/jurigged)
 
 ## Usage
 
@@ -56,7 +56,14 @@ python -m tulvera help # list of possible examples
 python -m tulvera boids # display the Boids example
 ```
 
-### Live coding with `sardine`
+### Live coding 
+
+Live coding can be achieved via:
+- [Sardine](https://github.com/Bubobubobubobubo/sardine)
+- Via custom OSC protocols connecting to your live coding tool of choice.
+- [jurigged](https://github.com/breuleux/jurigged)
+
+#### via Sardine
 
 - Create a `@swim` function to act as a `taichi.ui.Window` loop with a sufficiently high repeat rate, e.g.:
 ```py
@@ -77,7 +84,15 @@ def param_loop(d=16, i=0):
     a(param_loop, d=8, i=i+1)
 ```
 
-### Live coding with `jurigged`
+#### via OSC 
+
+TidalCycles live coding over OSC example:
+
+- Setup a `gui_loop` using Sardine as above, or using `iipyper`, or other event loop of choice.
+- Create a Tidal OSCTarget for your needs. See `examples/tulvera/tidal/Lenia.hs` for an example.
+- Create OSC handlers in Python via Sardine/`iipyper`/etc. See `examples/tulvera/lenia_iipyper_tidal.py` or `examples/tulvera/lenia_sardine.py`.
+
+#### via `jurigged`
 
 - In the module source file, create a function that will be called inside `while window.running`, for example:
 
@@ -104,7 +119,7 @@ Now when the file is modified and saved, whatever is inside `update()` will be u
 
 ### OSC in/out
 
-TBC.
+See Sardine and `iipyper` examples.
 
 ## Roadmap
 
