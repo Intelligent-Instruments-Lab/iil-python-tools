@@ -27,9 +27,10 @@ class Physarum:
         self.move_step[None]      = move_step
         self.step_per_frame[None] = step_per_frame
         self.i = 0
+        # TODO: is it preferable to allocate these in `init`?
         self.world = ti.field(dtype=ti.f32, shape=[2, self.grid_size, self.grid_size])
         self.position = ti.Vector.field(2, dtype=ti.f32, shape=[self.particle_n])
-        self.heading = ti.field(dtype=ti.f32, shape=[self.particle_n])
+        self.angle = ti.field(dtype=ti.f32, shape=[self.particle_n])
         self.init()
 
     @ti.kernel
@@ -38,7 +39,7 @@ class Physarum:
             self.world[p] = 0.0
         for i in self.position:
             self.position[i] = ti.Vector([ti.random(), ti.random()]) * self.grid_size
-            self.heading[i] = ti.random() * np.pi * 2.0
+            self.angle[i] = ti.random() * np.pi * 2.0
 
     @ti.func
     def sense(self, phase, pos, ang):
@@ -49,7 +50,7 @@ class Physarum:
     def step(self, phase: ti.i32):
         # move
         for i in self.position:
-            pos, ang = self.position[i], self.heading[i]
+            pos, ang = self.position[i], self.angle[i]
             l = self.sense(phase, pos, ang - self.sense_angle[None])
             c = self.sense(phase, pos, ang)
             r = self.sense(phase, pos, ang + self.sense_angle[None])
@@ -60,7 +61,7 @@ class Physarum:
             elif c < l and c < r:
                 ang += self.move_angle[None] * (2 * (ti.random() < 0.5) - 1)
             pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) * self.move_step[None]
-            self.position[i], self.heading[i] = pos, ang
+            self.position[i], self.angle[i] = pos, ang
 
         # deposit
         for i in self.position:

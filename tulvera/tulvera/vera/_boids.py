@@ -26,6 +26,7 @@ class Boids:
         self.max_speed[None]    = max_speed
         self.boids_radius[None] = boids_radius
         self.bg_color = 255
+        # TODO: is it preferable to allocate these in `init`?
         self.boids_pos = ti.Vector.field(2, dtype=ti.f32, shape=(self.boids_size))
         self.boids_velocity = ti.Vector.field(2, dtype=ti.f32, shape=(self.boids_size))
         self.world = ti.Vector.field(3, dtype=ti.i32, shape=(self.resx, self.resy))
