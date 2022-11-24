@@ -7,15 +7,17 @@ ti.init(arch=ti.vulkan)
 x=1920
 y=1080
 n=1024
-# world = tul.World(x, y, n)
-window = ti.ui.Window("Boids", (x, y))
-canvas = window.get_canvas()
+c.bpm = 250
+c.link()
+world = tul.World(x, y, n)
+# window = ti.ui.Window("World", (x, y))
+# canvas = window.get_canvas()
 
 @swim
 def gui_loop(d=0.5, i=0):
     world.process()
-    canvas.set_image(world.boids.world.to_numpy().astype(np.uint8))
-    window.show()
+    # world.canvas.set_image(world.boids.world.to_numpy()[0])
+    world.window.show()
     a(gui_loop, d=1/16, i=i+1)
 
 # world.pause()

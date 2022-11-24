@@ -2,9 +2,8 @@ import sys
 import taichi as ti
 
 from tulvera.vera._boids import main as boids
-from tulvera.vera._boids_p import main as boids_p
 from tulvera.vera._physarum import main as physarum
-from tulvera.vera._physarum_p import main as physarum_p
+from tulvera.tulvera import main as world
 
 def help():
     print("""
@@ -20,12 +19,10 @@ if __name__=='__main__':
         match sys.argv[1]:
             case 'boids':
                 boids()
-            case 'boids_p':
-                boids_p()
             case 'physarum':
                 physarum()
-            case 'physarum_p':
-                physarum_p()
+            case 'world':
+                world()
             case 'help':
                 help()
             case _:

@@ -18,7 +18,7 @@ canvas = window.get_canvas()
 @swim
 def gui_loop(d=0.5, i=0):
     boids.process()
-    canvas.set_image(boids.world.to_numpy().astype(np.uint8))
+    canvas.set_image(boids.world.to_numpy()[0])
     window.show()
     a(gui_loop, d=1/16, i=i+1)
 
@@ -39,6 +39,7 @@ boids.randomise()
 boids.separate[None] = 0
 boids.align[None]    = 1
 boids.cohere[None]   = 1
-boids.dt[None]     = 1
+boids.dt[None]     = 2
 boids.radius[None] = 40.0
 boids.speed[None]  = 3.0
+

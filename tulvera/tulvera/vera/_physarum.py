@@ -1,59 +1,61 @@
 import numpy as np
 import taichi as ti
+import numpy as np
+
+from tulvera.vera._particle import Particles
 
 @ti.data_oriented
-class Physarum:
-    def __init__(self, 
-                 size=512, 
+class Physarum(Particles):
+    def __init__(self,
+                 x=1024,
+                 y=1024,
                  n=1024,
                  sense_angle=0.20 * np.pi,
                  sense_dist=4.0,
-                 evaporation=0.95,
+                 evaporation=0.97,
                  move_angle=0.1 * np.pi,
                  move_step=2.0,
-                 step_per_frame=10):
-        self.particle_n = n
-        self.grid_size = size
-        self.sense_angle    = ti.field(ti.f32, ())
-        self.sense_dist     = ti.field(ti.f32, ())
-        self.evaporation    = ti.field(ti.f32, ())
-        self.move_angle     = ti.field(ti.f32, ())
-        self.move_step      = ti.field(ti.f32, ())
-        self.step_per_frame = ti.field(ti.i32, ())
-        self.sense_angle[None]    = sense_angle
-        self.sense_dist[None]     = sense_dist
-        self.evaporation[None]    = evaporation
-        self.move_angle[None]     = move_angle
-        self.move_step[None]      = move_step
-        self.step_per_frame[None] = step_per_frame
-        self.i = 0
-        # TODO: is it preferable to allocate these in `init`?
-        self.world = ti.field(dtype=ti.f32, shape=[2, self.grid_size, self.grid_size])
-        self.position = ti.Vector.field(2, dtype=ti.f32, shape=[self.particle_n])
-        self.angle = ti.field(dtype=ti.f32, shape=[self.particle_n])
-        self.init()
+                 substep=8):
+        super().__init__(x, y, n)
+        self._ang = ti.field(dtype=ti.f32, shape=(self._n))
+        self._i = 0
+        self.world = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
+        # self._world = ti.Vector.field(1, dtype=ti.f32, shape=(self._x, self._y))
+        self.sense_angle = ti.field(ti.f32, ())
+        self.sense_dist  = ti.field(ti.f32, ())
+        self.evaporation = ti.field(ti.f32, ())
+        self.move_angle  = ti.field(ti.f32, ())
+        self.move_step   = ti.field(ti.f32, ())
+        self.substep     = ti.field(ti.i32, ())
+        self.sense_angle[None] = sense_angle
+        self.sense_dist[None]  = sense_dist
+        self.evaporation[None] = evaporation
+        self.move_angle[None]  = move_angle
+        self.move_step[None]   = move_step
+        self.substep[None]     = substep
+        self.randomise()
 
     @ti.kernel
-    def init(self):
-        for p in ti.grouped(self.world):
-            self.world[p] = 0.0
-        for i in self.position:
-            self.position[i] = ti.Vector([ti.random(), ti.random()]) * self.grid_size
-            self.angle[i] = ti.random() * np.pi * 2.0
+    def randomise(self):
+        for i in self._pos:
+            self._pos[i] = ti.Vector([ti.random()*self._x, ti.random()*self._y])
+            self._ang[i] = ti.random() * np.pi * 2.0
 
     @ti.func
-    def sense(self, phase, pos, ang):
+    def sense(self, pos, ang):
         p = pos + ti.Vector([ti.cos(ang), ti.sin(ang)]) * self.sense_dist[None]
-        return self.world[phase, p.cast(int) % self.grid_size]
+        px = ti.cast(p[0], ti.i32) % self._x
+        py = ti.cast(p[1], ti.i32) % self._y
+        return self.world[0, px, py]
+        # return self._world[px, py][0]
 
-    @ti.kernel
-    def step(self, phase: ti.i32):
-        # move
-        for i in self.position:
-            pos, ang = self.position[i], self.angle[i]
-            l = self.sense(phase, pos, ang - self.sense_angle[None])
-            c = self.sense(phase, pos, ang)
-            r = self.sense(phase, pos, ang + self.sense_angle[None])
+    @ti.func
+    def move(self):
+        for i in self._pos:
+            pos, ang = self._pos[i], self._ang[i]
+            l = self.sense(pos, ang - self.sense_angle[None])
+            c = self.sense(pos, ang)
+            r = self.sense(pos, ang + self.sense_angle[None])
             if l < c < r:
                 ang += self.move_angle[None]
             elif l > c > r:
@@ -61,44 +63,61 @@ class Physarum:
             elif c < l and c < r:
                 ang += self.move_angle[None] * (2 * (ti.random() < 0.5) - 1)
             pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) * self.move_step[None]
-            self.position[i], self.angle[i] = pos, ang
+            self._pos[i], self._ang[i] = pos, ang
 
-        # deposit
-        for i in self.position:
-            ipos = self.position[i].cast(int) % self.grid_size
-            self.world[phase, ipos] += 1.0
+    @ti.func
+    def deposit(self):
+        for i in self._pos:
+            ipos = self._pos[i].cast(int)
+            iposx = ti.cast(ipos[0], ti.i32) % self._x
+            iposy = ti.cast(ipos[1], ti.i32) % self._y
+            self.world[0, iposx, iposy] += 1.0
+            # self._world[iposx, iposy][0] += 1.0
 
-        # diffuse
-        for i, j in ti.ndrange(self.grid_size, self.grid_size):
+    @ti.func
+    def diffuse(self):
+        for i, j in ti.ndrange(self._x, self._y):
             a = 0.0
             for di in ti.static(range(-1, 2)):
                 for dj in ti.static(range(-1, 2)):
-                    a += self.world[phase, (i + di) % self.grid_size, (j + dj) % self.grid_size]
+                    dx = (i + di) % self._x
+                    dy = (j + dj) % self._y
+                    a += self.world[0, dx, dy]
+                    # a += self._world[dx, dy][0]
             a *= self.evaporation[None] / 9.0
-            self.world[1 - phase, i, j] = a
+            self.world[0, i, j] = a
+            # self._world[i, j][0] = a
 
-    def update(self):
-        for _ in range(int(self.step_per_frame[None])):
-            self.step(self.i % 2)
-            self.i += 1
+    @ti.kernel
+    def step(self):
+        self.move()
+        self.deposit()
+        self.diffuse()
+
+    def process(self):
+        for _ in range(int(self.substep[None])):
+            self.step()
+            self._i += 1
+
+# `jurigged -v tulvera/tulvera/vera/_physarum.py`
+def update(p):
+    pass
+    # p.sense_angle[None] = 0.2 * np.pi
 
 def main():
     ti.init(arch=ti.vulkan)
-    res = 1024
+    x = 1920
+    y = 1080
     n = 2048
-    physarum = Physarum(res, n)
-    window = ti.ui.Window("Physarum", (res, res))
+    physarum = Physarum(x, y, n)
+    physarum.pause = False
+    window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
     while window.running:
-        physarum.update()
-        update(physarum) # jurigged
-        canvas.set_image(physarum.world.to_numpy()[0])
+        physarum.process()
+        # update(physarum) # jurigged
+        canvas.set_image(1-physarum.world.to_numpy()[0])
         window.show()
-
-# `jurigged -v tulvera/tulvera/vera/_physarum.py`
-def update(b):
-    pass
-    # p.sense_angle[None] = 0.2 * np.pi
 
 if __name__ == '__main__':
     main()
