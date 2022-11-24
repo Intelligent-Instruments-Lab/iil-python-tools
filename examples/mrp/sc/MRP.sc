@@ -276,7 +276,8 @@ a.set(\intensity, 0.7)
 
 		win = Window.new("- MRP GUI -", Rect(100, 500, bounds.width+20, bounds.height+10), resizable:false).front;
 		win.alwaysOnTop = true;
-		midikeyboardview = MIDIKeyboard.new(win, Rect(10, 70, 990, 160), 5, 36)
+		// Michael: MIDIKeyboard -> MRPMIDIKeyboard
+		midikeyboardview = MRPMIDIKeyboard.new(win, Rect(10, 70, 990, 160), 5, 36)
 				.keyDownAction_({arg key;
 			        this.noteOn(key, 60);
 	                "Note ON :".post; key.postln;
