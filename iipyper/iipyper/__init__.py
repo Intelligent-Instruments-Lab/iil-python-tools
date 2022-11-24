@@ -1,4 +1,6 @@
 import asyncio
+import functools
+import threading
 
 import fire
 
@@ -6,19 +8,33 @@ from .midi import *
 from .osc import *
 
 _loop_fns = []
-# decorator to make a function loop
-def repeat(time):
+
+def repeat(_time):
+    """
+    decorator to repeat function every 'time' seconds
+    """
     # close the decorator over time argument
     def decorator(f):
         # define the coroutine
-        async def g():
+        @functools.wraps(f)
+        async def g(*args, **kwargs):
             # call `f` every `time` seconds
             while True:
-                f()
-                await asyncio.sleep(time)
+                t1 = time.time()
+                f(*args, **kwargs)
+                t2 = time.time()
+                delta_t = t2 - t1
+                sleep_time = _time - delta_t
+
+                if (sleep_time < 0):
+                    print("Warning: repeat@ sleep time < 0")
+                    await asyncio.sleep(0)
+                else:
+                    await asyncio.sleep(sleep_time)
+
         # track the coroutine in a global list
         _loop_fns.append(g)
-
+        return f
     return decorator
 
 
