@@ -34,31 +34,39 @@ class Boids(Particles):
         self.dt[None]       = dt
         self.radius[None]   = radius
         self.speed[None]    = speed
-        self.randomise()
+        self.init()
 
     @ti.kernel
+    def init(self):
+        self.randomise()
+
+    @ti.func
     def randomise(self):
         for x in range(0, self._n):
             self._pos[x] = ti.Vector([ti.random(ti.f32)*self._x, ti.random(ti.f32)*self._y])
             self._vel[x] = ti.Vector([self.speed[None]*(ti.random(ti.f32)-0.5), self.speed[None]*(ti.random(ti.f32)-0.5)])
 
-    @ti.func
+    @ti.kernel
     def move(self):
-        for x in range(self._n):
-            self._pos[x] = self._pos[x] + self.dt[None] * self._vel[x];
-            # TODO: abstract out walls vs wrap? re: membranes
-            if (self._pos[x][0] > self._x): self._pos[x][0] = 1
-            elif (self._pos[x][1] > self._y): self._pos[x][1] = 1
-            elif (self._pos[x][0] < 0): self._pos[x][0] = self._x-1
-            elif (self._pos[x][1] < 0): self._pos[x][1] = self._y-1
+        for n in range(self._n):
+            self._pos[n] = self._pos[n] + self.dt[None] * self._vel[n];
+            # TODO: abstract out walls vs wrap, re: membranes
+            x = self._pos[n][0]
+            y = self._pos[n][1]
+            if   (x > self._x): self._pos[n][0] = 1
+            elif (y > self._y): self._pos[n][1] = 1
+            elif (x < 0):       self._pos[n][0] = self._x-1
+            elif (y < 0):       self._pos[n][1] = self._y-1
 
-    @ti.func
+    @ti.kernel
     def step(self):
         for i in range(self._n):
             separate = ti.Vector([0.,0.])
             align    = ti.Vector([0.,0.])
             cohere   = ti.Vector([0.,0.])
             n = 0
+            # TODO: try to parallelize inner loop? group/template return types?
+            # TODO: neighbour search should wrap around
             for j in range(self._n):
                 if i!=j:
                     dis = self._pos[i] - self._pos[j]
@@ -77,12 +85,12 @@ class Boids(Particles):
                 if self._vel[i].norm() > self.speed[None]:
                     self._vel[i] = self._vel[i].normalized()*self.speed[None]
 
-    @ti.func
+    @ti.kernel
     def raster(self):
         rad = 2
         for i,j in ti.ndrange((0, self._x),(0, self._y)):
             # self.world[i, j] = ti.Vector([255,255,255])
-            self.world[0, i, j] = 255
+            self.world[0, i, j] = 0.0
         for i in range(self._n):
             xi = ti.cast(self._pos[i][0], ti.i32) - rad
             xj = ti.cast(self._pos[i][0], ti.i32) + rad
@@ -90,20 +98,24 @@ class Boids(Particles):
             yj = ti.cast(self._pos[i][1], ti.i32) + rad
             for x in range(xi, xj):
                 for y in range(yi, yj):
-                    # self.world[x, y] = ti.Vector([
-                    #     255-ti.cast(self._vel[i][1]*255, ti.i32),
-                    #     255-ti.cast(self._vel[i].norm()*255, ti.i32),
-                    #     255-ti.cast(self._vel[i][0]*255, ti.i32)])
-                    self.world[0, x, y] = 0#ti.cast(((3+self._vel[i][1])/6)*64, ti.i32)
+                    # _x = self._vel[i][0]
+                    # _y = self._vel[i][1]
+                    # avg = (_x+_y)/2
+                    # scaled = (3+avg)/6
+                    # self.world[0, x, y] = 1-scaled
+                    self.world[0, x, y] = 1.0
+    
+    def get_image(self):
+        return self.world.to_numpy()[0]
 
-    @ti.kernel
     def process(self):
         if self.pause == False:
             self.step()
             self.move()
             self.raster()
+        return self.get_image()
 
-# `jurigged -v tulvera/tulvera/vera/_boids_p.py`
+# `jurigged -v tulvera/tulvera/vera/_boids.py`
 def update(b):
     # b.separate[None] = separate
     # b.align[None]    = align
@@ -118,13 +130,11 @@ def main():
     y = 1080
     n = 4096
     boids = Boids(x, y, n)
-    boids.pause = False
     window = ti.ui.Window("Boids", (x, y))
     canvas = window.get_canvas()
     while window.running:
-        boids.process()
         # update(boids) # jurigged: costs 10fps
-        canvas.set_image(boids.world.to_numpy()[0])
+        canvas.set_image(boids.process())
         window.show()
 
 if __name__ == '__main__':

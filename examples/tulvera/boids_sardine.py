@@ -7,30 +7,37 @@ import tulvera as tul
 ti.init(arch=ti.vulkan)
 c.bpm = 250
 c.link()
-resx = 1920
-resy = 1080
+x = 1920
+y = 1080
 n = 8192
-boids = tul.vera.Boids(resx, resy, n)
-window = ti.ui.Window("Boids", (resx, resy))
+boids = tul.vera.Boids(x, y, n)
+window = ti.ui.Window("Boids", (x, y))
 canvas = window.get_canvas()
 
 @swim
 def gui_loop(d=0.5, i=0):
-    boids.update()
-    canvas.set_image(boids.world.to_numpy().astype(np.uint8))
+    canvas.set_image(1-boids.process())
     window.show()
     a(gui_loop, d=1/16, i=i+1)
 
 @swim
 def param_loop(d=16, i=0):
-    boids.vis_radius[None] = P('100*cos($/3)')
-    boids.dt[None]         = P('2*cos($/5)')
-    boids.max_speed[None]  = P('2*sin($/2)')
-    a(param_loop, d=8, i=i+1)
+    boids.radius[None] = P('50*cos($/3)')
+    boids.dt[None]     = P('2*cos($/9)')
+    boids.speed[None]  = P('2*sin($/7)')
+    boids.separate[None] = P('0.5+0.5*sin($/5)')
+    boids.align[None]    = P('0.5+0.5*cos($/3)')
+    boids.cohere[None]   = P('0.5+0.5*sin($/4)')
+    a(param_loop, d=1, i=i+1)
 
-hush()
+hush(param_loop)
 
-boids.dt[None]           = 1
-boids.vis_radius[None]   = 40.0
-boids.max_speed[None]    = 3.0
-boids.boids_radius[None] = 2
+boids.randomise()
+
+boids.separate[None] = 0
+boids.align[None]    = 1
+boids.cohere[None]   = 1
+boids.dt[None]     = 2
+boids.radius[None] = 40.0
+boids.speed[None]  = 3.0
+

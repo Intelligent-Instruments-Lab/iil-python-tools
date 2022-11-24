@@ -12,8 +12,13 @@ class World:
                  x=1024,
                  y=1024,
                  n=1024):
+        # TODO: n for each Particle vera?
+        self._x = x
+        self._y = y
+        self._n = n
         self.boids = Boids(x, y, n)
         self.physarum = Physarum(x, y, n)
+        self.rea_diff = ReactionDiffusion(x, y)
         self.window = ti.ui.Window("Tulvera", (x, y))
         self.canvas = self.window.get_canvas()
         self.init()
@@ -22,14 +27,27 @@ class World:
     def init(self):
         self.pause(False)
 
-    def process(self):
-        self.boids.process()
-        self.physarum.process()
-        self.canvas.set_image(self.boids.world.to_numpy()[0])
-
     def pause(self, val):
         self.boids.pause = val
         self.physarum.pause = val
+
+    def speed(self, val):
+        self.boids.dt[None] = val
+        self.physarum.move_step[None] = ti.cast(val*10, ti.i32)
+        # self.physarum.substep[None] = ti.cast(val*10, ti.i32)
+
+    def interact(self):
+        self.physarum.deposit(self.boids._pos)
+
+    def process(self):
+        self.interact()
+        self.boids.process()
+        self.rea_diff.process()
+        self.canvas.set_image(1-self.physarum.process())
+
+    def reset(self):
+        self.boids.init()
+        self.physarum.init()
     
     def cleanup():
         pass
@@ -40,12 +58,9 @@ def main():
     y = 1080
     n = 4096
     world = World(x, y, n)
-    # window = ti.ui.Window("World", (x, y))
-    # canvas = window.get_canvas()
+    world.reset()
     while world.window.running:
         world.process()
-        # update(boids) # jurigged: costs 10fps
-        # world.canvas.set_image(world.boids.world.to_numpy()[0])
         world.window.show()
 
 if __name__ == '__main__':

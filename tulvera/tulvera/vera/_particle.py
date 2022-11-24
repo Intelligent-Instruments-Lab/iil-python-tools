@@ -19,7 +19,7 @@ class Particles:
         self._y = y
         self._n = n
         self._pos = ti.Vector.field(2, dtype=ti.f32, shape=(self._n))
-        self.pause = True
+        self.pause = False
 
     # @ti.kernel
     # def _process(self):

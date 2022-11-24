@@ -20,7 +20,6 @@ class Physarum(Particles):
         self._ang = ti.field(dtype=ti.f32, shape=(self._n))
         self._i = 0
         self.world = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
-        # self._world = ti.Vector.field(1, dtype=ti.f32, shape=(self._x, self._y))
         self.sense_angle = ti.field(ti.f32, ())
         self.sense_dist  = ti.field(ti.f32, ())
         self.evaporation = ti.field(ti.f32, ())
@@ -33,9 +32,13 @@ class Physarum(Particles):
         self.move_angle[None]  = move_angle
         self.move_step[None]   = move_step
         self.substep[None]     = substep
-        self.randomise()
+        self.init()
 
     @ti.kernel
+    def init(self):
+        self.randomise()
+
+    @ti.func
     def randomise(self):
         for i in self._pos:
             self._pos[i] = ti.Vector([ti.random()*self._x, ti.random()*self._y])
@@ -47,9 +50,8 @@ class Physarum(Particles):
         px = ti.cast(p[0], ti.i32) % self._x
         py = ti.cast(p[1], ti.i32) % self._y
         return self.world[0, px, py]
-        # return self._world[px, py][0]
 
-    @ti.func
+    @ti.kernel
     def move(self):
         for i in self._pos:
             pos, ang = self._pos[i], self._ang[i]
@@ -65,16 +67,21 @@ class Physarum(Particles):
             pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) * self.move_step[None]
             self._pos[i], self._ang[i] = pos, ang
 
-    @ti.func
-    def deposit(self):
-        for i in self._pos:
-            ipos = self._pos[i].cast(int)
-            iposx = ti.cast(ipos[0], ti.i32) % self._x
-            iposy = ti.cast(ipos[1], ti.i32) % self._y
-            self.world[0, iposx, iposy] += 1.0
-            # self._world[iposx, iposy][0] += 1.0
+    # @ti.kernel
+    # def deposit(self):
+    #     for i in self._pos:
+    #         iposx = ti.cast(self._pos[i][0], ti.i32) % self._x
+    #         iposy = ti.cast(self._pos[i][1], ti.i32) % self._y
+    #         self.world[0, iposx, iposy] += 1.0
 
-    @ti.func
+    @ti.kernel
+    def deposit(self, _pos: ti.template()):
+        for i in _pos:
+            iposx = ti.cast(_pos[i][0], ti.i32) % self._x
+            iposy = ti.cast(_pos[i][1], ti.i32) % self._y
+            self.world[0, iposx, iposy] += 1.0
+
+    @ti.kernel
     def diffuse(self):
         for i, j in ti.ndrange(self._x, self._y):
             a = 0.0
@@ -83,21 +90,23 @@ class Physarum(Particles):
                     dx = (i + di) % self._x
                     dy = (j + dj) % self._y
                     a += self.world[0, dx, dy]
-                    # a += self._world[dx, dy][0]
             a *= self.evaporation[None] / 9.0
             self.world[0, i, j] = a
-            # self._world[i, j][0] = a
 
-    @ti.kernel
     def step(self):
         self.move()
-        self.deposit()
+        self.deposit(self._pos)
         self.diffuse()
 
+    def get_image(self):
+        return self.world.to_numpy()[0]
+
     def process(self):
-        for _ in range(int(self.substep[None])):
-            self.step()
-            self._i += 1
+        if self.pause == False:
+            for _ in range(int(self.substep[None])):
+                self.step()
+                self._i += 1
+        return self.get_image()
 
 # `jurigged -v tulvera/tulvera/vera/_physarum.py`
 def update(p):
@@ -114,9 +123,8 @@ def main():
     window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
     while window.running:
-        physarum.process()
         # update(physarum) # jurigged
-        canvas.set_image(1-physarum.world.to_numpy()[0])
+        canvas.set_image(physarum.process())
         window.show()
 
 if __name__ == '__main__':

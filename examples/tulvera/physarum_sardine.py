@@ -7,16 +7,16 @@ import tulvera as tul
 ti.init(arch=ti.vulkan)
 c.bpm = 250
 c.link()
-res = 1024
+x = 1920
+y = 1080
 n = 2048
-physarum = tul.vera.Physarum(res, n)
-window = ti.ui.Window("Physarum", (res, res))
+physarum = tul.vera.Physarum(x, y, n)
+window = ti.ui.Window("Physarum", (x, y))
 canvas = window.get_canvas()
 
 @swim
 def gui_loop(d=0.5, i=0):
-    physarum.update()
-    canvas.set_image(physarum.world.to_numpy()[0])
+    canvas.set_image(1-physarum.process())
     window.show()
     a(gui_loop, d=1/16, i=i+1)
 
