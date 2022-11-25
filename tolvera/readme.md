@@ -1,8 +1,8 @@
-# Tulvera
+# Tölvera
 
 - Tölvu = computer, from tala (number) + völva (prophetess)
 - Vera = being
-- Tulvera = number being
+- Tölvera = number being
 
 Part of the Agential Scores project https://iil.is/research/agential-scores
 
@@ -13,7 +13,7 @@ Demo videos: https://www.youtube.com/playlist?list=PL8bdQleKUA1vNez5gw-pfQB21Q1-
 For now, the `verur` (beings) are under their own namespace:
 
 ```sh
-tulvera
+tolvera
     vera
         boids
         physarum
@@ -23,10 +23,10 @@ tulvera
 So you can do for example:
 
 ```py
->>> import tulvera as tul
+>>> import tolvera as tol
 [Taichi] version 1.2.2, llvm 10.0.0, commit 608e4b57, osx, python 3.10.5
->>> tul.vera.Boids
-<class 'tulvera.vera._boids.Boids'>
+>>> tol.vera.Boids
+<class 'tolvera.vera._boids.Boids'>
 ```
 
 See individual source files for code credits.
@@ -40,20 +40,20 @@ git clone git@github.com:Intelligent-Instruments-Lab/iil-python-tools.git
 cd iil-python-tools
 conda env create -f environment.yml
 conda activate iil-python-tools
-pip install -e tulvera
+pip install -e tolvera
 ```
 
 ## Usage
 
-See `./examples/tulvera/`
+See `./examples/tolvera/`
 
 ### CLI
 
 Running the module directly can display examples:
 
 ```py
-python -m tulvera help # list of possible examples
-python -m tulvera boids # display the Boids example
+python -m tolvera help # list of possible examples
+python -m tolvera boids # display the Boids example
 ```
 
 ### Live coding 
@@ -89,8 +89,8 @@ def param_loop(d=16, i=0):
 TidalCycles live coding over OSC example:
 
 - Setup a `gui_loop` using Sardine as above, or using `iipyper`, or other event loop of choice.
-- Create a Tidal OSCTarget for your needs. See `examples/tulvera/tidal/Lenia.hs` for an example.
-- Create OSC handlers in Python via Sardine/`iipyper`/etc. See `examples/tulvera/lenia_iipyper_tidal.py` or `examples/tulvera/lenia_sardine.py`.
+- Create a Tidal OSCTarget for your needs. See `examples/tolvera/tidal/Lenia.hs` for an example.
+- Create OSC handlers in Python via Sardine/`iipyper`/etc. See `examples/tolvera/lenia_iipyper_tidal.py` or `examples/tolvera/lenia_sardine.py`.
 
 #### via `jurigged`
 

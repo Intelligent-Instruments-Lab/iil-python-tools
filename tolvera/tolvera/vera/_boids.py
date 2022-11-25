@@ -4,7 +4,7 @@ import taichi as ti
 import numpy as np
 import math
 
-from tulvera.vera._particle import Particles
+from tolvera.vera._particle import Particles
 
 @ti.data_oriented
 class Boids(Particles):

@@ -21,17 +21,12 @@ class ReactionDiffusion():
         self._uv = ti.Vector.field(2, ti.f32, shape=(2, self._x, self._y))
         self._uv.from_numpy(self._uv_grid)
         self._palette = ti.Vector.field(4, ti.f32, shape=(5, ))
-        #self._palette[0] = [0, 0, 0, 0]  # [0.0, 0.0, 0.0, 0.31372549]
-        #self._palette[1] = [0, 1, 0, 0.2]  # [1.0, 0.1843, 0.53333333, 0.376470588]
-        #self._palette[2] = [1.0, 1.0, 0.0, 0.2078431373]  # [0.854901961, 1.0, 0.5333333, 0.3882353]
-        #self._palette[3] = [1, 0, 0, 0.4]  # [0.376471, 1.0, 0.47843, 0.39215686]
-        #self._palette[4] = [1.0, 1.0, 1.0, 0.6]
         self._palette[0] = [0.0, 0.0, 0.0, 0.3137]
         self._palette[1] = [1.0, 0.1843, 0.53333, 0.37647]
         self._palette[2] = [0.8549, 1.0, 0.53333, 0.388]
         self._palette[3] = [0.376, 1.0, 0.478, 0.392]
         self._palette[4] = [1.0, 1.0, 1.0, 1]
-        self._substeps = 1
+        self.substep = 32
         self._i = 0
 
     @ti.kernel
@@ -64,7 +59,7 @@ class ReactionDiffusion():
         return self._pixels
 
     def process(self):
-        for _ in range(self._substeps):
+        for _ in range(self.substep):
             self.compute(self._i % 2)
             self._i += 1
         self.render()

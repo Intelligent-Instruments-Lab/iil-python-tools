@@ -2,7 +2,7 @@ import numpy as np
 import taichi as ti
 import numpy as np
 
-from tulvera.vera._particle import Particles
+from tolvera.vera._particle import Particles
 
 @ti.data_oriented
 class Physarum(Particles):
@@ -76,6 +76,7 @@ class Physarum(Particles):
 
     @ti.kernel
     def deposit(self, _pos: ti.template()):
+        # TODO: deposit clashes with substep
         for i in _pos:
             iposx = ti.cast(_pos[i][0], ti.i32) % self._x
             iposy = ti.cast(_pos[i][1], ti.i32) % self._y

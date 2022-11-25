@@ -8,8 +8,6 @@ import time
 from taichi.ui import canvas
 
 ti.init(arch=ti.vulkan)
-# ti.init(arch=ti.cuda)
-
 
 # color map is copy from: https://forum.taichi.graphics/t/vortex-method-demo/775
 class ColorMap:

@@ -1,10 +1,9 @@
-from tulvera.vera import *
-
-# TODO: Use Profiler to understand why this cuts framerate by half:
+from tolvera.vera import *
 
 import taichi as ti
 import numpy as np
-from tulvera.vera import *
+from tolvera.vera import *
+# from pysensel import TiSensel
 
 @ti.data_oriented
 class World:
@@ -19,7 +18,7 @@ class World:
         self.boids = Boids(x, y, n)
         self.physarum = Physarum(x, y, n)
         self.rea_diff = ReactionDiffusion(x, y)
-        self.window = ti.ui.Window("Tulvera", (x, y))
+        self.window = ti.ui.Window("tolvera", (x, y))#, fullscreen=True)
         self.canvas = self.window.get_canvas()
         self.init()
 
@@ -56,9 +55,21 @@ def main():
     ti.init(arch=ti.vulkan)
     x = 1920
     y = 1080
-    n = 4096
+    n = 16384
     world = World(x, y, n)
     world.reset()
+    world.boids.radius[None] = 10
+    world.boids.dt[None] = 1
+    world.boids.speed[None] = 2
+    world.boids.separate[None] = 0.3
+    world.boids.align[None] = 0.5
+    world.boids.cohere[None] = 0.4
+    world.physarum.sense_angle[None] = 0.1 * np.pi
+    world.physarum.sense_dist[None] = 50.0
+    world.physarum.evaporation[None] = 0.97
+    world.physarum.move_angle[None] = 0.1 * np.pi
+    world.physarum.move_step[None] = 0.5
+    world.physarum.substep[None] = 2
     while world.window.running:
         world.process()
         world.window.show()
