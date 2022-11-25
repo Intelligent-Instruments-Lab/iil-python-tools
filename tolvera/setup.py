@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name='tulvera',
+    name='tolvera',
     version='0.0.1',
-    packages=['tulvera'],
+    packages=['tolvera'],
     install_requires=[
     ],
 )

@@ -8,8 +8,6 @@ import time
 from taichi.ui import canvas
 
 ti.init(arch=ti.vulkan)
-# ti.init(arch=ti.cuda)
-
 
 # color map is copy from: https://forum.taichi.graphics/t/vortex-method-demo/775
 class ColorMap:
@@ -285,3 +283,27 @@ class Lenia:
         # print(self.world_old)
         # self.paused = not self.paused
         self.render()
+
+def main():
+    ti.init(arch=ti.vulkan)
+    x = 512
+    y = 1080
+    # n = 4096
+    lenia = Lenia(res=x,
+                scatter=4,
+                conv_r=20,
+                time=10,
+                miu=0.15,
+                sig=0.016,
+                kr=1,
+                kb=ti.Vector([1]))
+    window = ti.ui.Window("Lenia", (x, x))
+    canvas = window.get_canvas()
+    while window.running:
+        lenia.update()
+        # update(boids) # jurigged: costs 10fps
+        canvas.set_image(lenia.pixels)
+        window.show()
+
+if __name__ == '__main__':
+    main()
