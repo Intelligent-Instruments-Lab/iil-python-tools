@@ -2,14 +2,14 @@ from sardine import *
 import taichi as ti
 import numpy as np
 import math
-import tulvera as tul
+import tolvera as tol
 
 ti.init(arch=ti.vulkan)
 c.bpm = 250
 c.link()
 x = 1024
 y = 1024
-lenia = tul.vera.Lenia(res=x,
+lenia = tol.vera.Lenia(res=x,
             scatter=4,
             conv_r=20,
             time=10,

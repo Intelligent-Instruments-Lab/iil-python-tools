@@ -2,7 +2,7 @@ from sardine import *
 import taichi as ti
 import numpy as np
 import math
-import tulvera as tul
+import tolvera as tol
 
 ti.init(arch=ti.vulkan)
 c.bpm = 250
@@ -10,7 +10,7 @@ c.link()
 x = 1920
 y = 1080
 n = 8192
-boids = tul.vera.Boids(x, y, n)
+boids = tol.vera.Boids(x, y, n)
 window = ti.ui.Window("Boids", (x, y))
 canvas = window.get_canvas()
 

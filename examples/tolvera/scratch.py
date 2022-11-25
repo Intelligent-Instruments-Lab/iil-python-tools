@@ -1,6 +1,6 @@
 from sardine import *
 import taichi as ti
-import tulvera as tul
+import tolvera as tol
 import numpy as np
 
 ti.init(arch=ti.vulkan)
@@ -9,7 +9,7 @@ y=1080
 n=4096
 c.bpm = 250
 c.link()
-world = tul.World(x, y, n)
+world = tol.World(x, y, n)
 
 @swim
 def gui_loop(d=0.5, i=0):
@@ -48,7 +48,7 @@ world.physarum.sense_dist[None] = 50.0
 world.physarum.evaporation[None] = 0.97
 world.physarum.move_angle[None] = 0.1 * np.pi
 world.physarum.move_step[None] = 0.5
-world.physarum.substep[None] = 4
+world.physarum.substep[None] = 2
 
 # world.save||load(i)
 # world.reset()
@@ -62,6 +62,10 @@ world.physarum.substep[None] = 4
 # world.decay||metabolise(0.5)
 
 # world.import||mask('image')
+
+# world.sample()
+# world.trace||track()
+# 
 
 # world.interact(['Boids', 'Physarum'], rule="separate", weight=0.2)
 

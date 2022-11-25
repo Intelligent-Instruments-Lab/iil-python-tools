@@ -2,7 +2,7 @@ from sardine import *
 import taichi as ti
 import numpy as np
 import math
-import tulvera as tul
+import tolvera as tol
 
 ti.init(arch=ti.vulkan)
 c.bpm = 250
@@ -10,7 +10,7 @@ c.link()
 x = 1920
 y = 1080
 n = 2048
-physarum = tul.vera.Physarum(x, y, n)
+physarum = tol.vera.Physarum(x, y, n)
 window = ti.ui.Window("Physarum", (x, y))
 canvas = window.get_canvas()
 
