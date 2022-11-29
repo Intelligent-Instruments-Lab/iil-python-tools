@@ -10,7 +10,7 @@ class ReactionDiffusion():
                  x=1024,
                  y=1024):
         self._x, self._y = 1920, 1080
-        self._pixels = ti.Vector.field(3, ti.f32, shape=(self._x, self._y))
+        self.px_rgb = ti.Vector.field(3, ti.f32, shape=(self._x, self._y))
         self._Du, self._Dv, self._feed, self._kill = 0.160, 0.080, 0.060, 0.062
         #self._Du, self._Dv, self._feed, self._kill = 0.210, 0.105, 0.018, 0.051
         self._uv_grid = np.zeros((2, self._x, self._y, 2), dtype=np.float32)
@@ -42,7 +42,7 @@ class ReactionDiffusion():
 
     @ti.kernel
     def render(self):
-        for i, j in self._pixels:
+        for i, j in self.px_rgb:
             value = self._uv[0, i, j].y
             color = tm.vec3(0)
             if value <= self._palette[0].w:
@@ -53,10 +53,10 @@ class ReactionDiffusion():
                 if c0.w < value < c1.w:
                     a = (value - c0.w) / (c1.w - c0.w)
                     color = tm.mix(c0.xyz, c1.xyz, a)
-            self._pixels[i, j] = color
+            self.px_rgb[i, j] = color
     
     def get_image(self):
-        return self._pixels
+        return self.px_rgb
 
     def process(self):
         for _ in range(self.substep):

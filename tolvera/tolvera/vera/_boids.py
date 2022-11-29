@@ -20,8 +20,8 @@ class Boids(Particles):
                  speed=3.0):
         super().__init__(x, y, n)
         self._vel  = ti.Vector.field(2, dtype=ti.f32, shape=(self._n))
-        # self.world = ti.Vector.field(3, dtype=ti.i32, shape=(self._x, self._y))
-        self.world = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
+        # self.px_rgb = ti.Vector.field(3, dtype=ti.i32, shape=(self._x, self._y))
+        self.px_g = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
         self.separate = ti.field(ti.f32, ())
         self.align    = ti.field(ti.f32, ())
         self.cohere   = ti.field(ti.f32, ())
@@ -89,8 +89,8 @@ class Boids(Particles):
     def raster(self):
         rad = 2
         for i,j in ti.ndrange((0, self._x),(0, self._y)):
-            # self.world[i, j] = ti.Vector([255,255,255])
-            self.world[0, i, j] = 0.0
+            # self.px_rgb[i, j] = ti.Vector([255,255,255])
+            self.px_g[0, i, j] = 0.0
         for i in range(self._n):
             xi = ti.cast(self._pos[i][0], ti.i32) - rad
             xj = ti.cast(self._pos[i][0], ti.i32) + rad
@@ -102,11 +102,11 @@ class Boids(Particles):
                     # _y = self._vel[i][1]
                     # avg = (_x+_y)/2
                     # scaled = (3+avg)/6
-                    # self.world[0, x, y] = 1-scaled
-                    self.world[0, x, y] = 1.0
+                    # self.px_rgb[0, x, y] = 1-scaled
+                    self.px_g[0, x, y] = 1.0
     
     def get_image(self):
-        return self.world.to_numpy()[0]
+        return self.px_g.to_numpy()[0]
 
     def process(self):
         if self.pause == False:

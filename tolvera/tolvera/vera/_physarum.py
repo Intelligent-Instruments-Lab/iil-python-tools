@@ -19,7 +19,7 @@ class Physarum(Particles):
         super().__init__(x, y, n)
         self._ang = ti.field(dtype=ti.f32, shape=(self._n))
         self._i = 0
-        self.world = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
+        self.px_g = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
         self.sense_angle = ti.field(ti.f32, ())
         self.sense_dist  = ti.field(ti.f32, ())
         self.evaporation = ti.field(ti.f32, ())
@@ -49,7 +49,7 @@ class Physarum(Particles):
         p = pos + ti.Vector([ti.cos(ang), ti.sin(ang)]) * self.sense_dist[None]
         px = ti.cast(p[0], ti.i32) % self._x
         py = ti.cast(p[1], ti.i32) % self._y
-        return self.world[0, px, py]
+        return self.px_g[0, px, py]
 
     @ti.kernel
     def move(self):
@@ -72,7 +72,7 @@ class Physarum(Particles):
     #     for i in self._pos:
     #         iposx = ti.cast(self._pos[i][0], ti.i32) % self._x
     #         iposy = ti.cast(self._pos[i][1], ti.i32) % self._y
-    #         self.world[0, iposx, iposy] += 1.0
+    #         self.px_g[0, iposx, iposy] += 1.0
 
     @ti.kernel
     def deposit(self, _pos: ti.template()):
@@ -80,7 +80,21 @@ class Physarum(Particles):
         for i in _pos:
             iposx = ti.cast(_pos[i][0], ti.i32) % self._x
             iposy = ti.cast(_pos[i][1], ti.i32) % self._y
-            self.world[0, iposx, iposy] += 1.0
+            self.px_g[0, iposx, iposy] += 1.0
+    
+    @ti.kernel
+    def stamp(self, img: ti.template(), threshold: float, weight: float):
+        """
+        Take an 'image' input and 'stamp' (deposit) it
+        """
+        x = img.shape[0]
+        y = img.shape[1]
+        for i, j in ti.ndrange(x, y):
+            if img[i, j] < threshold*255:
+                px = img[i, j]
+                _x = ti.cast(i/x*self._x, ti.i32)
+                _y = ti.cast(j/y*self._y, ti.i32)
+                self.px_g[0, _x, _y] += weight
 
     @ti.kernel
     def diffuse(self):
@@ -90,9 +104,9 @@ class Physarum(Particles):
                 for dj in ti.static(range(-1, 2)):
                     dx = (i + di) % self._x
                     dy = (j + dj) % self._y
-                    a += self.world[0, dx, dy]
+                    a += self.px_g[0, dx, dy]
             a *= self.evaporation[None] / 9.0
-            self.world[0, i, j] = a
+            self.px_g[0, i, j] = a
 
     def step(self):
         self.move()
@@ -100,7 +114,7 @@ class Physarum(Particles):
         self.diffuse()
 
     def get_image(self):
-        return self.world.to_numpy()[0]
+        return self.px_g.to_numpy()[0]
 
     def process(self):
         if self.pause == False:
