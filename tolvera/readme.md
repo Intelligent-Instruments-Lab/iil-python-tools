@@ -43,6 +43,8 @@ conda activate iil-python-tools
 pip install -e tolvera
 ```
 
+If on macOS, you should install the Vulkan graphics environment in order to use Taichi locally: https://vulkan.lunarg.com/sdk/home.
+
 ## Usage
 
 See `./examples/tolvera/`

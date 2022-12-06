@@ -45,12 +45,12 @@ def disc_map():
     world.physarum.substep[None]    = 1+int(disc['acc']['z']*8) # 2
     print('mapped')
 
-receive = Receiver(port=7563, ip="192.168.0.100", name="amagnetic")
+# receive = Receiver(port=7563, ip="0.0.0.0", name="magnetic")
 receive = Receiver(7400)
 receive.attach('/magnetic', magnetic_handler)
 
-c.bpm = 250
-c.link()
+# c.bpm = 250
+# c.link()
 
 @swim
 def gui_loop(d=0.5, i=0):

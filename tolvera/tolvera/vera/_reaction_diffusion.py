@@ -20,6 +20,7 @@ class ReactionDiffusion():
         self._uv      = ti.Vector.field(2, ti.f32, shape=(2, self._x, self._y))
         self._palette = ti.Vector.field(4, ti.f32, shape=(5, ))
         self.px_rgb   = ti.Vector.field(3, ti.f32, shape=(self._x, self._y))
+        self.px_g     = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
         self.Du      = ti.field(ti.f32, ())
         self.Dv      = ti.field(ti.f32, ())
         self.feed    = ti.field(ti.f32, ())
@@ -63,7 +64,7 @@ class ReactionDiffusion():
             self._uv[1 - phase, i, j] = val
 
     @ti.kernel
-    def render(self):
+    def render_rgb(self):
         for i, j in self.px_rgb:
             value = self._uv[0, i, j].y
             color = tm.vec3(0)
@@ -76,16 +77,34 @@ class ReactionDiffusion():
                     a = (value - c0.w) / (c1.w - c0.w)
                     color = tm.mix(c0.xyz, c1.xyz, a)
             self.px_rgb[i, j] = color
-    
+
+    @ti.kernel
+    def render_g(self):
+        for i, j in ti.ndrange(self._x, self._y):
+            value = self._uv[0, i, j].y
+            # color = tm.vec3(0)
+            # if value <= self._palette[0].w:
+            #     color = self._palette[0].xyz
+            # for k in range(4):
+            #     c0 = self._palette[k]
+            #     c1 = self._palette[k + 1]
+            #     if c0.w < value < c1.w:
+            #         a = (value - c0.w) / (c1.w - c0.w)
+            #         color = tm.mix(c0.xyz, c1.xyz, a)
+            self.px_g[0, i, j] = value*2
+
     def get_image(self):
         return self.px_rgb
+        # return self.px_g.to_numpy()[0]
 
     def process(self):
         for _ in range(self.substep[None]):
             self.compute(self._i % 2)
             self._i += 1
-        self.render()
+        self.render_rgb()
         return self.get_image()
+        # self.render_g()
+        # return self.px_g.to_numpy()[0]
 
 # `jurigged -v tulvera/tulvera/vera/_reaction-diffusion.py`
 def update(rd):

@@ -13,9 +13,9 @@ class Physarum(Particles):
                  sense_angle=0.20 * np.pi,
                  sense_dist=4.0,
                  evaporation=0.97,
-                 move_angle=0.1 * np.pi,
-                 move_step=2.0,
-                 substep=8):
+                 move_angle=0.2 * np.pi,
+                 move_step=4.0,
+                 substep=2):
         super().__init__(x, y, n)
         self._ang = ti.field(dtype=ti.f32, shape=(self._n))
         self._i = 0
@@ -75,15 +75,26 @@ class Physarum(Particles):
     #         self.px_g[0, iposx, iposy] += 1.0
 
     @ti.kernel
-    def deposit(self, _pos: ti.template()):
+    def deposit(self, _pos: ti.template(), weight: float):
         # TODO: deposit clashes with substep
         for i in _pos:
             iposx = ti.cast(_pos[i][0], ti.i32) % self._x
             iposy = ti.cast(_pos[i][1], ti.i32) % self._y
-            self.px_g[0, iposx, iposy] += 1.0
+            self.px_g[0, iposx, iposy] += 1.0*weight
     
     @ti.kernel
+    def deposit_swarm(self, _pos: ti.template(), _vel: ti.template(), weight: float):
+        # TODO: Why does this seem to alter boids behaviour?
+        for i in _pos:
+            iposx = ti.cast(_pos[i][0], ti.i32) % self._x
+            iposy = ti.cast(_pos[i][1], ti.i32) % self._y
+            # self.px_g[0, iposx, iposy] += 1.0*weight
+            px_g = self.px_g[0, iposx, iposy]
+            self.px_g[0, iposx, iposy] = px_g * _vel[i][0] * weight
+
+    @ti.kernel
     def stamp(self, img: ti.template(), threshold: float, weight: float):
+        # TODO: 
         """
         Take an 'image' input and 'stamp' (deposit) it
         """
@@ -91,10 +102,29 @@ class Physarum(Particles):
         y = img.shape[1]
         for i, j in ti.ndrange(x, y):
             if img[i, j] < threshold*255:
-                px = img[i, j]
                 _x = ti.cast(i/x*self._x, ti.i32)
                 _y = ti.cast(j/y*self._y, ti.i32)
-                self.px_g[0, _x, _y] += weight
+                img_px = img[i, j]/255
+                px_g = self.px_g[0, _x, _y]
+                self.px_g[0, _x, _y] += px_g * img_px * weight
+                # self.px_g[0, _x, _y] += px_g * px * weight
+
+    @ti.kernel
+    def stamp_pxg(self, pxg: ti.template(), threshold: float, weight: float):
+        # TODO: 
+        """
+        Take an 'image' input and 'stamp' (deposit) it
+        """
+        x = pxg.shape[0]
+        y = pxg.shape[1]
+        for i, j in ti.ndrange(x, y):
+            # if pxg[0, i, j] < threshold*255:
+            _x = ti.cast(i/x*self._x, ti.i32)
+            _y = ti.cast(j/y*self._y, ti.i32)
+            px = pxg[0, i, j]/255
+            px_g = self.px_g[0, _x, _y]
+            # self.px_g[0, _x, _y] += px/255*weight
+            self.px_g[0, _x, _y] += px * weight
 
     @ti.kernel
     def diffuse(self):
@@ -110,10 +140,13 @@ class Physarum(Particles):
 
     def step(self):
         self.move()
-        self.deposit(self._pos)
+        self.deposit(self._pos, 1.0)
         self.diffuse()
 
     def get_image(self):
+        return self.px_g.to_numpy()[0]
+
+    def get_image_isaac(self):
         return self.px_g.to_numpy()[0]
 
     def process(self):
@@ -134,12 +167,15 @@ def main():
     y = 1080
     n = 2048
     physarum = Physarum(x, y, n)
+    # physarum = Physarum(x, y, n=2048, sense_angle=0.20 * np.pi, sense_dist=4.0, evaporation=0.97, move_angle=0.2 * np.pi, move_step=4.0, substep=2)
     physarum.pause = False
     window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
     while window.running:
         # update(physarum) # jurigged
-        canvas.set_image(physarum.process())
+        px_g_numpy = physarum.process()
+        print(px_g_numpy[102])
+        canvas.set_image(px_g_numpy)
         window.show()
 
 if __name__ == '__main__':

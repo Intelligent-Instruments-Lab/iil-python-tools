@@ -2,6 +2,16 @@ from sardine.io.Osc import Receiver
 
 # TODO: Bug in `receive` matches /path*
 
+"""
+usage:
+
+def handle_contact(*args):
+    sensel.handle_contact(args)
+    pass
+
+sensel = SenselOSC(7006, handle_contact)
+"""
+
 class SenselOSC():
     """
     https://github.com/tai-studio/senselosc/readme.md
