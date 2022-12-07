@@ -302,7 +302,7 @@ class MRP(object):
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
                 for q, v in qualities.items():
-                    if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
+                    if isinstance(v, list) or isinstance(v, np.ndarray): # e.g. /harmonics/raw
                         if relative is True:
                             print('quality_update(): relative updating of lists not supported')
                         else:
