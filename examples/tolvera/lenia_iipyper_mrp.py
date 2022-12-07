@@ -8,7 +8,7 @@ Authors:
 import numpy as np
 from iipyper import OSC, run, repeat, cleanup
 import taichi as ti
-from lenia import Lenia
+import tolvera as tol
 from mrp import MRP
 
 def main(host="127.0.0.1", port=7563):
@@ -31,7 +31,7 @@ def main(host="127.0.0.1", port=7563):
 
     window = ti.ui.Window("Taichi-Lenia", (res * scatter, res * scatter))
     canvas = window.get_canvas()
-    lenia = Lenia(res=res,
+    lenia = tol.vera.Lenia(res=res,
                          scatter=scatter,
                          conv_r=20,
                          time=10,
@@ -62,7 +62,7 @@ def main(host="127.0.0.1", port=7563):
     #     lenia.update()
     #     window.show()
 
-    @repeat(0.005)
+    @repeat(0.016)
     def _():
         for e in window.get_events(ti.ui.PRESS):
             if e.key in [ti.ui.ESCAPE]:
