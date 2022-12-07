@@ -1,31 +1,24 @@
-"""
-Authors:
-  Victor Shepardson
-  Jack Armitage
-  Intelligent Instruments Lab 2022
-"""
-
 import numpy as np
 from iipyper import OSC, run, repeat, cleanup
 import taichi as ti
-from lenia import Lenia
+import tolvera as tol
 
 from iipyper.state import _lock
 
 def main(host="127.0.0.1", port=7563):
-    # osc
-    osc = OSC(host, port, verbose=False)
+    osc = OSC(host, port, verbose=False, concurrent=True)
     osc.create_client("tidal", host="127.0.0.1", port=7564)
-    gui_update_rate = 0.005
+    gui_update_rate = 0.016
 
-    # lenia
+    ti.init(arch=ti.vulkan)
+
     res = 256
     scatter = 4
     draw = False
     erase = False
     window = ti.ui.Window("Taichi-Lenia", (res * scatter, res * scatter))
     canvas = window.get_canvas()
-    lenia = Lenia(res=res,
+    lenia = tol.vera.Lenia(res=res,
                  scatter=scatter,
                  conv_r=20,
                  time=10,
@@ -98,8 +91,6 @@ def main(host="127.0.0.1", port=7563):
     while window.running:
         with _lock:
             canvas.set_image(lenia.pixels)
-            window.GUI.begin("Taichi Lenia", 0.01, 0.01, 0.6, 0.15)
-            window.GUI.end()
             if draw == True:
                 lenia.draw()
                 lenia.render()
@@ -109,6 +100,19 @@ def main(host="127.0.0.1", port=7563):
             if not lenia.paused:
                 lenia.update()
             window.show()
+
+    # @repeat(gui_update_rate)
+    # def _():
+    #     canvas.set_image(lenia.pixels)
+    #     if draw == True:
+    #         lenia.draw()
+    #         lenia.render()
+    #     if erase == True:
+    #         lenia.erase()
+    #         lenia.render()
+    #     if not lenia.paused:
+    #         lenia.update()
+    #     window.show()
 
     # @cleanup
     # def _():

@@ -5,9 +5,8 @@ Based on https://github.com/metachow/Taichi_Lenia (MIT License)
 import taichi as ti
 import time
 
-from taichi.ui import canvas
-
-ti.init(arch=ti.vulkan)
+# from taichi.ui import canvas
+# ti.init(arch=ti.vulkan)
 
 # color map is copy from: https://forum.taichi.graphics/t/vortex-method-demo/775
 class ColorMap:
