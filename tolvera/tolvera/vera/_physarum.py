@@ -156,6 +156,15 @@ class Physarum(Particles):
                 self._i += 1
         return self.get_image()
 
+    @ti.kernel
+    def update(self, p: ti.template()):
+        self.sense_angle[None] = p[0] * np.pi
+        self.sense_dist[None]  = p[1]
+        self.evaporation[None] = p[2]
+        self.move_angle[None]  = p[3] * np.pi
+        self.move_step[None]   = p[4]
+        self.substep[None]     = ti.cast(p[5], ti.i32)
+
 # `jurigged -v tulvera/tulvera/vera/_physarum.py`
 def update(p):
     pass

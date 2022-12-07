@@ -207,6 +207,16 @@ class Boids(Particles):
             elif self.colormode == 'g':
                 self.render_g()
         return self.get_px()
+    
+    @ti.kernel
+    def update(self, p: ti.template()):
+        self.separate[None] = p[0]
+        self.align[None]    = p[1]
+        self.cohere[None]   = p[2]
+        self.fear[None]     = p[3]
+        self.dt[None]       = p[4]
+        self.radius[None]   = p[5]
+        self.speed[None]    = p[6]
 
 # `jurigged -v tulvera/tulvera/vera/_boids.py`
 def update(b):

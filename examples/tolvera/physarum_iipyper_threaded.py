@@ -14,20 +14,20 @@ def main(host="127.0.0.1", port=7563):
     x = 1920
     y = 1080
     n = 4096
-    boids = tol.vera.Boids(x, y, n, colormode='rgb', species=30)
-    window = ti.ui.Window("Boids", (x, y))
+    physarum = tol.vera.Physarum(x, y, n)
+    window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
 
-    params = ti.field(dtype=ti.f32, shape=(7))
-    params[0] = boids.separate[None]
-    params[1] = boids.align[None]
-    params[2] = boids.cohere[None]
-    params[3] = boids.fear[None]
-    params[4] = boids.dt[None]
-    params[5] = boids.radius[None]
-    params[6] = boids.speed[None]
+    # TODO: Should this be a struct for different types?
+    params = ti.field(dtype=ti.f32, shape=(6))
+    params[0] = physarum.sense_angle[None]
+    params[1] = physarum.sense_dist[None]
+    params[2] = physarum.evaporation[None]
+    params[3] = physarum.move_angle[None]
+    params[4] = physarum.move_step[None]
+    params[5] = physarum.substep[None]
 
-    @osc.args("/boids/params")
+    @osc.args("/physarum/params")
     def _(address, *args):
         nonlocal params
         params = args
@@ -39,9 +39,9 @@ def main(host="127.0.0.1", port=7563):
         with _lock:
             if counter == count:
                 counter = 0
-                boids.update(params)
+                physarum.update(params)
             counter +=1
-            canvas.set_image(boids.process())
+            canvas.set_image(physarum.process())
             window.show()
 
 if __name__ == '__main__':
