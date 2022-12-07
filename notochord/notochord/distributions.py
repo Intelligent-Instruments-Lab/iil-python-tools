@@ -7,7 +7,14 @@ import torch.distributions as D
 import torch.nn.functional as F
 
 def reweight_top_p(probs, top_p):
-    """given tensor of probabilities, apply top p / "nucleus" filtering"""
+    """given tensor of probabilities, apply top p / "nucleus" filtering,
+    or temperature if `top_p` is greater than 1
+    """
+
+    if top_p > 1:
+        probs = probs**(1/top_p)
+        return probs / probs.sum(-1)
+
     # NOTE: this is fudged slightly, it doesn't 'interpolate' the cutoff bin
     desc_probs, idx = probs.sort(-1, descending=True)
     iidx = idx.argsort(-1)

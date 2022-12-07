@@ -1,33 +1,69 @@
-import asyncio
+from threading import Thread
+import time
 
 import fire
 
 from .midi import *
 from .osc import *
+from .state import _lock
 
-_loop_fns = []
-# decorator to make a function loop
-def repeat(time):
-    # close the decorator over time argument
+# Audio WIP
+import sounddevice as sd
+class Audio:
+    instances = [] # 
+    def __init__(self, *a, **kw):
+        self.stream = sd.InputStream(*a, **kw) # TODO
+        Audio.instances.append(self)
+
+
+class Lag:
+    def __init__(self, coef, val=None):
+        self.coef = coef
+        self.val = val
+
+    def __call__(self, val):
+        if self.val is None:
+            self.val = val
+        else:
+            self.val = self.val*self.coef + val*(1-self.coef)
+        return self.val
+        
+
+class Clock:
+    def __init__(self):
+        self.begin = time.perf_counter()
+
+    def tick(self):
+        return int((time.perf_counter() - self.begin)/self.interval)
+
+    def __call__(self, interval):
+        self.interval = interval
+        r = self.tick() + 1
+        while self.tick() < r:
+            time.sleep(5e-4)
+
+def repeat(interval):
+    """@repeat decorator"""
+    # close the decorator over interval argument
     def decorator(f):
-        # define the coroutine
-        async def g():
-            # call `f` every `time` seconds
+        def g():
+            clock = Clock()
             while True:
+                # with _lock:
                 f()
-                await asyncio.sleep(time)
-        # track the coroutine in a global list
-        _loop_fns.append(g)
+                clock(interval)
+
+        Thread(target=g).start()
 
     return decorator
 
 
-_exit_fns = []
+_cleanup_fns = []
 # decorator to make a function run on KeyBoardInterrupt (before exit)
 def cleanup(f=None):
-
+    """@cleanup decorator"""
     def decorator(f):
-        _exit_fns.append(f)
+        _cleanup_fns.append(f)
         return f
 
     if f is None: # return a decorator
@@ -36,37 +72,18 @@ def cleanup(f=None):
         return decorator(f)
 
 
-async def _run_async():
-    # start OSC server
-    for osc in OSC.instances:
-        await osc.create_server(asyncio.get_event_loop())
-
-    for midi in MIDI.instances:
-        asyncio.create_task(midi_coroutine(midi))
-
-    # start loop tasks
-    if len(_loop_fns):
-        for f in _loop_fns:
-            asyncio.create_task(f())
-
-    # try:
-    while True:
-        await asyncio.sleep(1)
-    # except KeyboardInterrupt:
-        # for f in _exit_fns:
-            # f()
-        # raise
-
-    # clean up
-    # for osc in OSC.instances:
-    #     osc.close_server()
-
 def run(main=None):
     try:
         if main is not None:
             fire.Fire(main)
-        asyncio.run(_run_async())
+
+        for a in Audio.instances:
+            a.stream.start()
+
     except KeyboardInterrupt:
-        for f in _exit_fns:
+        for a in Audio.instances:
+            a.stream.stop()
+            a.stream.close()
+        for f in _cleanup_fns:
             f()
         raise

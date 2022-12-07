@@ -29,9 +29,14 @@ def clamp(n, smallest, largest):
     return max(smallest, min(n, largest))
 
 class MRP(object):
+
+    def print(self, *a, **kw):
+        if self.verbose:
+            print(*a, **kw)
     
-    def __init__(self, _osc, settings=None):
+    def __init__(self, _osc, settings=None, verbose=True):
         # default settings
+        self.verbose = verbose
         self.settings = {
             'address': {
                 'port': 7770,
@@ -52,7 +57,7 @@ class MRP(object):
         if settings is not None:
             for k, v in settings.items():
                 self.settings[k] = v
-        print('MRP starting with settings:', self.settings)
+        self.print('MRP starting with settings:', self.settings)
 
         # OSC reference and paths
         self.osc = _osc
@@ -126,7 +131,7 @@ class MRP(object):
                 0
             )
             self.notes.append(note)
-        print(len(self.notes), 'notes created.')
+        self.print(len(self.notes), 'notes created.')
  
     """
     /mrp/midi
@@ -146,11 +151,11 @@ class MRP(object):
             tmp['channel'] = channel
             tmp['midi']['velocity'] = velocity
             path = self.osc_paths['midi']
-            print(path, 'Note On:', note, ', Velocity:', velocity)
+            self.print(path, 'Note On:', note, ', Velocity:', velocity)
             self.osc.send(path, self.note_on_hex, note, velocity)
             return tmp
         else:
-            print('note_on(): invalid Note On', note)
+            self.print('note_on(): invalid Note On', note)
             return None
 
     def note_off(self, note, velocity=0, channel=None):
@@ -169,11 +174,11 @@ class MRP(object):
             tmp['channel'] = channel
             tmp['midi']['velocity'] = velocity
             path = self.osc_paths['midi']
-            print(path, 'Note Off:', note)
+            self.print(path, 'Note Off:', note)
             self.osc.send(path, self.note_off_hex, note, velocity)
             return tmp
         else:
-            print('note_off(): invalid Note Off', note)
+            self.print('note_off(): invalid Note Off', note)
             return None
 
     def notes_on(self, notes, velocities=None):
@@ -202,7 +207,7 @@ class MRP(object):
     #         value=value
     #     )
     #     path = self.osc_paths['midi']
-    #     print(path, 'Control Change:', *m.bytes())
+    #     self.print(path, 'Control Change:', *m.bytes())
     #     self.osc.send(path, *m.bytes())
 
     # def program_change(self, program, channel=None):
@@ -220,7 +225,7 @@ class MRP(object):
     #         program=program
     #     )
     #     path = self.osc_paths['midi']
-    #     print(path, 'Program Change:', *m.bytes())
+    #     self.print(path, 'Program Change:', *m.bytes())
     #     self.osc.send(path, *m.bytes())
     
     """
@@ -247,7 +252,7 @@ class MRP(object):
                 tmp = self.notes[self.note_index(note)]
                 if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
                     if relative is True:
-                        print('quality_update(): relative updating of lists not supported')
+                        self.print('quality_update(): relative updating of lists not supported')
                         # if (len(tmp['qualities'][quality]) > 0):
                         #     for i, q in enumerate(tmp['qualities'][quality]):
                         #         tmp['qualities'][quality][i] += self.quality_clamp(value[i])
@@ -259,7 +264,7 @@ class MRP(object):
                     else:
                         tmp['qualities'][quality] = [self.quality_clamp(v) for v in value]
                     path = self.osc_paths['qualities'][quality]
-                    print(path, channel, note, *tmp['qualities'][quality])
+                    self.print(path, channel, note, *tmp['qualities'][quality])
                     self.osc.send(path, channel, note, *tmp['qualities'][quality])
                     return tmp
                 else:
@@ -268,14 +273,14 @@ class MRP(object):
                     else:
                         tmp['qualities'][quality] = self.quality_clamp(value)
                     path = self.osc_paths['qualities'][quality]
-                    print(path, channel, note, tmp['qualities'][quality])
+                    self.print(path, channel, note, tmp['qualities'][quality])
                     self.osc.send(path, channel, note, tmp['qualities'][quality])
                     return tmp
             else:
-                print('quality_update(): invalid message:', quality, note, value)
+                self.print('quality_update(): invalid message:', quality, note, value)
                 return None
         else:
-            print('quality_update(): "quality" is not a string:', quality)
+            self.print('quality_update(): "quality" is not a string:', quality)
             return None
 
     def qualities_update(self, note, qualities, relative=False, channel=None):
@@ -304,11 +309,11 @@ class MRP(object):
                 for q, v in qualities.items():
                     if isinstance(v, list) or isinstance(v, np.ndarray): # e.g. /harmonics/raw
                         if relative is True:
-                            print('quality_update(): relative updating of lists not supported')
+                            self.print('quality_update(): relative updating of lists not supported')
                         else:
                             tmp['qualities'][q] = [self.quality_clamp(i) for i in v]
                         path = self.osc_paths['qualities'][q]
-                        print(path, channel, note, *tmp['qualities'][q])
+                        self.print(path, channel, note, *tmp['qualities'][q])
                         self.osc.send(path, channel, note, *tmp['qualities'][q])
                     else:
                         if relative is True:
@@ -316,14 +321,14 @@ class MRP(object):
                         else:
                             tmp['qualities'][q] = self.quality_clamp(v)
                         path = self.osc_paths['qualities'][q]
-                        print(path, channel, note, tmp['qualities'][q])
+                        self.print(path, channel, note, tmp['qualities'][q])
                         self.osc.send(path, channel, note, tmp['qualities'][q])
                 return tmp
             else:
-                print('quality_update(): invalid message:', note, qualities)
+                self.print('quality_update(): invalid message:', note, qualities)
                 return None
         else:
-            print('quality_update(): "qualities" is not an object:', note, qualities)
+            self.print('quality_update(): "qualities" is not an object:', note, qualities)
             return None
 
     """
@@ -335,7 +340,7 @@ class MRP(object):
         """
         self.pedal.sostenuto = sostenuto
         path = self.osc_paths['pedal']['sostenuto']
-        print(path, sostenuto)
+        self.print(path, sostenuto)
         self.osc.send(path, sostenuto)
 
     def pedal_damper(self, damper):
@@ -344,7 +349,7 @@ class MRP(object):
         """
         self.pedal.damper = damper
         path = self.osc_paths['pedal']['damper']
-        print(path, damper)
+        self.print(path, damper)
         self.osc.send(path, damper)
 
     """
@@ -355,7 +360,7 @@ class MRP(object):
         turn all notes off
         """
         path = self.osc_paths['misc']['allnotesoff']
-        print(path)
+        self.print(path)
         self.osc.send(path)
         self.init_notes()
         self.voices_reset()
@@ -369,7 +374,7 @@ class MRP(object):
         """
         self.ui.volume = value
         path = self.osc_paths['ui']['volume']
-        print(path, value)
+        self.print(path, value)
         self.osc.send(path, value)
 
     def ui_volume_raw(self, value):
@@ -378,20 +383,20 @@ class MRP(object):
         """
         self.ui.volume_raw = value
         path = self.osc_paths['ui']['volume_raw']
-        print(path, value)
+        self.print(path, value)
         self.osc.send(path, value)
 
     """
     note methods
     """
-    def note_create(self, note, velocity, channel=None):
+    def note_create(self, n, velocity, channel=None):
         """
         create and return a note object
         """
         if channel is None:
             channel = self.settings['channel']
         note = copy.deepcopy(self.note)
-        note['midi']['number'] = note
+        note['midi']['number'] = n
         note['midi']['velocity'] = velocity
         return note
 
@@ -421,12 +426,11 @@ class MRP(object):
         """
         return numbers of notes that are on
         """
-        on_numbers = []
-        for note in enumerate(self.notes):
-            if note['status'] == NOTE_ON:
-                on_numbers.append(note['midi']['number'])
-        return on_numbers
-
+        return [
+            note['midi']['number'] 
+            for note in self.notes 
+            if note['status']==NOTE_ON]
+# 
     def note_on_is_valid(self, note):
         """
         check if the note is on & in range
@@ -435,10 +439,10 @@ class MRP(object):
             if self.note_is_off(note) == True:
                 return True
             else:
-                print('note_on_is_valid(): note', note, 'is already on')
+                self.print('note_on_is_valid(): note', note, 'is already on')
                 return False
         else:
-            print('note_on_is_valid(): note', note, 'out of range')
+            self.print('note_on_is_valid(): note', note, 'out of range')
             return False
             
 
@@ -453,17 +457,19 @@ class MRP(object):
             if self.note_is_in_range(note) == True:
                 return True
             else:
-                print('note_off_is_valid(): note', note, 'out of range')
+                self.print('note_off_is_valid(): note', note, 'out of range')
                 return False
         else:
-            print('note_off_is_valid(): note', note, 'is already off')
+            self.print('note_off_is_valid(): note', note, 'is already off')
             return False
 
     """
     qualities methods
     """
     def quality_clamp(self, value):
-        return float(clamp(value, self.settings['qualities_min'], self.settings['qualities_max']))
+        ### NOTE pitch, at least, can be negative or > 1
+        return float(value)
+        # return float(clamp(value, self.settings['qualities_min'], self.settings['qualities_max']))
 
     """
     voice methods
@@ -474,7 +480,7 @@ class MRP(object):
         then replace voices based on the rule
         """
         if note in self.voices:
-            print('voices_add(): note already active')
+            self.print('voices_add(): note already active')
             return self.voices
         if self.voices_count() < self.settings['voices']['max']:
             self.voices.append(note)
@@ -483,7 +489,7 @@ class MRP(object):
             match rule:
                 case 'oldest':
                     oldest = self.voices[0]
-                    print('voices_add(): removing oldest', oldest)
+                    self.print('voices_add(): removing oldest', oldest)
                     self.voices.pop(0)
                     self.voices.append(note)
                     self.note_off(oldest)
@@ -523,7 +529,7 @@ class MRP(object):
         if note in self.voices:
             return self.voices.index(note)
         else:
-            print('voices_note_age(): note', note, 'is off')
+            self.print('voices_note_age(): note', note, 'is off')
             return -1
 
     """

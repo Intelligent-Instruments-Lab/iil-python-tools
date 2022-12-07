@@ -1,25 +1,43 @@
+import time
 import mido
 
 from iipyper import OSC, MIDI, repeat, run, cleanup
 
-def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
+def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello'):
     # loop API:
     # use the @repeat decorator to define functions which run every n seconds
-    @repeat(loop_time)
+    @repeat(repeat_time)
     def _():
-        print(f'looping every {loop_time} sec: "{loop_msg}"')
+        print(f'repeating every {repeat_time} sec: "{repeat_msg}"')
 
-    @repeat(1.5)
-    def _():
-        print('looping every 1.5 sec')
+    class timer():
+        def __init__(self):
+            self.t = time.monotonic_ns()
+        def __call__(self):
+            new_t = time.monotonic_ns()
+            # print(new_t)
+            print(f'{1e9/(new_t-self.t)} fps')
+            self.t = new_t
+    repeat(1/120)(timer())
 
+    ### MIDI API
+    # create a MIDI object
     midi = MIDI()
-    # # MIDI API:
-    # # midi.note_on, midi.cc, etc
+    # NOTE: you probably will want to specify the MIDI outputs and inputs:
+    # midi = MIDI(out_ports=['IAC Driver Bus 1'])
 
     # # decorator to make a midi handler:
     # # here filtering for type='note_on', note > 0, channel = 0
     @midi.handle(type='note_on', note=range(1,128), channel=0)
+    def _(msg):
+        print(msg)
+        # time.sleep(0.2)
+        # print('end of sleep\n')
+
+        # 200_000 ns = 200 us = .2 ms
+        # 60fps = ~15ms
+
+    @midi.handle(type='control_change')
     def _(msg):
         print(msg)
 
@@ -29,11 +47,15 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
     m = mido.Message('note_off', note=60, velocity=100, channel=0)
     midi.send(m)
 
-    # @repeat(1)
-    # def _():
-    #     midi.note_on(pitch=60, velocity=100, channel=0)
-    #     midi.cc(number=0, value=127, channel=1)
+    @repeat(1)
+    def _():
+        # print('sending note on')
+        midi.note_on(note=60, velocity=100, channel=0)
+        # print('sending cc')
+        midi.cc(control=0, value=127, channel=1)
 
+    # NOTE: by default, iipyper sends and receives on all MIDI ports -- 
+    # so here the handler prints every MIDI message the @repeat function sends
 
     # make an OSC object
     osc = OSC(osc_host, osc_port)
@@ -104,11 +126,6 @@ def main(osc_host='127.0.0.1', osc_port=9999, loop_time=1, loop_msg='hello'):
         print('exiting...')
         osc.send('/default_send_test', 'bye')
 
-
-
-# it may be possible to have async/threaded option for both OSC and MIDI?
-# MIDI handlers are threaded in mido and OSC handlers as async in pythonosc.
-# currently MIDI is enqueued and handled async.
 
 if __name__=='__main__':
     run(main)
