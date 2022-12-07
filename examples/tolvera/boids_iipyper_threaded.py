@@ -13,8 +13,11 @@ def main(host="127.0.0.1", port=7563):
     ti.init(arch=ti.vulkan)
     x = 1920
     y = 1080
-    n = 4096
-    boids = tol.vera.Boids(x, y, n, colormode='rgb', species=30)
+    # n = 16785408 # 8392704 # 4196352 # 2098176 # 1049088 # 524544 # 262272 # 131136 # 
+    # n = 65568 # 
+    n = 32784 # 
+    # n = 16384
+    boids = tol.vera.Boids(x, y, n, radius=10, colormode='rgb', species=10, size=1)
     window = ti.ui.Window("Boids", (x, y))
     canvas = window.get_canvas()
 

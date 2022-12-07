@@ -4,6 +4,9 @@ import numpy as np
 
 from tolvera.vera._particle import Particles
 
+# TODO: px_rgb mode
+# TODO: multispecies
+
 @ti.data_oriented
 class Physarum(Particles):
     def __init__(self,
@@ -174,17 +177,14 @@ def main():
     ti.init(arch=ti.vulkan)
     x = 1920
     y = 1080
-    n = 2048
+    n = 16785408 # 8392704 # 4196352 # 2098176 # 1049088 # 524544 # 262272 # 131136 # 65568 # 32784
     physarum = Physarum(x, y, n)
-    # physarum = Physarum(x, y, n=2048, sense_angle=0.20 * np.pi, sense_dist=4.0, evaporation=0.97, move_angle=0.2 * np.pi, move_step=4.0, substep=2)
     physarum.pause = False
     window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
     while window.running:
         # update(physarum) # jurigged
-        px_g_numpy = physarum.process()
-        print(px_g_numpy[102])
-        canvas.set_image(px_g_numpy)
+        canvas.set_image(physarum.process())
         window.show()
 
 if __name__ == '__main__':
