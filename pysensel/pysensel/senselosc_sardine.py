@@ -1,6 +1,7 @@
 from sardine.io.Osc import Receiver
 
 # TODO: Bug in `receive` matches /path*
+# TODO: Update to new Sardine rewrite
 
 """
 usage:

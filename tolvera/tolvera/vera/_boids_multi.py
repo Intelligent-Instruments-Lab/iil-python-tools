@@ -3,6 +3,7 @@
 import taichi as ti
 import numpy as np
 import math
+import time
 
 from tolvera.vera._particle import Particles
 from tolvera.vera._obstacles import Obstacles
@@ -24,7 +25,7 @@ from tolvera.vera._obstacles import Obstacles
 #     size: ti.f32
 
 @ti.data_oriented
-class Boids(Particles):
+class BoidsMulti(Particles):
     def __init__(self,
                  x=1024,
                  y=1024,
@@ -48,43 +49,50 @@ class Boids(Particles):
         self.px_rgba = ti.Vector.field(4, dtype=ti.f32, shape=(self._x, self._y))
         self._palette = ti.Vector.field(4, ti.f32, shape=(self._species_n, ))
         self.colormode = colormode
-        self.separate = ti.field(ti.f32, ())
-        self.align    = ti.field(ti.f32, ())
-        self.cohere   = ti.field(ti.f32, ())
-        self.fear     = ti.field(ti.f32, ())
-        self.dt       = ti.field(ti.f32, ())
-        self.radius   = ti.field(ti.f32, ())
-        self.speed    = ti.field(ti.f32, ())
-        self.size     = ti.field(ti.f32, ())
-        self.separate[None] = separate
-        self.align[None]    = align
-        self.cohere[None]   = cohere
-        self.dt[None]       = dt
-        self.radius[None]   = radius
-        self.speed[None]    = speed
-        self.fear[None]     = fear
-        self.size[None]     = size
+        self.separate = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.align    = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.cohere   = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.fear     = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.dt       = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.radius   = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.speed    = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.size     = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.separate.fill(separate)
+        self.align.fill(align)
+        self.cohere.fill(cohere)
+        self.fear.fill(fear)
+        self.dt.fill(dt)
+        self.radius.fill(radius)
+        self.speed.fill(speed)
+        self.size.fill(size)
         self.init()
 
     def init(self):
+        np.random.seed(int(time.time()))
+        self.differentiate_species()
         self.randomise()
-
 
     @ti.kernel
     def randomise(self):
         for b in range(self._n):
-            self._pos[b] = ti.Vector([ti.random(ti.f32)*self._x, ti.random(ti.f32)*self._y])
-            self._vel[b] = ti.Vector([self.speed[None]*(ti.random(ti.f32)-0.5), self.speed[None]*(ti.random(ti.f32)-0.5)])
-            # self._species[b] = ti.Vector(np.random.randint(self._species_n, size=1))#[b % self._species_n])# 
-            # self._species[0, b] = np.random.randint(self._species_n, size=1)[0]#[b % self._species_n])#
-            self._species[0, b] = b % self._species_n
-        self.make_palette()
+            species = b % self._species_n
+            self._species[0, b] = species
+            self._pos[b] = ti.Vector([ti.random(ti.f32) * self._x, ti.random(ti.f32) * self._y])
+            self._vel[b] = ti.Vector([self.speed[species] * (ti.random(ti.f32)-0.5), self.speed[species] * (ti.random(ti.f32)-0.5)])
 
-    @ti.func
-    def make_palette(self):
+    # @ti.kernel
+    def differentiate_species(self):
         for s in range(self._species_n):
-            # self._palette[s] = ti.Vector([ti.random(ti.f32), ti.random(ti.f32), ti.random(ti.f32), 1.0])
-            self._palette[s] = ti.Vector([ti.random(ti.f32), ti.random(ti.f32), ti.random(ti.f32), 1.0])
+            r = np.random.rand(11)
+            self._palette[s] = ti.Vector([r[0],r[1],r[2], 1.0])
+            self.separate[s] = 1.0  * r[3]  + 0.3
+            self.align[s]    = 1.0  * r[4]  + 0.3
+            self.cohere[s]   = 1.0  * r[5]  + 0.3
+            self.fear[s]     = 50.0 * r[6]  + 0
+            self.dt[s]       = 3.0  * r[7]  + 0.2
+            self.radius[s]   = 100  * r[8]  + 5
+            self.speed[s]    = 2.0  * r[9]  + 0.2
+            self.size[s]     = 3.0  * r[10] + 3
 
     @ti.kernel
     def move(self):
@@ -94,7 +102,7 @@ class Boids(Particles):
         # TODO: merging this into step loop doesn't improve perf?
         # TODO: abstract out walls vs wrap, re: membranes
         for b in range(self._n):
-            self._pos[b] = self._pos[b] + self.dt[None] * self._vel[b]
+            self._pos[b] = self._pos[b] + self.dt[self._species[0, b]] * self._vel[b]
             x = self._pos[b][0]
             y = self._pos[b][1]
             if   (x > self._x): self._pos[b][0] = 1
@@ -120,29 +128,28 @@ class Boids(Particles):
             if b!=bn: # if not me
                 dis = self._pos[b] - self._pos[bn]
                 dis_norm = dis.norm()
-                if dis_norm < self.radius[None]:
+                if dis_norm < self.radius[self._species[0,b]]:
                     # TODO: refactor so that behaviour/speed ops grouped?
-                    self._vel[b] += dis.normalized()/dis_norm*self.speed[None]
-                    separate += (self._pos[b] - self._pos[bn])
+                    self._vel[b] += dis.normalized()/dis_norm * self.speed[self._species[0,b]]
                     if (self._species[0,b] == self._species[0,bn]):
+                        separate += (self._pos[b] - self._pos[bn])
                         align  += self._vel[bn]
                         cohere += self._pos[bn]
                         n += 1
                     else:
                         sep_species += (self._pos[b] - self._pos[bn]) / dis_norm
         if n != 0:
-            separate = separate/n * self.separate[None]
-            align    = align/n * self.align[None]
-            cohere   = (cohere/n - self._pos[b]) * self.cohere[None]
-            sep_species = sep_species/n * self.fear[None]
+            separate = separate/n * self.separate[self._species[0,b]]
+            align    = align/n    * self.align[self._species[0,b]]
+            cohere   = (cohere/n - self._pos[b]) * self.cohere[self._species[0,b]]
+            sep_species = sep_species/n * self.fear[self._species[0,b]]
             self._vel[b] += (cohere + align + separate + sep_species).normalized()
-            # self._vel[b] += (cohere + align + separate).normalized()
             self.limit_speed(b)
 
     @ti.func
     def limit_speed(self, b: int):
-        if self._vel[b].norm() > self.speed[None]:
-            self._vel[b] = self._vel[b].normalized()*self.speed[None]
+        if self._vel[b].norm() > self.speed[self._species[0,b]]:
+            self._vel[b] = self._vel[b].normalized()*self.speed[self._species[0,b]]
 
     @ti.kernel
     def avoid(self, obs: ti.template()):
@@ -167,10 +174,10 @@ class Boids(Particles):
         for i,j in ti.ndrange((0, self._x),(0, self._y)):
             self.px_g[0, i, j] = 0.0
         for b in range(self._n):
-            xi = ti.cast(self._pos[b][0], ti.i32) - self.size[None]
-            xj = ti.cast(self._pos[b][0], ti.i32) + self.size[None]
-            yi = ti.cast(self._pos[b][1], ti.i32) - self.size[None]
-            yj = ti.cast(self._pos[b][1], ti.i32) + self.size[None]
+            xi = ti.cast(self._pos[b][0], ti.i32) - self.size[self._species[0,b]]
+            xj = ti.cast(self._pos[b][0], ti.i32) + self.size[self._species[0,b]]
+            yi = ti.cast(self._pos[b][1], ti.i32) - self.size[self._species[0,b]]
+            yj = ti.cast(self._pos[b][1], ti.i32) + self.size[self._species[0,b]]
             for x in range(xi, xj):
                 for y in range(yi, yj):
                     # TODO: grascaling
@@ -188,13 +195,15 @@ class Boids(Particles):
             # self.px_rgb[i, j] = ti.Vector([0.0,0.0,0.0])
             self.px_rgba[i, j] = ti.Vector([0.0,0.0,0.0,1.0])
         for b in range(self._n):
-            xi = ti.cast(self._pos[b][0], ti.i32) - self.size[None]
-            xj = ti.cast(self._pos[b][0], ti.i32) + self.size[None]
-            yi = ti.cast(self._pos[b][1], ti.i32) - self.size[None]
-            yj = ti.cast(self._pos[b][1], ti.i32) + self.size[None]
+            xi = ti.cast(self._pos[b][0], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
+            xj = ti.cast(self._pos[b][0], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
+            yi = ti.cast(self._pos[b][1], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
+            yj = ti.cast(self._pos[b][1], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
             for x in range(xi, xj):
                 for y in range(yi, yj):
-                    self.px_rgba[x, y] = self._palette[self._species[0, b]]
+                    p = self._palette[self._species[0, b]] * (1-self._vel[b].norm()*0.5)
+                    # p[3] = 1-
+                    self.px_rgba[x, y] = p
                     # self.px_rgb[x, y] = ti.Vector([
                     #     ti.cast(self._vel[b][1]     * 255, ti.i32),
                     #     ti.cast(self._vel[b].norm() * 255, ti.i32),
@@ -241,6 +250,9 @@ class Boids(Particles):
         params[6] = self.speed[None]
         return params
 
+    def reset(self):
+        self.init()
+
 
 # `jurigged -v tulvera/tulvera/vera/_boids.py`
 def update(b):
@@ -252,12 +264,14 @@ def update(b):
     b.speed[None]    = 3.0
 
 def main():
-    ti.init(arch=ti.vulkan)
+    t = int(time.time())
+    print(t)
+    ti.init(arch=ti.vulkan, random_seed=t)
     x = 1920
     y = 1080
     n = 4096
     # obstacles = Obstacles(x, y)
-    boids = Boids(x, y, n, colormode='rgb', species=10)
+    boids = BoidsMulti(x, y, n, colormode='rgb', species=4)
     window = ti.ui.Window("Boids", (x, y))
     canvas = window.get_canvas()
     while window.running:

@@ -4,7 +4,9 @@ import taichi as ti
 from tolvera.tolvera import main as world
 
 from tolvera.vera._boids import main as boids
+from tolvera.vera._boids_multi import main as boids_multi
 from tolvera.vera._physarum import main as physarum
+from tolvera.vera._physarum_multi import main as physarum_multi
 from tolvera.vera._lenia import main as lenia
 from tolvera.vera._reaction_diffusion import main as rea_diff
 
@@ -25,8 +27,12 @@ if __name__=='__main__':
         match sys.argv[1]:
             case 'boids':
                 boids()
+            case 'boids_multi':
+                boids_multi()
             case 'physarum':
                 physarum()
+            case 'physarum_multi':
+                physarum_multi()
             case 'reaction_diffusion':
                 rea_diff()
             case 'lenia':

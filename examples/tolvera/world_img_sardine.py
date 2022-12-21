@@ -14,8 +14,8 @@ x=1920
 y=1080
 n=8192
 world = tol.World(x, y, n)
-c.bpm = 250
-c.link()
+clock.bpm = 250
+clock.link()
 path = 'py/iil-python-tools/examples/tolvera/img/kandinsky.jpeg'
 # path = 'py/iil-python-tools/examples/tolvera/img/protolangspil2.jpeg'
 img = ti.tools.imread(path)[:,:,0]
