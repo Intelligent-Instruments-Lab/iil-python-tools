@@ -422,7 +422,7 @@ class MRP(object):
         return numbers of notes that are on
         """
         on_numbers = []
-        for note in enumerate(self.notes):
+        for note in self.notes:
             if note['status'] == NOTE_ON:
                 on_numbers.append(note['midi']['number'])
         return on_numbers
