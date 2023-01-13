@@ -9,7 +9,7 @@ from tolvera.vera._particle import Particles
 from tolvera.vera._obstacles import Obstacles
 
 # TODO: Add docstrings
-# TODO: abstract out 'fear'
+# TODO: abstract out 'separate_species'
 # TODO: implement 'avoid'
 
 # TODO: Replace 0D fields with dataclass?
@@ -18,7 +18,7 @@ from tolvera.vera._obstacles import Obstacles
 #     separate: ti.f32
 #     align: ti.f32
 #     cohere: ti.f32
-#     fear: ti.f32
+#     separate_species: ti.f32
 #     dt: ti.f32
 #     radius: ti.f32
 #     speed: ti.f32
@@ -34,7 +34,7 @@ class BoidsMulti(Particles):
                  separate=0.1,
                  align=1.0,
                  cohere=1.0,
-                 fear=10.0,
+                 separate_species=10.0,
                  dt=1,
                  radius=40.0,
                  speed=3.0,
@@ -44,6 +44,7 @@ class BoidsMulti(Particles):
         self._vel = ti.Vector.field(2, dtype=ti.f32, shape=(self._n))
         self._species_n = species
         self._species = ti.field(dtype=ti.i32, shape=(1, self._n))
+        self._alive   = ti.field(dtype=ti.f32, shape=(1, self._n))
         self.px_g = ti.field(dtype=ti.f32, shape=(1, self._x, self._y))
         self.px_rgb = ti.Vector.field(3, dtype=ti.f32, shape=(self._x, self._y))
         self.px_rgba = ti.Vector.field(4, dtype=ti.f32, shape=(self._x, self._y))
@@ -52,7 +53,7 @@ class BoidsMulti(Particles):
         self.separate = ti.field(dtype=ti.f32, shape=(self._species_n))
         self.align    = ti.field(dtype=ti.f32, shape=(self._species_n))
         self.cohere   = ti.field(dtype=ti.f32, shape=(self._species_n))
-        self.fear     = ti.field(dtype=ti.f32, shape=(self._species_n))
+        self.separate_species     = ti.field(dtype=ti.f32, shape=(self._species_n))
         self.dt       = ti.field(dtype=ti.f32, shape=(self._species_n))
         self.radius   = ti.field(dtype=ti.f32, shape=(self._species_n))
         self.speed    = ti.field(dtype=ti.f32, shape=(self._species_n))
@@ -60,7 +61,7 @@ class BoidsMulti(Particles):
         self.separate.fill(separate)
         self.align.fill(align)
         self.cohere.fill(cohere)
-        self.fear.fill(fear)
+        self.separate_species.fill(separate_species)
         self.dt.fill(dt)
         self.radius.fill(radius)
         self.speed.fill(speed)
@@ -68,6 +69,7 @@ class BoidsMulti(Particles):
         self.init()
 
     def init(self):
+        self._alive.fill(1.0)
         np.random.seed(int(time.time()))
         self.differentiate_species()
         self.randomise()
@@ -88,7 +90,7 @@ class BoidsMulti(Particles):
             self.separate[s] = 1.0  * r[3]  + 0.3
             self.align[s]    = 1.0  * r[4]  + 0.3
             self.cohere[s]   = 1.0  * r[5]  + 0.3
-            self.fear[s]     = 50.0 * r[6]  + 0
+            self.separate_species[s]     = 50.0 * r[6]  + 0
             self.dt[s]       = 3.0  * r[7]  + 0.2
             self.radius[s]   = 100  * r[8]  + 5
             self.speed[s]    = 2.0  * r[9]  + 0.2
@@ -102,18 +104,20 @@ class BoidsMulti(Particles):
         # TODO: merging this into step loop doesn't improve perf?
         # TODO: abstract out walls vs wrap, re: membranes
         for b in range(self._n):
-            self._pos[b] = self._pos[b] + self.dt[self._species[0, b]] * self._vel[b]
-            x = self._pos[b][0]
-            y = self._pos[b][1]
-            if   (x > self._x): self._pos[b][0] = 1
-            elif (y > self._y): self._pos[b][1] = 1
-            elif (x < 0):       self._pos[b][0] = self._x-1
-            elif (y < 0):       self._pos[b][1] = self._y-1
+            if self._alive[0, b] > 0.0:
+                self._pos[b] = self._pos[b] + self.dt[self._species[0, b]] * self._vel[b]
+                x = self._pos[b][0]
+                y = self._pos[b][1]
+                if   (x > self._x): self._pos[b][0] = 1
+                elif (y > self._y): self._pos[b][1] = 1
+                elif (x < 0):       self._pos[b][0] = self._x-1
+                elif (y < 0):       self._pos[b][1] = self._y-1
 
     @ti.kernel
     def step(self):
         for b in range(self._n):
-            self._step(b) # parallelize inner step loop
+            if self._alive[0, b] > 0.0:
+                self._step(b) # parallelize inner step loop
 
     @ti.func
     def _step(self, b: int):
@@ -137,12 +141,12 @@ class BoidsMulti(Particles):
                         cohere += self._pos[bn]
                         n += 1
                     else:
-                        sep_species += (self._pos[b] - self._pos[bn]) / dis_norm
+                        sep_species += (self._pos[b] + self._pos[bn]) / dis_norm
         if n != 0:
             separate = separate/n * self.separate[self._species[0,b]]
             align    = align/n    * self.align[self._species[0,b]]
             cohere   = (cohere/n - self._pos[b]) * self.cohere[self._species[0,b]]
-            sep_species = sep_species/n * self.fear[self._species[0,b]]
+            sep_species = sep_species/n * self.separate_species[self._species[0,b]]
             self._vel[b] += (cohere + align + separate + sep_species).normalized()
             self.limit_speed(b)
 
@@ -195,19 +199,20 @@ class BoidsMulti(Particles):
             # self.px_rgb[i, j] = ti.Vector([0.0,0.0,0.0])
             self.px_rgba[i, j] = ti.Vector([0.0,0.0,0.0,1.0])
         for b in range(self._n):
-            xi = ti.cast(self._pos[b][0], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
-            xj = ti.cast(self._pos[b][0], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
-            yi = ti.cast(self._pos[b][1], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
-            yj = ti.cast(self._pos[b][1], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
-            for x in range(xi, xj):
-                for y in range(yi, yj):
-                    p = self._palette[self._species[0, b]] * (1-self._vel[b].norm()*0.5)
-                    # p[3] = 1-
-                    self.px_rgba[x, y] = p
-                    # self.px_rgb[x, y] = ti.Vector([
-                    #     ti.cast(self._vel[b][1]     * 255, ti.i32),
-                    #     ti.cast(self._vel[b].norm() * 255, ti.i32),
-                    #     ti.cast(self._vel[b][0]     * 255, ti.i32)])
+            if self._alive[0, b] > 0.0:
+                xi = ti.cast(self._pos[b][0], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
+                xj = ti.cast(self._pos[b][0], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
+                yi = ti.cast(self._pos[b][1], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
+                yj = ti.cast(self._pos[b][1], ti.i32) + self.size[self._species[0,b]]# *self._vel[b].norm()
+                for x in range(xi, xj):
+                    for y in range(yi, yj):
+                        p = self._palette[self._species[0, b]] * (self._vel[b].norm()*0.5)
+                        # p[3] = 1-
+                        self.px_rgba[x, y] = p
+                        # self.px_rgb[x, y] = ti.Vector([
+                        #     ti.cast(self._vel[b][1]     * 255, ti.i32),
+                        #     ti.cast(self._vel[b].norm() * 255, ti.i32),
+                        #     ti.cast(self._vel[b][0]     * 255, ti.i32)])
  
     def get_px(self):
         if self.colormode == 'rgb':
@@ -233,10 +238,11 @@ class BoidsMulti(Particles):
         self.separate[i] = p[0]
         self.align[i]    = p[1]
         self.cohere[i]   = p[2]
-        self.fear[i]     = p[3]
+        self.separate_species[i] = p[3]
         self.dt[i]       = p[4]
         self.radius[i]   = p[5]
         self.speed[i]    = p[6]
+        self.size[i]    = p[7]
 
     def get_params(self, i):
         # TODO: Replace with @ti.dataclass?
@@ -244,10 +250,11 @@ class BoidsMulti(Particles):
         params[0] = self.separate[i]
         params[1] = self.align[i]
         params[2] = self.cohere[i]
-        params[3] = self.fear[i]
+        params[3] = self.separate_species[i]
         params[4] = self.dt[i]
         params[5] = self.radius[i]
         params[6] = self.speed[i]
+        params[7] = self.size[i]
         return params
 
     def reset(self):

@@ -6,7 +6,7 @@ import tolvera as tol
 from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
 
-def main(host="127.0.0.1", port=4000):
+def main(host="127.0.0.1", port=7563):
     osc = OSC(host, port, verbose=False, concurrent=True)
     osc.create_client("boids", host="127.0.0.1", port=7564)
     
@@ -14,18 +14,22 @@ def main(host="127.0.0.1", port=4000):
     x = 1920
     y = 1080
     n = 2048
-    boids = tol.vera.BoidsMulti(x, y, n, radius=10, colormode='rgb', species=1, size=1)
-    boids_params = boids.get_params(0)
+    s = 2
+    boids = tol.vera.BoidsMulti(x, y, n, radius=10, colormode='rgb', species=s, size=1)
+    for b in range(n):
+        boids._alive[0, b] = b % s
+    boids._alive[0, 0] = 1.0
+    boids_set_params_species = 0
+    boids_set_params = boids.get_params(boids_set_params_species)
     window = ti.ui.Window("Boids", (x, y))
     canvas = window.get_canvas()
 
-    flute_data = boids.get_params(0)
-    print(flute_data)
-
     @osc.args("/tolvera/boids/params")
     def _(address, *args):
-        nonlocal boids_params
-        boids_params = args
+        nonlocal boids_set_params, boids_set_params_species
+        boids_set_params_species = args[0]
+        boids_set_params = args[1:]
+        print(boids_set_params_species, boids_set_params)
 
     @osc.args("/tolvera/boids/reset")
     def _(address, *args):
@@ -40,11 +44,6 @@ def main(host="127.0.0.1", port=4000):
     def _(address, *args):
         return boids.get_boid(args[0])
 
-    @osc.args("/flute")
-    def _(address, *args):
-        nonlocal flute_data
-        flute_data = args
-
     count   = 5
     counter = 0
 
@@ -52,7 +51,7 @@ def main(host="127.0.0.1", port=4000):
         with _lock:
             if counter == count:
                 counter = 0
-                boids.set_params(0, flute_data)
+                boids.set_params(boids_set_params_species, boids_set_params)
                 # osc("boids", "/tolvera/boids/get", boids.get_boid(0))
                 # print(boids.get_boid(0))
             counter +=1
