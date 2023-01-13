@@ -241,6 +241,14 @@ class Boids(Particles):
         params[6] = self.speed[None]
         return params
 
+    def get_boid(self, i):
+        return [*self._pos[i], *self._vel[i]]
+
+    def set_boid(self, i, val):
+        self._pos[i][0] = val[0]
+        self._pos[i][1] = val[1]
+        self._vel[i][0] = val[2]
+        self._vel[i][1] = val[3]
 
 # `jurigged -v tulvera/tulvera/vera/_boids.py`
 def update(b):
