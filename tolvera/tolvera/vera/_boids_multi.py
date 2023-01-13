@@ -229,25 +229,25 @@ class BoidsMulti(Particles):
         return self.get_px()
     
     @ti.kernel
-    def set_params(self, p: ti.template()):
-        self.separate[None] = p[0]
-        self.align[None]    = p[1]
-        self.cohere[None]   = p[2]
-        self.fear[None]     = p[3]
-        self.dt[None]       = p[4]
-        self.radius[None]   = p[5]
-        self.speed[None]    = p[6]
+    def set_params(self, i: ti.i32, p: ti.template()):
+        self.separate[i] = p[0]
+        self.align[i]    = p[1]
+        self.cohere[i]   = p[2]
+        self.fear[i]     = p[3]
+        self.dt[i]       = p[4]
+        self.radius[i]   = p[5]
+        self.speed[i]    = p[6]
 
-    def get_params(self):
+    def get_params(self, i):
         # TODO: Replace with @ti.dataclass?
         params = ti.field(dtype=ti.f32, shape=(7))
-        params[0] = self.separate[None]
-        params[1] = self.align[None]
-        params[2] = self.cohere[None]
-        params[3] = self.fear[None]
-        params[4] = self.dt[None]
-        params[5] = self.radius[None]
-        params[6] = self.speed[None]
+        params[0] = self.separate[i]
+        params[1] = self.align[i]
+        params[2] = self.cohere[i]
+        params[3] = self.fear[i]
+        params[4] = self.dt[i]
+        params[5] = self.radius[i]
+        params[6] = self.speed[i]
         return params
 
     def reset(self):
