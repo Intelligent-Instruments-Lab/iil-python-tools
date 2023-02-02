@@ -45,7 +45,7 @@ class MIDI:
 
     ports_printed = False
 
-    def __init__(self, in_ports=None, out_ports=None, verbose=True, sleep_time=0.0005):
+    def __init__(self, in_ports=None, out_ports=None, verbose=1, sleep_time=0.0005):
         """
         Args:
             in_ports: list of input devices (uses all by default)
@@ -56,7 +56,7 @@ class MIDI:
 
         self.running = False
 
-        self.verbose = verbose
+        self.verbose = int(verbose)
         self.sleep_time = sleep_time
         # type -> list[Optional[set[port], Optional[set[channel]], function]
         self.handlers = []
@@ -115,7 +115,8 @@ class MIDI:
     def get_callback(self, port_name):
         # print(port_name)
         def callback(msg):
-            print(f'{msg=}')
+            if self.verbose > 1:
+                print(f'{msg=}')
             if not self.running:
                 return
             for filters, f in self.handlers:
@@ -136,6 +137,7 @@ class MIDI:
         """send on a specific port or all output ports"""
         ports = self.out_ports.values() if port is None else [self.out_ports[port]]
         for p in ports:
+            # with _lock:
             p.send(m)
 
     # # see https://mido.readthedocs.io/en/latest/message_types.html
