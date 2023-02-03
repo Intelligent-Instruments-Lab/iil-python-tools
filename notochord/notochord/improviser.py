@@ -7,14 +7,13 @@ Authors:
   Intelligent Instruments Lab 2023
 """
 
-from notochord import Notochord
-from iipyper import MIDI, run, Timer, repeat
+from notochord import Notochord, MIDIConfig
+from iipyper import MIDI, run, Timer, repeat, cleanup
+from typing import Dict
 
 def main(
-        player_channel=0, # MIDI channel numbered from 0
-        noto_channel=1,
-        player_inst=18, # General MIDI numbered from 1 (see Notochord.feed docstring)
-        noto_inst=20,
+        player_config:Dict[int,int]=None, # map MIDI channel : instrument
+        noto_config:Dict[int,int]=None, # map MIDI channel : instrument
         max_note_len=5, # in seconds, to auto-release stuck Notochord notes
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
@@ -22,13 +21,24 @@ def main(
         ):
     midi = MIDI(midi_in, midi_out)
 
-    if noto_inst==player_inst:
-        print('WARNING: noto_inst should be different from player_inst.')
+    if player_config is None:
+        player_config = {1:257} # channel 1: anon 1
+    if noto_config is None:
+        noto_config = {2:258} # channel 2: anon 2
+
+    # convert 1-indexed MIDI channels to 0-indexed here
+    player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
+    noto_map = MIDIConfig({k-1:v for k,v in noto_config.items()})
+
+    if len(player_map.insts & noto_map.insts):
+        print("WARNING: Notochord and Player instruments shouldn't overlap")
         print('setting to an anonymous instrument')
-        if player_inst==257:
-            noto_inst=258
-        else:
-            noto_inst=257
+        # TODO: set to anon insts without changing mel/drum
+        # respecting anon insts selected for player
+        raise NotImplementedError
+
+    # TODO:
+    # check for repeated insts/channels
 
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
@@ -60,7 +70,7 @@ def main(
 
     def query_end(inst, pitch):
         pending.event = noto.query(
-            next_inst=noto_inst,
+            next_inst=inst,
             next_pitch=pitch,
             next_vel=0,
             max_time=0.5)
@@ -74,11 +84,12 @@ def main(
                 print('END STUCK NOTE')
                 return
 
-        # force prediction of noto_inst
-        # if it's playing much less
-        insts = [noto_inst]
+        # TODO: controls for this
+        # force sampling Notochord-controlled instruments
+        # when it has played much less than the player 
+        insts = noto_map.insts
         if noto_events() > 2*player_events():
-            insts.append(player_inst)
+            insts = insts | player_map.insts
 
         pending.event = noto.query(
             min_time=timer.read(),
@@ -89,32 +100,36 @@ def main(
     @midi.handle(type='program_change')
     def _(msg):
         """Program change events set instruments"""
-        nonlocal player_inst, noto_inst
-        if msg.channel == player_channel:
-            player_inst = msg.program
-        if msg.channel == noto_channel:
-            noto_inst = msg.program
+        if msg.channel in player_map:
+            player_map[msg.channel] = msg.program
+        if msg.channel in noto_map:
+            noto_map[msg.channel] = msg.program
 
-    @midi.handle(type='control_change', control=0, channel=player_channel)
+    @midi.handle(type='control_change', control=0)
     def _(msg):
         """any CC0 message on player channel resets Notochord"""
-        noto.reset()
+        if msg.channel in player_map.channels:
+            noto.reset()
 
-    @midi.handle(type=('note_on', 'note_off'), channel=player_channel)
+    @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
         """MIDI NoteOn events from the player"""
+        if msg.channel not in player_map.channels:
+            return
+
         if noto is None:
             print('Notochord model not loaded')
             return
 
         print('PLAYER:', msg)
 
+        inst = player_map[msg.channel]
         pitch = msg.note
         vel = msg.velocity
 
         # feed event to Notochord
         # query for new prediction
-        noto.feed(player_inst, pitch, timer.punch(), vel)
+        noto.feed(inst, pitch, timer.punch(), vel)
         query()
         player_events.plus()
         # print(timer.read())
@@ -138,7 +153,7 @@ def main(
                 return
 
         # send as MIDI
-        midi.send('note_on', note=pitch, velocity=int(vel), channel=noto_channel)
+        midi.note_on(note=pitch, velocity=int(vel), channel=noto_map.inv(inst))
         # feed back to Notochord
         noto.feed(inst, pitch, timer.punch(), vel)
         # track total events played
@@ -152,11 +167,19 @@ def main(
         # check if current prediction has passed
         if pending.event is not None and timer.read() > pending.event['time']:
         # if so, check if it is a notochord-controlled instrument
-            if pending.event['inst'] == noto_inst:
+            if pending.event['inst'] in noto_map.insts:
                 # prediction happens -- send and feed
                 noto_event()
             # query for new prediction
             query()
+
+    @cleanup
+    def _():
+        """end any remaining notes"""
+        for (inst,pitch) in notes:
+            midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
+
+
 
 if __name__=='__main__':
     run(main)

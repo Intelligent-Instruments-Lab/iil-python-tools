@@ -65,6 +65,7 @@ class Timer:
             return 0.0
         return (time.perf_counter_ns() - self.t) * 1e-9
 
+_threads = []
 def repeat(interval, lock=False):
     """@repeat decorator"""
     # close the decorator over interval argument
@@ -79,7 +80,9 @@ def repeat(interval, lock=False):
                     f()
                 clock(interval)
 
-        Thread(target=g).start()
+        th = Thread(target=g, daemon=True)
+        th.start()
+        _threads.append(th)
 
     return decorator
 
@@ -108,12 +111,14 @@ def run(main=None):
 
         # enter a loop if there is not one in main
         while True:
-            time.sleep(5e-4)
+            time.sleep(3e-2)
 
     except KeyboardInterrupt:
+        # for th in _threads:
+            # pass
         for a in Audio.instances:
             a.stream.stop()
             a.stream.close()
         for f in _cleanup_fns:
             f()
-        raise
+        exit(0)

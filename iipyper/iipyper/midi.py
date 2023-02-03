@@ -146,8 +146,9 @@ class MIDI:
         if name=='cc': name = 'control_change'
         if name=='pc': name = 'program_change'
         if name in (
-            'note_on', 'note_off', 'cc', 'polytouch', 'control_change', 
+            'note_on', 'note_off', 'polytouch', 'control_change', 
             'program_change', 'aftertouch', 'pitchwheel', 'sysex'):
             return lambda *a, **kw: self.send(name, *a, **kw)
+        raise AttributeError
         
 

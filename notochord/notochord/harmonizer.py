@@ -8,7 +8,7 @@ Authors:
 """
 
 from notochord import Notochord
-from iipyper import MIDI, run, Timer
+from iipyper import MIDI, run, Timer, cleanup
 
 def main(
         player_channel=0, # MIDI channel numbered from 0
@@ -72,7 +72,7 @@ def main(
                 include_pitch=range(pitch+1, 128))
             print('NOTO:', r)
             # send it
-            midi.send('note_on', 
+            midi.note_on(
                 note=r['pitch'], velocity=int(r['vel']), channel=noto_channel)
             # feed back
             noto.feed(r['inst'], r['pitch'], r['time'], r['vel'])
@@ -86,11 +86,17 @@ def main(
                 print('harmonizing NoteOff not found')
                 return
             # send harmonizing NoteOff
-            midi.send('note_off',
+            midi.note_off(
                 note=noto_pitch, velocity=vel, channel=noto_channel)
             # feed 
             noto.feed(player_inst, pitch, timer.punch(), 0)
             noto.feed(noto_inst, noto_pitch, 0, 0)
+
+    @cleanup
+    def _():
+        """end any remaining notes"""
+        for pitch in note_map.values():
+            midi.note_off(note=pitch, velocity=0, channel=noto_channel)
 
 if __name__=='__main__':
     run(main)
