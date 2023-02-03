@@ -141,7 +141,7 @@ class BoidsMulti(Particles):
                         cohere += self._pos[bn]
                         n += 1
                     else:
-                        sep_species += (self._pos[b] + self._pos[bn]) / dis_norm
+                        sep_species += (self._pos[b] - self._pos[bn]) / dis_norm
         if n != 0:
             separate = separate/n * self.separate[self._species[0,b]]
             align    = align/n    * self.align[self._species[0,b]]
@@ -256,6 +256,9 @@ class BoidsMulti(Particles):
         params[6] = self.speed[i]
         params[7] = self.size[i]
         return params
+
+    def set_boid_vel(self, i, vel):
+        self._vel[i] = vel
 
     def reset(self):
         self.init()
