@@ -4,17 +4,14 @@ Each note from the player produces a harmonizing note from Notochord.
 
 Authors:
   Victor Shepardson
-  Jack Armitage
-  Intelligent Instruments Lab 2022
+  Intelligent Instruments Lab 2023
 """
 
 from notochord import Notochord
 from iipyper import MIDI, run, Timer
-# import numpy as np
-# from time import time_ns
 
 def main(
-        player_channel=0, # numbered from 0
+        player_channel=0, # MIDI channel numbered from 0
         noto_channel=1,
         player_inst=20, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=20,

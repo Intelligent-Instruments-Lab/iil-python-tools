@@ -1,21 +1,17 @@
 """
 Notochord MIDI co-improviser server.
-Notochord plays a different instrument from the player.
+Notochord plays a different instrument along with the player.
 
 Authors:
   Victor Shepardson
-  Jack Armitage
-  Intelligent Instruments Lab 2022
+  Intelligent Instruments Lab 2023
 """
 
 from notochord import Notochord
 from iipyper import MIDI, run, Timer, repeat
-# import numpy as np
-import time
-# from time import time_ns
 
 def main(
-        player_channel=0, # numbered from 0
+        player_channel=0, # MIDI channel numbered from 0
         noto_channel=1,
         player_inst=18, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=20,
