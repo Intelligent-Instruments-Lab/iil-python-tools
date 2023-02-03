@@ -11,6 +11,14 @@ from notochord import Notochord, MIDIConfig
 from iipyper import MIDI, run, Timer, repeat, cleanup
 from typing import Dict
 
+import mido
+
+# from rich import print
+from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
+import time
+
 def main(
         player_config:Dict[int,int]=None, # map MIDI channel : instrument
         noto_config:Dict[int,int]=None, # map MIDI channel : instrument
@@ -20,6 +28,15 @@ def main(
         checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
     midi = MIDI(midi_in, midi_out)
+
+    # console = Console()
+    layout = Layout()
+    live = Live()
+    layout.split_row(
+        Layout(live, name="left"),
+        Layout(name="right")
+    )
+    print = live.console.log
 
     if player_config is None:
         player_config = {1:257} # channel 1: anon 1
@@ -153,13 +170,19 @@ def main(
                 return
 
         # send as MIDI
-        midi.note_on(note=pitch, velocity=int(vel), channel=noto_map.inv(inst))
+        msg = mido.Message(
+            type='note_on', 
+            note=pitch, 
+            velocity=int(vel), 
+            channel=noto_map.inv(inst))
+        midi.send(msg)
+        # midi.note_on(note=pitch, velocity=int(vel), channel=noto_map.inv(inst))
         # feed back to Notochord
         noto.feed(inst, pitch, timer.punch(), vel)
         # track total events played
         noto_events.plus()
         # print
-        print('NOTOCHORD:', event)
+        print('NOTOCHORD:', msg)
 
     @repeat(5e-4, lock=True)
     def _():
@@ -179,6 +202,9 @@ def main(
         for (inst,pitch) in notes:
             midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
 
+    with Live(layout, refresh_per_second=10, screen=True):
+        while True:
+            time.sleep(1e-2)
 
 
 if __name__=='__main__':
