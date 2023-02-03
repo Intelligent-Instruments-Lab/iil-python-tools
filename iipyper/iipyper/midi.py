@@ -4,26 +4,6 @@ import mido
 
 from .state import _lock
 
-# # not sure why this didn't work in MIDI class.
-# async def midi_coroutine(self):
-#     while True:
-#         for port_name, port in self.in_ports.items():
-#             # print(port_name, port)
-#             for msg in port.iter_pending():
-#                 # print(port_name, m)
-#                 for filters, f in self.handlers:
-#                     use_handler = (
-#                         'port' not in filters 
-#                         or port_name in filters.pop('port'))
-#                     use_handler &= all(
-#                         filt is None 
-#                         or not hasattr(msg, k)
-#                         or getattr(msg, k) in filt
-#                         for k,filt in filters.items())
-#                     if use_handler: f(msg)
-
-#         await asyncio.sleep(self.sleep_time)
-
 def _get_filter(item):
     if item is None:
         return item
@@ -45,7 +25,7 @@ class MIDI:
 
     ports_printed = False
 
-    def __init__(self, in_ports=None, out_ports=None, verbose=True, sleep_time=0.0005):
+    def __init__(self, in_ports=None, out_ports=None, verbose=1, sleep_time=0.0005):
         """
         Args:
             in_ports: list of input devices (uses all by default)
@@ -56,10 +36,15 @@ class MIDI:
 
         self.running = False
 
-        self.verbose = verbose
+        self.verbose = int(verbose)
         self.sleep_time = sleep_time
         # type -> list[Optional[set[port], Optional[set[channel]], function]
         self.handlers = []
+
+        if isinstance(in_ports, str):
+            in_ports = [in_ports]
+        if isinstance(out_ports, str):
+            out_ports = [out_ports]
 
         if in_ports is None or len(in_ports)==0:
             in_ports = set(mido.get_input_names())  
@@ -115,7 +100,8 @@ class MIDI:
     def get_callback(self, port_name):
         # print(port_name)
         def callback(msg):
-            print(f'{msg=}')
+            if self.verbose > 1:
+                print(f'{msg=}')
             if not self.running:
                 return
             for filters, f in self.handlers:
@@ -136,6 +122,7 @@ class MIDI:
         """send on a specific port or all output ports"""
         ports = self.out_ports.values() if port is None else [self.out_ports[port]]
         for p in ports:
+            # with _lock:
             p.send(m)
 
     # # see https://mido.readthedocs.io/en/latest/message_types.html
@@ -159,8 +146,9 @@ class MIDI:
         if name=='cc': name = 'control_change'
         if name=='pc': name = 'program_change'
         if name in (
-            'note_on', 'note_off', 'cc', 'polytouch', 'control_change', 
+            'note_on', 'note_off', 'polytouch', 'control_change', 
             'program_change', 'aftertouch', 'pitchwheel', 'sysex'):
             return lambda *a, **kw: self.send(name, *a, **kw)
+        raise AttributeError
         
 

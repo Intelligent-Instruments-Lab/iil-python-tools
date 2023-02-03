@@ -37,23 +37,52 @@ class Clock:
         return int((time.perf_counter() - self.begin)/self.interval)
 
     def __call__(self, interval):
+        """sleep for requested interval"""
         self.interval = interval
         r = self.tick() + 1
         while self.tick() < r:
             time.sleep(5e-4)
 
-def repeat(interval):
+class Timer:
+    def __init__(self, punch=False):
+        self.t = None
+        if punch:
+            self.punch()
+
+    def punch(self):
+        """return elapsed time since last punch, then punch"""
+        t = time.perf_counter_ns()
+        if self.t is None:
+            dt_ns = 0.0
+        else:
+            dt_ns = t - self.t
+        self.t = t
+        return dt_ns * 1e-9
+
+    def read(self):
+        """return elapsed time since last punch"""
+        if self.t is None:
+            return 0.0
+        return (time.perf_counter_ns() - self.t) * 1e-9
+
+_threads = []
+def repeat(interval, lock=False):
     """@repeat decorator"""
     # close the decorator over interval argument
     def decorator(f):
         def g():
             clock = Clock()
             while True:
-                # with _lock:
-                f()
+                if lock:
+                    with _lock:
+                        f()
+                else:
+                    f()
                 clock(interval)
 
-        Thread(target=g).start()
+        th = Thread(target=g, daemon=True)
+        th.start()
+        _threads.append(th)
 
     return decorator
 
@@ -80,10 +109,16 @@ def run(main=None):
         for a in Audio.instances:
             a.stream.start()
 
+        # enter a loop if there is not one in main
+        while True:
+            time.sleep(3e-2)
+
     except KeyboardInterrupt:
+        # for th in _threads:
+            # pass
         for a in Audio.instances:
             a.stream.stop()
             a.stream.close()
         for f in _cleanup_fns:
             f()
-        raise
+        exit(0)

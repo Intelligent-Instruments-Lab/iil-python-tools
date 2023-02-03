@@ -423,14 +423,14 @@ class Notochord(nn.Module):
                 predicted event should *not* be played. if `allow end` is false, 
                 this will always be 0.
             'step': int. number of steps since calling `reset`.
-            'instrument': int. id of predicted instrument.
+            'inst': int. id of predicted instrument.
                 1-128 are General MIDI standard melodic instruments
                 129-256 are drumkits for MIDI programs 1-128
                 257-264 are 'anonymous' melodic instruments
                 265-272 are 'anonymous' drums
             'pitch': int. predicted MIDI number of next note, 0-128.
             'time': float. predicted time to next note in seconds.
-            'velocity': float. unquantized predicted velocity of next note.
+            'vel': float. unquantized predicted velocity of next note.
                 0-127; hard 0 indicates a note-off event.
             '*_params': tensor. distribution parameters for visualization
                 purposes.
@@ -621,7 +621,7 @@ class Notochord(nn.Module):
                 if len(predicted) > idx:
                     return predicted[idx]
                 return None
-            print('sampling order:', [mode_names[i] for i in perm])
+            # print('sampling order:', [mode_names[i] for i in perm])
 
             # for each undetermined modality, 
             # sample a new value conditioned on already determined ones
