@@ -12,13 +12,16 @@ import time
 # from time import time_ns
 
 def main(
-        player_channel=0, 
+        player_channel=0, # numbered from 0
         noto_channel=1,
-        player_inst=18,
+        player_inst=18, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=20,
-        max_note_len=5,
-        checkpoint="artifacts/notochord-latest.ckpt"):
-    midi = MIDI()
+        max_note_len=5, # in seconds
+        midi_in=None, # MIDI port for player input
+        midi_out=None, # MIDI port for Notochord output
+        checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
+        ):
+    midi = MIDI(midi_in, midi_out)
 
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)

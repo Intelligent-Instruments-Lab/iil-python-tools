@@ -4,26 +4,6 @@ import mido
 
 from .state import _lock
 
-# # not sure why this didn't work in MIDI class.
-# async def midi_coroutine(self):
-#     while True:
-#         for port_name, port in self.in_ports.items():
-#             # print(port_name, port)
-#             for msg in port.iter_pending():
-#                 # print(port_name, m)
-#                 for filters, f in self.handlers:
-#                     use_handler = (
-#                         'port' not in filters 
-#                         or port_name in filters.pop('port'))
-#                     use_handler &= all(
-#                         filt is None 
-#                         or not hasattr(msg, k)
-#                         or getattr(msg, k) in filt
-#                         for k,filt in filters.items())
-#                     if use_handler: f(msg)
-
-#         await asyncio.sleep(self.sleep_time)
-
 def _get_filter(item):
     if item is None:
         return item
@@ -60,6 +40,11 @@ class MIDI:
         self.sleep_time = sleep_time
         # type -> list[Optional[set[port], Optional[set[channel]], function]
         self.handlers = []
+
+        if isinstance(in_ports, str):
+            in_ports = [in_ports]
+        if isinstance(out_ports, str):
+            out_ports = [out_ports]
 
         if in_ports is None or len(in_ports)==0:
             in_ports = set(mido.get_input_names())  
