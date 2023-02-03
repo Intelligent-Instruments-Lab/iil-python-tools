@@ -44,8 +44,10 @@ class Clock:
             time.sleep(5e-4)
 
 class Timer:
-    def __init__(self):
+    def __init__(self, punch=False):
         self.t = None
+        if punch:
+            self.punch()
 
     def punch(self):
         """return elapsed time since last punch, then punch"""

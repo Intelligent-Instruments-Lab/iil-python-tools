@@ -14,8 +14,9 @@ import time
 def main(
         player_channel=0, 
         noto_channel=1,
-        player_inst=257,
-        noto_inst=258,
+        player_inst=18,
+        noto_inst=20,
+        max_note_len=5,
         checkpoint="artifacts/notochord-latest.ckpt"):
     midi = MIDI()
 
@@ -43,11 +44,15 @@ def main(
     noto_events = Counter()
     player_events = Counter()
 
+    # map (inst, pitch) pairs to Timers
+    # delete keys when there is a note off
+    notes = {}
+
     def query():
         # force prediction of noto_inst
         # the first time
         insts = [noto_inst]
-        if noto_events() > 2*player_events():
+        if 2*noto_events() > player_events():
             insts.append(player_inst)
 
         pending.event = noto.query(
@@ -57,9 +62,7 @@ def main(
 
     @midi.handle(type='program_change')
     def _(msg):
-        """
-        Program change events set instruments
-        """
+        """Program change events set instruments"""
         nonlocal player_inst, noto_inst
         if msg.channel == player_channel:
             player_inst = msg.program
@@ -68,16 +71,12 @@ def main(
 
     @midi.handle(type='control_change', control=0, channel=player_channel)
     def _(msg):
-        """
-        any CC0 message on player channel resets Notochord
-        """
+        """any CC0 message on player channel resets Notochord"""
         noto.reset()
 
     @midi.handle(type=('note_on', 'note_off'), channel=player_channel)
     def _(msg):
-        """
-        MIDI NoteOn events from the player
-        """
+        """MIDI NoteOn events from the player"""
         if noto is None:
             print('Notochord model not loaded')
             return
@@ -94,32 +93,52 @@ def main(
         player_events.plus()
         # print(timer.read())
 
-    @repeat(1e-3, lock=False)
+    def noto_event():
+        # notochord event happens:
+        event = pending.event
+        inst, pitch, vel = event['inst'], event['pitch'], event['vel']
+
+        # track held notes
+        k = (inst, pitch)
+        if vel > 0:
+            notes[k] = Timer(punch=True)
+        else:
+            if k in notes:
+                del notes[k]
+            else:
+                # bad prediction: note-off without note-on
+                print('REPLACING BAD PREDICTION', pending.event)
+                query()
+                return
+
+        # send as MIDI
+        midi.send('note_on', note=pitch, velocity=int(vel), channel=noto_channel)
+        # feed back to Notochord
+        noto.feed(inst, pitch, timer.punch(), vel)
+        # track total events played
+        noto_events.plus()
+        # print
+        print('NOTOCHORD:', event)
+
+    @repeat(5e-4, lock=True)
     def _():
         """Loop, checking if predicted next event happens"""
         # check if current prediction has passed
-        # if so, feed and send MIDI
-        # otherwise, query for a new prediction
-        # if pending.event is not None:
-            # print(time.perf_counter_ns(), timer.t, timer.read(), pending.event['time'])
         if pending.event is not None and timer.read() > pending.event['time']:
         # if so, check if it is a notochord-controlled instrument
             if pending.event['inst'] == noto_inst:
                 # prediction happens -- send and feed
-                midi.send('note_on', 
-                    note=pending.event['pitch'], 
-                    velocity=int(pending.event['vel']), 
-                    channel=noto_channel)
-                noto.feed(
-                    pending.event['inst'], 
-                    pending.event['pitch'], 
-                    timer.punch(),
-                    pending.event['vel'])
-                noto_events.plus()
-                print('NOTOCHORD:', pending.event)
-
+                noto_event()
             # query for new prediction
             query()
+
+    @repeat(1e-2, lock=True)
+    def _():
+        """Loop, checking if there are any stuck notes"""
+        for (inst,pitch),t in notes.items():
+            if t.read() > max_note_len:
+                pending.event = {'inst':inst, 'pitch':pitch, 'vel':0, 'time':0}
+                print('END STUCK NOTE')
 
 if __name__=='__main__':
     run(main)

@@ -13,8 +13,8 @@ from iipyper import MIDI, run, Timer
 def main(
         player_channel=0, 
         noto_channel=1,
-        player_inst=0,
-        noto_inst=0,
+        player_inst=20,
+        noto_inst=20,
         checkpoint="artifacts/notochord-latest.ckpt"):
     midi = MIDI()
 
