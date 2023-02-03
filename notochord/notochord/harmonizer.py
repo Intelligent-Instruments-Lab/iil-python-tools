@@ -1,4 +1,7 @@
 """
+Notochord MIDI harmonizer server.
+Each note from the player produces a harmonizing note from Notochord.
+
 Authors:
   Victor Shepardson
   Jack Armitage

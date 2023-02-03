@@ -1,4 +1,7 @@
 """
+Notochord MIDI co-improviser server.
+Notochord plays a different instrument from the player.
+
 Authors:
   Victor Shepardson
   Jack Armitage
@@ -16,12 +19,20 @@ def main(
         noto_channel=1,
         player_inst=18, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=20,
-        max_note_len=5, # in seconds
+        max_note_len=5, # in seconds, to auto-release stuck Notochord notes
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
         checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
     midi = MIDI(midi_in, midi_out)
+
+    if noto_inst==player_inst:
+        print('WARNING: noto_inst should be different from player_inst.')
+        print('setting to an anonymous instrument')
+        if player_inst==257:
+            noto_inst=258
+        else:
+            noto_inst=257
 
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
@@ -51,17 +62,33 @@ def main(
     # delete keys when there is a note off
     notes = {}
 
+    def query_end(inst, pitch):
+        pending.event = noto.query(
+            next_inst=noto_inst,
+            next_pitch=pitch,
+            next_vel=0,
+            max_time=0.5)
+
     def query():
+        # check for stuck notes
+        # and prioritize ending those
+        for (inst,pitch),t in notes.items():
+            if t.read() > max_note_len:
+                query_end(inst,pitch)
+                print('END STUCK NOTE')
+                return
+
         # force prediction of noto_inst
-        # the first time
+        # if it's playing much less
         insts = [noto_inst]
-        if 2*noto_events() > player_events():
+        if noto_events() > 2*player_events():
             insts.append(player_inst)
 
         pending.event = noto.query(
             min_time=timer.read(),
             include_inst=insts)
         print('prediction:', pending.event)
+
 
     @midi.handle(type='program_change')
     def _(msg):
@@ -134,14 +161,6 @@ def main(
                 noto_event()
             # query for new prediction
             query()
-
-    @repeat(1e-2, lock=True)
-    def _():
-        """Loop, checking if there are any stuck notes"""
-        for (inst,pitch),t in notes.items():
-            if t.read() > max_note_len:
-                pending.event = {'inst':inst, 'pitch':pitch, 'vel':0, 'time':0}
-                print('END STUCK NOTE')
 
 if __name__=='__main__':
     run(main)
