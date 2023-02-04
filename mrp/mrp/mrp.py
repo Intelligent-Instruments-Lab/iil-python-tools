@@ -278,6 +278,30 @@ class MRP(object):
             print('quality_update(): "quality" is not a string:', quality)
             return None
 
+    def quality_update_all(self, quality, value, relative=False, channel=None):
+        """
+        Update quality of all active notes to a new value.
+
+        Example
+            quality_update_all('brightness', 0.5)
+
+        Args
+            quality (string): name of quality to update, must be same as key in osc_paths
+            value (float): value of quality
+            relative (bool): replace the value or add it to the current value
+            channel (int): which MIDI channel to send on
+        """
+        if isinstance(quality, str):
+            active_notes = self.note_on_numbers()
+            changed_notes = []
+            for note in active_notes:
+                changed_note = self.quality_update(self, note, quality, value, relative, channel)
+                changed_notes.append(changed_note)
+            return changed_notes
+        else:
+            print('quality_update(): "quality" is not a string:', quality)
+            return None
+
     def qualities_update(self, note, qualities, relative=False, channel=None):
         """
         Update a note's qualities to a new set of values.
@@ -302,7 +326,7 @@ class MRP(object):
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
                 for q, v in qualities.items():
-                    if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
+                    if isinstance(v, list) or isinstance(v, np.ndarray): # e.g. /harmonics/raw
                         if relative is True:
                             print('quality_update(): relative updating of lists not supported')
                         else:
@@ -325,7 +349,35 @@ class MRP(object):
         else:
             print('quality_update(): "qualities" is not an object:', note, qualities)
             return None
+    
+    def qualities_update_all(self, qualities, relative=False, channel=None):
+        """
+        Update the qualities for all active notes to a new set of values.
 
+        Example
+            qualities_update_all({
+                'brightness': 0.5,
+                'intensity': 0.6,
+                'harmonics_raw': [0.2, 0.3, 0.4]
+            })
+        
+        Args
+            qualities (dict): dict of qualities in key (string):value (float) pairs to update, 
+                              must be same as key in osc_paths
+            relative (bool): replace the value or add it to the current value
+            channel (int): which MIDI channel to send on
+        """
+        if isinstance(qualities, dict):
+            active_notes = self.note_on_numbers()
+            changed_notes = []
+            for note in active_notes:
+                changed_note = self.qualities_update(self, qualities, relative, channel)
+                changed_notes.append(changed_note)
+            return changed_notes
+        else:
+            print('quality_update(): "qualities" is not an object:', note, qualities)
+            return None
+    
     """
     /mrp/pedal
     """
