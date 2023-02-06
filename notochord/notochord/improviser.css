@@ -1,0 +1,32 @@
+NotoControl {
+    layout: horizontal;
+    background: $boost;
+    height: 5;
+    margin: 1;
+    min-width: 50;
+    padding: 1;
+}
+
+NotoPrediction {
+    content-align: center middle;
+    /* text-opacity: 60%; */
+    height: 3;
+}
+
+TextLog {
+    /* content-align: center middle; */
+    /* text-opacity: 60%; */
+    height: 40;
+}
+
+Button {
+    width: 16;
+}
+
+#mute {
+    dock: left;
+}
+
+#reset {
+    dock: right;
+}
