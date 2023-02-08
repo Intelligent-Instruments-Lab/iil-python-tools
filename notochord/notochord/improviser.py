@@ -1,6 +1,6 @@
 """
 Notochord MIDI co-improviser server.
-Notochord plays a different instrument along with the player.
+Notochord plays different instruments along with the player.
 
 Authors:
   Victor Shepardson
@@ -8,7 +8,7 @@ Authors:
 """
 
 from notochord import Notochord, MIDIConfig
-from iipyper import MIDI, run, Timer, repeat, cleanup
+from iipyper import MIDI, run, Timer, repeat, cleanup, TUI
 from typing import Dict
 
 import mido
@@ -16,67 +16,45 @@ import mido
 
 from rich.panel import Panel
 from rich.pretty import Pretty
-
-from textual.app import App, ComposeResult
 from textual.reactive import reactive
-# from textual import events
-from textual.widgets import Header, Footer, Static, Button, TextLog, Label
+from textual.widgets import Header, Footer, Static, Button, TextLog
+
+class NotoLog(TextLog):
+    value = reactive({})
+    def watch_value(self, time: float) -> None:
+        self.write(self.value)
 
 class NotoPrediction(Static):
     value = reactive({})
-
     def watch_value(self, time: float) -> None:
-        """Called when the value attribute changes."""
         self.update(Panel(Pretty(self.value), title='prediction'))
 
 class NotoControl(Static):
-    def compose(self) -> ComposeResult:
-        """"""
+    def compose(self):
         yield Button("Mute", id="mute", variant="error")
         yield Button("Reset", id="reset")
 
-class NotoApp(App):
-    """A Textual app to manage stopwatches."""
-
+class NotoTUI(TUI):
     CSS_PATH = 'improviser.css'
 
     BINDINGS = [
         ("m", "mute", "Mute Notochord"),
         ("r", "reset", "Reset Notochord")]
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        getattr(self, f'action_{event.button.id}')()
-
-    def compose(self) -> ComposeResult:
+    def compose(self):
         """Create child widgets for the app."""
         yield Header()
 
-        self.note_log = TextLog()
-        yield self.note_log
+        self.std_log = TextLog()#id='std_log')
+        yield self.std_log
 
-        self.prediction = NotoPrediction()
-        yield self.prediction
+        yield NotoLog(id='note')
+
+        yield NotoPrediction(id='prediction')
 
         yield NotoControl()
 
         yield Footer()
-
-
-    def set_action(self, f):
-        # print(f'action_{f.__name__}')
-        setattr(self, f'action_{f.__name__}', f)
-
-    def __call__(self, *a, **kw):
-        if self.is_running:
-            self.call_from_thread(self.do_call, *a, **kw)
-
-    def do_call(self, prediction=None, note=None):
-        if not self.is_running:
-            return
-        if prediction is not None:
-            self.prediction.value = prediction
-        if note is not None:
-            self.note_log.write(note)
 
 def main(
         player_config:Dict[int,int]=None, # map MIDI channel : instrument
@@ -86,13 +64,27 @@ def main(
         midi_out=None, # MIDI port for Notochord output
         checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
+    """
+    Args:
+        player_config: mapping from MIDI channels to MIDI instruments controlled
+            by the player. Both indexed from 1.
+        noto_config: mapping from MIDI channels to MIDI instruments controlled
+            by the notochord. Both indexed from 1.
+            instruments should be different from the player instruments.
+            channels should be different unless different ports are used.
+        max_note_len: time in seconds after which to force-release sustained
+            notochord notes.
+        midi_in: MIDI port for player input
+        midi_out: MIDI port for Notochord output
+        checkpoint: path to notochord model checkpoint
+    """
     midi = MIDI(midi_in, midi_out)
 
     ### Textual UI
-    ui = NotoApp()
+    tui = NotoTUI()
+    print = tui.print
     def print_note(*args):
-        print(*args)
-        ui(note=' '.join(str(a) for a in args))
+        tui(note=' '.join(str(a) for a in args))
     ###
 
     if player_config is None:
@@ -117,11 +109,14 @@ def main(
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
         noto.eval()
+        noto.reset()
     else:
         noto = None
 
+    # main timer to track time difference between MIDI events
     timer = Timer()
 
+    # counter to track total player/notochord events
     class Counter():
         def __init__(self):
             self.count = 0
@@ -129,27 +124,21 @@ def main(
             self.count += n
         def __call__(self):
             return self.count
+    noto_events = Counter()
+    player_events = Counter()
 
+    # class to track pending event prediction
     class Prediction:
         def __init__(self, event):
             self.event = event
             self.gate = True
     pending = Prediction(None)
 
-    noto_events = Counter()
-    player_events = Counter()
-
-    # map (inst, pitch) pairs to Timers
-    # delete keys when there is a note off
+    # mapping from (inst, pitch) pairs to Timers
+    # to track sustained notochord notes
     notes = {}
 
-    def query_end(inst, pitch):
-        pending.event = noto.query(
-            next_inst=inst,
-            next_pitch=pitch,
-            next_vel=0,
-            max_time=0.5)
-
+    # query Notochord for a new next event
     def query():
         # check for stuck notes
         # and prioritize ending those
@@ -159,17 +148,26 @@ def main(
                 print('END STUCK NOTE')
                 return
 
-        # TODO: controls for this
         # force sampling Notochord-controlled instruments
         # when it has played much less than the player 
+        # TODO: controls for this
+        # TODO: balance between Notochord instruments
         insts = noto_map.insts
         if noto_events() > 2*player_events():
             insts = insts | player_map.insts
 
         pending.event = noto.query(
-            min_time=timer.read(),
+            min_time=timer.read(), # event can't happen sooner than now
             include_inst=insts)
-        ui(prediction=pending.event)
+        tui(prediction=pending.event)
+
+    # query for the end of a note with flexible timing
+    def query_end(inst, pitch):
+        pending.event = noto.query(
+            next_inst=inst,
+            next_pitch=pitch,
+            next_vel=0,
+            max_time=0.5)
 
     @midi.handle(type='program_change')
     def _(msg):
@@ -206,7 +204,6 @@ def main(
         noto.feed(inst, pitch, timer.punch(), vel)
         query()
         player_events.plus()
-        # print(timer.read())
 
     def noto_event():
         """
@@ -226,7 +223,7 @@ def main(
                 del notes[k]
             else:
                 # bad prediction: note-off without note-on
-                # print_right('REPLACING BAD PREDICTION', pending.event)
+                print('REPLACING BAD PREDICTION')
                 query()
                 return
 
@@ -263,7 +260,7 @@ def main(
         for (inst,pitch) in notes:
             midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
 
-    @ui.set_action
+    @tui.set_action
     def mute():
         pending.gate = not pending.gate
         # end+feed all held notes
@@ -275,7 +272,7 @@ def main(
         if pending.gate and pending.event is None:
             query()
     
-    @ui.set_action
+    @tui.set_action
     def reset():
         # end all held notes
         noto.reset()
@@ -283,7 +280,7 @@ def main(
             midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
         notes.clear()
 
-    ui.run()
+    tui.run()
 
 
 if __name__=='__main__':
