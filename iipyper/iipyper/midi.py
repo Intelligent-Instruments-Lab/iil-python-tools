@@ -46,6 +46,8 @@ class MIDI:
         if isinstance(out_ports, str):
             out_ports = [out_ports]
 
+        # TODO: fuzzy match port names
+
         if in_ports is None or len(in_ports)==0:
             in_ports = set(mido.get_input_names())  
         self.in_ports = {# mido.ports.MultiPort([

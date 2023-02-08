@@ -61,11 +61,12 @@ def main(
     """
     Args:
         player_config: mapping from MIDI channels to MIDI instruments controlled
-            by the player. Both indexed from 1.
+            by the player.
         noto_config: mapping from MIDI channels to MIDI instruments controlled
-            by the notochord. Both indexed from 1.
+            by notochord. Both indexed from 1.
             instruments should be different from the player instruments.
             channels should be different unless different ports are used.
+            MIDI channels and General MIDI instruments are indexed from 1.
         max_note_len: time in seconds after which to force-release sustained
             notochord notes.
         midi_in: MIDI port for player input
@@ -177,7 +178,7 @@ def main(
 
     @midi.handle(type='control_change')
     def _(msg):
-        """any CC0 message on player channel resets Notochord"""
+        """any CC1 message on player channel resets Notochord"""
         if msg.channel in player_map.channels:
             print(msg)
             if msg.control==1:
