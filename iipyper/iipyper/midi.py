@@ -25,7 +25,7 @@ class MIDI:
 
     ports_printed = False
 
-    def __init__(self, in_ports=None, out_ports=None, verbose=1, sleep_time=0.0005):
+    def __init__(self, in_ports=None, out_ports=None, verbose=1, sleep_time=5e-4):
         """
         Args:
             in_ports: list of input devices (uses all by default)

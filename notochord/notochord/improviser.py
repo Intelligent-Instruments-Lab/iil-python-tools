@@ -44,16 +44,10 @@ class NotoTUI(TUI):
     def compose(self):
         """Create child widgets for the app."""
         yield Header()
-
-        self.std_log = TextLog()#id='std_log')
         yield self.std_log
-
         yield NotoLog(id='note')
-
         yield NotoPrediction(id='prediction')
-
         yield NotoControl()
-
         yield Footer()
 
 def main(
@@ -138,6 +132,10 @@ def main(
     # to track sustained notochord notes
     notes = {}
 
+    def noto_reset():
+        noto.reset()
+        print('RESET')
+
     # query Notochord for a new next event
     def query():
         # check for stuck notes
@@ -177,11 +175,13 @@ def main(
         if msg.channel in noto_map:
             noto_map[msg.channel] = msg.program
 
-    @midi.handle(type='control_change', control=0)
+    @midi.handle(type='control_change')
     def _(msg):
         """any CC0 message on player channel resets Notochord"""
         if msg.channel in player_map.channels:
-            noto.reset()
+            print(msg)
+            if msg.control==1:
+                noto_reset()
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
@@ -275,7 +275,7 @@ def main(
     @tui.set_action
     def reset():
         # end all held notes
-        noto.reset()
+        noto_reset()
         for (inst,pitch) in notes:
             midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
         notes.clear()

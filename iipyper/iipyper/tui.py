@@ -15,16 +15,17 @@ try:
         #     ("a", "my_a_action", "Do something when A is pressed"),
         #     ("b", "my_b_action", "Do somethign when B is pressed")]
 
+        def __init__(self):
+            super().__init__()
+            self.std_log = TextLog(id='std_log')
+
         def compose(self) -> ComposeResult:
             """Create child widgets for the Textual App.
             
             override this to build the TUI for your iipyper app.
             """
             yield Header()
-
-            self.std_log = TextLog(id='std_log')
             yield self.std_log
-
             yield Footer()
 
         def set_action(self, f):
