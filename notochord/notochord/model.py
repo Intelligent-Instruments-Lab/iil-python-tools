@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixtureLogistic, reweight_top_p
+from .distributions import CensoredMixtureLogistic, reweight_top_p, steer_categorical
 from .util import arg_to_set
 
 class SineEmbedding(nn.Module):
@@ -350,7 +350,8 @@ class Notochord(nn.Module):
 
     # TODO: remove pitch_topk and sweep_time?
     def query(self,
-            next_inst=None, next_pitch=None, next_time=None, next_vel=None, 
+            next_inst=None, next_pitch=None, next_time=None, next_vel=None,
+            steer_pitch=None, steer_time=None, steer_vel=None,
             pitch_topk=None, index_pitch=None,
             allow_end=False,
             sweep_time=False, min_time=None, max_time=None,
@@ -402,6 +403,10 @@ class Notochord(nn.Module):
                 precise, 1 is 'natural' according to the model.
             index_pitch: Optional[int]. if not None, deterministically take the
                 nth most likely pitch instead of sampling.
+            steer_*: Optional[float]. number between 0 and 1.
+                deterministic sampling method,
+                which is monotonically related to the sampled value,
+                and recovers the model distribution when uniformly distributed.
 
             # multiple predictions
             pitch_topk: Optional[int]. if not None, instead of sampling pitch, 
@@ -531,14 +536,20 @@ class Notochord(nn.Module):
                 preserve_x = x[...,constrain_pitch]
                 x = torch.full_like(x, -np.inf)
                 x[...,constrain_pitch] = preserve_x
+            # x is modified logits
+
             if index_pitch is not None:
                 return x.argsort(-1, True)[...,index_pitch]
             elif pitch_topk is not None:
                 return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+            
+            probs = x.softmax(-1)
+            if pitch_temp is not None:
+                probs = reweight_top_p(probs, pitch_temp)
+
+            if steer_pitch is not None:
+                return steer_categorical(probs, steer_pitch)
             else:
-                probs = x.softmax(-1)
-                if pitch_temp is not None:
-                    probs = reweight_top_p(probs, pitch_temp)
                 return D.Categorical(probs).sample()
 
         def sample_time(x):
@@ -555,20 +566,23 @@ class Notochord(nn.Module):
                 # multiple times in batch dim
                 # print(loc.shape)
                 return loc
-            else:
-                trunc = (
-                    -np.inf if min_time is None else min_time,
-                    np.inf if max_time is None else max_time)
-                return self.time_dist.sample(x, 
-                    truncate=trunc,
-                    component_temp=timing_temp, weight_top_p=rhythm_temp)
+            
+            trunc = (
+                -np.inf if min_time is None else min_time,
+                np.inf if max_time is None else max_time)
+
+            return self.time_dist.sample(x, 
+                truncate=trunc,
+                component_temp=timing_temp, 
+                weight_top_p=rhythm_temp,
+                steer=steer_time)
 
         def sample_velocity(x):
             trunc = (
                 -np.inf if min_vel is None else min_vel,
                 np.inf if max_vel is None else max_vel)
             return self.vel_dist.sample(
-                x, component_temp=velocity_temp, truncate=trunc)
+                x, component_temp=velocity_temp, truncate=trunc, steer=steer_vel)
 
         with torch.inference_mode():
             if self.h_query is None:

@@ -6,6 +6,10 @@ from torch import nn
 import torch.distributions as D
 import torch.nn.functional as F
 
+def steer_categorical(probs, value):
+    cdf = probs.cumsum(-1)
+    return torch.searchsorted(cdf, torch.full((*probs.shape[:-1],1), value))[...,0]
+
 def reweight_top_p(probs, top_p):
     """given tensor of probabilities, apply top p / "nucleus" filtering,
     or temperature if `top_p` is greater than 1
@@ -140,7 +144,7 @@ class CensoredMixtureLogistic(nn.Module):
     # TODO: 'discrete_sample' method which would re-quantize and then allow
     # e.g. nucleus sampling on the categorical distribution?
     def sample(self, h, truncate=None, shape=None, 
-        weight_top_p=None, component_temp=None, bias=None):
+        weight_top_p=None, component_temp=None, bias=None, steer=None):
         """
         Args:
             h: Tensor[...,n_params]
@@ -154,6 +158,7 @@ class CensoredMixtureLogistic(nn.Module):
                 ignoring sharpness.
             bias: applied outside of truncation but inside of clamping,
                 useful e.g. for latency correction when sampling delta-time
+            steer: 
         Returns:
             Tensor[*shape,...] (h without last dimension, prepended with `shape`)
         """
@@ -162,6 +167,11 @@ class CensoredMixtureLogistic(nn.Module):
             shape = 1
         else:
             unwrap = False
+
+        if steer is not None:
+            # draw k samples
+            steer_k = 256
+            shape = shape * steer_k
 
         if truncate is None:
             truncate = (-np.inf, np.inf)
@@ -206,6 +216,15 @@ class CensoredMixtureLogistic(nn.Module):
 
         # x = loc + scale * (u.log() - (1 - u).log())
         x = loc + bias - scale * (1/u - 1).log()
+
+        if steer is not None:
+            x = x.reshape(steer_k, -1, *x.shape[1:])
+            x = x.sort(dim=0).values
+            # clamp below at second position,
+            # to hopefully avoid always simultaneous / always note-off
+            idx = min(steer_k-1, max(1, int(steer*steer_k)))
+            x = x[idx]
+            
         x = x.clamp(self.lo, self.hi)
         return x[0] if unwrap else x
 

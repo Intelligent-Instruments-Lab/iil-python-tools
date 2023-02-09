@@ -18,11 +18,11 @@ Authors:
 #   player/noto, channel, inst for both
 
 from notochord import Notochord, MIDIConfig
-from iipyper import MIDI, run, Timer, repeat, cleanup, TUI
+from iipyper import MIDI, run, Timer, repeat, cleanup, TUI, profile
 from typing import Dict
 
 import mido
-# import time
+import time
 
 from rich.align import Align
 from rich.panel import Panel
@@ -72,6 +72,9 @@ def main(
         max_note_len=5, # in seconds, to auto-release stuck Notochord notes
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
+        n_recent=50,
+        predict_player=True,
+        testing=False,
         checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
     """
@@ -128,15 +131,20 @@ def main(
     timer = Timer()
 
     # counter to track total player/notochord events
-    class Counter():
-        def __init__(self):
-            self.count = 0
-        def plus(self, n=1):
-            self.count += n
-        def __call__(self):
-            return self.count
-    noto_events = Counter()
-    player_events = Counter()
+    # class Counter():
+    #     def __init__(self):
+    #         self.count = 0
+    #     def plus(self, n=1):
+    #         self.count += n
+    #     def __call__(self):
+    #         return self.count
+    # noto_events = Counter()
+    # player_events = Counter()
+    recent_insts = []
+    def track_recent_insts(inst):
+        recent_insts.append(inst)
+        if len(recent_insts) > n_recent:
+            recent_insts.pop(0)
 
     # class to track pending event prediction
     class Prediction:
@@ -151,38 +159,55 @@ def main(
 
     def noto_reset():
         noto.reset()
+        for (inst,pitch) in notes:
+            midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
+        notes.clear()
+        recent_insts.clear()
         print('RESET')
 
     # query Notochord for a new next event
     def query():
         # check for stuck notes
         # and prioritize ending those
-        for (inst,pitch),t in notes.items():
+        for (inst, pitch), t in notes.items():
             if t.read() > max_note_len:
-                query_end(inst,pitch)
+                query_end(inst, pitch)
                 print('END STUCK NOTE')
                 return
 
+        # force sampling a notochord instrument which hasn't played recently
+        insts = noto_map.insts - set(recent_insts)
+        # if there is one
+        if not len(insts):
+            insts = noto_map.insts
+            if predict_player:
+                insts = insts | player_map.insts
+        # print(f'considering {insts}')
+
         # force sampling Notochord-controlled instruments
         # when it has played much less than the player 
-        # TODO: controls for this
-        # TODO: balance between Notochord instruments
-        insts = noto_map.insts
-        if noto_events() > 2*player_events():
-            insts = insts | player_map.insts
-
-        pending.event = noto.query(
-            min_time=timer.read(), # event can't happen sooner than now
-            include_inst=insts)
+        # insts = noto_map.insts
+        # if noto_events() > player_events()//2:
+            # insts = insts | player_map.insts
+        with profile('query', print=print):
+            pending.event = noto.query(
+                min_time=timer.read(), # event can't happen sooner than now
+                include_inst=insts,
+                # steer_pitch=0.6,
+                # steer_time=0.6,
+                # steer_vel=0.5,
+                )
+        # display the predicted event
         tui(prediction=pending.event)
 
     # query for the end of a note with flexible timing
     def query_end(inst, pitch):
-        pending.event = noto.query(
-            next_inst=inst,
-            next_pitch=pitch,
-            next_vel=0,
-            max_time=0.5)
+        with profile('query', print=print):
+            pending.event = noto.query(
+                next_inst=inst,
+                next_pitch=pitch,
+                next_vel=0,
+                max_time=0.5)
 
     @midi.handle(type='program_change')
     def _(msg):
@@ -218,9 +243,13 @@ def main(
 
         # feed event to Notochord
         # query for new prediction
-        noto.feed(inst, pitch, timer.punch(), vel)
+        with profile('feed', print=print):
+            noto.feed(inst, pitch, timer.punch(), vel)
+        # player_events.plus()
+        track_recent_insts(inst)
         query()
-        player_events.plus()
+        if testing:
+            midi.cc(control=msg.note, value=0, channel=15)
 
     def noto_event():
         """
@@ -240,7 +269,7 @@ def main(
                 del notes[k]
             else:
                 # bad prediction: note-off without note-on
-                print('REPLACING BAD PREDICTION')
+                print('REPLACING INVALID PREDICTION')
                 query()
                 return
 
@@ -253,9 +282,11 @@ def main(
         midi.send(msg)
 
         # feed back to Notochord
-        noto.feed(inst, pitch, timer.punch(), vel)
+        with profile('feed', print=print):
+            noto.feed(inst, pitch, timer.punch(), vel)
         # track total events played
-        noto_events.plus()
+        # noto_events.plus()
+        track_recent_insts(inst)
         # print
         print_note('NOTO:\t', msg)
 
@@ -263,7 +294,12 @@ def main(
     def _():
         """Loop, checking if predicted next event happens"""
         # check if current prediction has passed
-        if pending.gate and pending.event is not None and timer.read() > pending.event['time']:
+        if (
+            not testing and
+            pending.gate and
+            pending.event is not None and
+            timer.read() > pending.event['time']
+            ):
         # if so, check if it is a notochord-controlled instrument
             if pending.event['inst'] in noto_map.insts:
                 # prediction happens -- send and feed
@@ -293,9 +329,6 @@ def main(
     def reset():
         # end all held notes
         noto_reset()
-        for (inst,pitch) in notes:
-            midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
-        notes.clear()
 
     tui.run()
 

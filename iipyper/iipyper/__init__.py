@@ -1,5 +1,6 @@
 from threading import Thread
 import time
+from contextlib import contextmanager
 
 import fire
 
@@ -15,6 +16,13 @@ class Audio:
     def __init__(self, *a, **kw):
         self.stream = sd.InputStream(*a, **kw) # TODO
         Audio.instances.append(self)
+
+@contextmanager
+def profile(label, print=print):
+    t = time.perf_counter_ns()
+    yield None
+    dt = (time.perf_counter_ns() - t)*1e-9
+    print(f'{label}:\t {int(1000*dt)} ms')
 
 
 class Lag:
