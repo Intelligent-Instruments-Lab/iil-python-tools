@@ -7,6 +7,16 @@ Authors:
   Intelligent Instruments Lab 2023
 """
 
+# TODO: make key bindings visibly click corresponding buttons
+# TODO: make Mute a toggle but Reset a momentary
+
+# TODO: color note by pitch class + register
+# TODO: color instrument 1-128, MEL, DRUM, ANON, ANONDRUM
+# TODO: color time
+# TODO: id prediction as player / noto
+# TODO: unify note log / prediction format
+#   player/noto, channel, inst for both
+
 from notochord import Notochord, MIDIConfig
 from iipyper import MIDI, run, Timer, repeat, cleanup, TUI
 from typing import Dict
@@ -14,25 +24,31 @@ from typing import Dict
 import mido
 # import time
 
+from rich.align import Align
 from rich.panel import Panel
 from rich.pretty import Pretty
+from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, Button, TextLog
 
 class NotoLog(TextLog):
-    value = reactive({})
+    value = reactive('')
     def watch_value(self, time: float) -> None:
         self.write(self.value)
 
 class NotoPrediction(Static):
-    value = reactive({})
+    value = reactive(None)
     def watch_value(self, time: float) -> None:
-        self.update(Panel(Pretty(self.value), title='prediction'))
+        evt = self.value
+        if evt is None:
+            return
+        s = f"\tinstrument: {evt['inst']:03d}    pitch: {evt['pitch']:03d}    time: {int(evt['time']*1000):03d} ms    velocity:{int(evt['vel']):03d}"
+        self.update(Panel(s, title='prediction'))
 
 class NotoControl(Static):
     def compose(self):
         yield Button("Mute", id="mute", variant="error")
-        yield Button("Reset", id="reset")
+        yield Button("Reset", id="reset", variant='warning')
 
 class NotoTUI(TUI):
     CSS_PATH = 'improviser.css'
