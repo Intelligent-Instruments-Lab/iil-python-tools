@@ -182,10 +182,8 @@ class Notochord(nn.Module):
         self.step = 0
 
         # volatile hidden states for caching purposes
-        # TODO: would actually like to lazily compute some values, 
-        #       like h_proj(h), which can be ignored when just feeding,
-        #       but should be computed only once when multiple sampling
-        self.prediction_states = []
+        self.h = None
+        self.h_query = None      
 
     def cell_state_names(self):
         return tuple(f'cell_state_{i}' for i in range(len(self.initial_state)))
@@ -344,11 +342,11 @@ class Notochord(nn.Module):
             ]
             x = sum(embs)
 
-            h, new_state = self.rnn(x, self.cell_state)
+            self.h, new_state = self.rnn(x, self.cell_state)
             for t,new_t in zip(self.cell_state, new_state):
                 t[:] = new_t
 
-            self.prediction_states = [h, self.h_proj(h)]
+            self.h_query = None
 
     # TODO: remove pitch_topk and sweep_time?
     def query(self,
@@ -573,7 +571,8 @@ class Notochord(nn.Module):
                 x, component_temp=velocity_temp, truncate=trunc)
 
         with torch.inference_mode():
-            h, proj_h = self.prediction_states
+            if self.h_query is None:
+                self.h_query = self.h_proj(self.h)
 
             modalities = list(zip(
                 self.projections,
@@ -581,7 +580,7 @@ class Notochord(nn.Module):
                 self.embeddings,
                 ))
 
-            context = [proj_h] # embedded outputs for autoregressive prediction
+            context = [self.h_query] # embedded outputs for autoregressive prediction
             predicted = [] # raw outputs
             params = [] # distribution parameters for visualization
 
@@ -651,11 +650,11 @@ class Notochord(nn.Module):
             pred_vel = predicted_by_name('velocity')
 
             if allow_end:
-                end_params = self.end_proj(h)
+                end_params = self.end_proj(self.h)
                 # print(end_params)
                 end = D.Categorical(logits=end_params).sample()
             else:
-                end = torch.zeros(h.shape[:-1])
+                end = torch.zeros(self.h.shape[:-1])
 
             if sweep_time or pitch_topk:
                 # return lists of predictions

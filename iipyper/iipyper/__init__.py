@@ -5,6 +5,7 @@ import fire
 
 from .midi import *
 from .osc import *
+from .tui import *
 from .state import _lock
 
 # Audio WIP
