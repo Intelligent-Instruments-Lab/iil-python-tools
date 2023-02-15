@@ -124,6 +124,8 @@ class MIDI:
         """send on a specific port or all output ports"""
         ports = self.out_ports.values() if port is None else [self.out_ports[port]]
         for p in ports:
+            # print('iipyper send', m)
+            # iiuc mido send should already be thread safe
             # with _lock:
             p.send(m)
 

@@ -8,7 +8,7 @@ Authors:
 """
 
 from notochord import Notochord
-from iipyper import MIDI, run, Timer, cleanup
+from iipyper import MIDI, run, Stopwatch, cleanup
 
 def main(
         player_channel=0, # MIDI channel numbered from 0
@@ -28,7 +28,7 @@ def main(
         noto = None
 
     note_map = {}
-    timer = Timer()
+    stopwatch = Stopwatch()
 
     @midi.handle(type='program_change')
     def _(msg):
@@ -65,7 +65,7 @@ def main(
         # NoteOn
         if msg.type=='note_on' and vel > 0:
             # feed in the performed note
-            noto.feed(player_inst, pitch, timer.punch(), vel)
+            noto.feed(player_inst, pitch, stopwatch.punch(), vel)
             # get the harmonizing note
             r = noto.query(
                 next_inst=noto_inst, next_time=0, next_vel=vel,
@@ -89,7 +89,7 @@ def main(
             midi.note_off(
                 note=noto_pitch, velocity=vel, channel=noto_channel)
             # feed 
-            noto.feed(player_inst, pitch, timer.punch(), 0)
+            noto.feed(player_inst, pitch, stopwatch.punch(), 0)
             noto.feed(noto_inst, noto_pitch, 0, 0)
 
     @cleanup

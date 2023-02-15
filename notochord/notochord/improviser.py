@@ -18,7 +18,7 @@ Authors:
 #   player/noto, channel, inst for both
 
 from notochord import Notochord, MIDIConfig
-from iipyper import MIDI, run, Timer, repeat, cleanup, TUI, profile
+from iipyper import MIDI, run, Stopwatch, repeat, cleanup, TUI, profile
 from typing import Dict
 
 import mido
@@ -31,6 +31,7 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, Button, TextLog
 
+### def TUI components ###
 class NotoLog(TextLog):
     value = reactive('')
     def watch_value(self, time: float) -> None:
@@ -65,6 +66,7 @@ class NotoTUI(TUI):
         yield NotoPrediction(id='prediction')
         yield NotoControl()
         yield Footer()
+### end def TUI components###
 
 def main(
         player_config:Dict[int,int]=None, # map MIDI channel : instrument
@@ -101,6 +103,7 @@ def main(
         tui(note=' '.join(str(a) for a in args))
     ###
 
+    # default channel:instrument mappings
     if player_config is None:
         player_config = {1:257} # channel 1: anon 1
     if noto_config is None:
@@ -116,10 +119,10 @@ def main(
         # TODO: set to anon insts without changing mel/drum
         # respecting anon insts selected for player
         raise NotImplementedError
-
     # TODO:
     # check for repeated insts/channels
 
+    # load notochord model
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
         noto.eval()
@@ -127,19 +130,10 @@ def main(
     else:
         noto = None
 
-    # main timer to track time difference between MIDI events
-    timer = Timer()
+    # main stopwatch to track time difference between MIDI events
+    stopwatch = Stopwatch()
 
-    # counter to track total player/notochord events
-    # class Counter():
-    #     def __init__(self):
-    #         self.count = 0
-    #     def plus(self, n=1):
-    #         self.count += n
-    #     def __call__(self):
-    #         return self.count
-    # noto_events = Counter()
-    # player_events = Counter()
+    # track recent instruments played for part balancing
     recent_insts = []
     def track_recent_insts(inst):
         recent_insts.append(inst)
@@ -148,12 +142,13 @@ def main(
 
     # class to track pending event prediction
     class Prediction:
-        def __init__(self, event):
-            self.event = event
+        def __init__(self):
+            self.event = None
             self.gate = True
-    pending = Prediction(None)
 
-    # mapping from (inst, pitch) pairs to Timers
+    pending = Prediction()
+
+    # mapping from (inst, pitch) pairs to Stopwatchs
     # to track sustained notochord notes
     notes = {}
 
@@ -169,9 +164,14 @@ def main(
     def query():
         # check for stuck notes
         # and prioritize ending those
-        for (inst, pitch), t in notes.items():
-            if t.read() > max_note_len:
-                query_end(inst, pitch)
+        for (inst, pitch), sw in notes.items():
+            if sw.read() > max_note_len:
+                # query for the end of a note with flexible timing
+                with profile('query', print=print):
+                    t = stopwatch.read()
+                    pending.event = noto.query(
+                        next_inst=inst, next_pitch=pitch,
+                        next_vel=0, min_time=t, max_time=t+0.5)
                 print('END STUCK NOTE')
                 return
 
@@ -184,14 +184,9 @@ def main(
                 insts = insts | player_map.insts
         # print(f'considering {insts}')
 
-        # force sampling Notochord-controlled instruments
-        # when it has played much less than the player 
-        # insts = noto_map.insts
-        # if noto_events() > player_events()//2:
-            # insts = insts | player_map.insts
         with profile('query', print=print):
             pending.event = noto.query(
-                min_time=timer.read(), # event can't happen sooner than now
+                min_time=stopwatch.read(), # event can't happen sooner than now
                 include_inst=insts,
                 # steer_pitch=0.6,
                 # steer_time=0.6,
@@ -199,15 +194,6 @@ def main(
                 )
         # display the predicted event
         tui(prediction=pending.event)
-
-    # query for the end of a note with flexible timing
-    def query_end(inst, pitch):
-        with profile('query', print=print):
-            pending.event = noto.query(
-                next_inst=inst,
-                next_pitch=pitch,
-                next_vel=0,
-                max_time=0.5)
 
     @midi.handle(type='program_change')
     def _(msg):
@@ -221,7 +207,7 @@ def main(
     def _(msg):
         """any CC1 message on player channel resets Notochord"""
         if msg.channel in player_map.channels:
-            print(msg)
+            # print(msg)
             if msg.control==1:
                 noto_reset()
 
@@ -242,14 +228,16 @@ def main(
         vel = msg.velocity
 
         # feed event to Notochord
-        # query for new prediction
         with profile('feed', print=print):
-            noto.feed(inst, pitch, timer.punch(), vel)
-        # player_events.plus()
+            noto.feed(inst, pitch, stopwatch.punch(), vel)
+
         track_recent_insts(inst)
+
+        # query for new prediction
         query()
-        if testing:
-            midi.cc(control=msg.note, value=0, channel=15)
+
+        # for latency testing:
+        if testing: midi.cc(control=3, value=msg.note, channel=15)
 
     def noto_event():
         """
@@ -263,7 +251,7 @@ def main(
         # track held notes
         k = (inst, pitch)
         if vel > 0:
-            notes[k] = Timer(punch=True)
+            notes[k] = Stopwatch(punch=True)
         else:
             if k in notes:
                 del notes[k]
@@ -283,14 +271,13 @@ def main(
 
         # feed back to Notochord
         with profile('feed', print=print):
-            noto.feed(inst, pitch, timer.punch(), vel)
+            noto.feed(inst, pitch, stopwatch.punch(), vel)
         # track total events played
-        # noto_events.plus()
         track_recent_insts(inst)
         # print
         print_note('NOTO:\t', msg)
 
-    @repeat(5e-4, lock=True)
+    @repeat(1e-3, lock=True)
     def _():
         """Loop, checking if predicted next event happens"""
         # check if current prediction has passed
@@ -298,7 +285,7 @@ def main(
             not testing and
             pending.gate and
             pending.event is not None and
-            timer.read() > pending.event['time']
+            stopwatch.read() > pending.event['time']
             ):
         # if so, check if it is a notochord-controlled instrument
             if pending.event['inst'] in noto_map.insts:
@@ -319,7 +306,7 @@ def main(
         # end+feed all held notes
         for (inst,pitch) in notes:
             midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
-            noto.feed(inst=inst, pitch=pitch, time=timer.punch(), vel=0)
+            noto.feed(inst=inst, pitch=pitch, time=stopwatch.punch(), vel=0)
         notes.clear()
         # if unmuting make sure there is a pending event
         if pending.gate and pending.event is None:

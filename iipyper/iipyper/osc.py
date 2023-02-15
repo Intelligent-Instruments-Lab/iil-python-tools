@@ -61,7 +61,6 @@ class OSC():
     TODO: Polling clients after handshake
     TODO: Enqueuing and buffering messages (?)
     """
-    instances = []
     def __init__(self, host="127.0.0.1", port=9999, verbose=True,
          concurrent=False):
         """
@@ -84,7 +83,6 @@ class OSC():
         self.clients = {} # (host,port) -> client
         self.client_names = {} # (name) -> (host,port)
 
-        # OSC.instances.append(self)
         self.create_server()
 
     def create_server(self):#, host=None, port=None):

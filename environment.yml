@@ -5,10 +5,8 @@ channels:
   - conda-forge
 dependencies:
   - python=3.10
-  - pytorch=1.12
-  - onnx
+  - pytorch=1.13
   - ipykernel
-  - tensorboard
   - seaborn
   - tqdm
   - fire
@@ -19,3 +17,4 @@ dependencies:
     - python-rtmidi
     - python-osc
     - taichi
+    - sounddevice
