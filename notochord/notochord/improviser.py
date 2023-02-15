@@ -49,6 +49,7 @@ class NotoPrediction(Static):
 class NotoControl(Static):
     def compose(self):
         yield Button("Mute", id="mute", variant="error")
+        yield Button("Query", id="query")
         yield Button("Reset", id="reset", variant='warning')
 
 class NotoTUI(TUI):
@@ -56,6 +57,7 @@ class NotoTUI(TUI):
 
     BINDINGS = [
         ("m", "mute", "Mute Notochord"),
+        ("q", "query", "Re-query Notochord"),
         ("r", "reset", "Reset Notochord")]
 
     def compose(self):
@@ -148,6 +150,9 @@ def main(
 
     pending = Prediction()
 
+    # query parameters controlled via MIDI
+    controls = {}
+
     # mapping from (inst, pitch) pairs to Stopwatchs
     # to track sustained notochord notes
     notes = {}
@@ -158,10 +163,11 @@ def main(
             midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
         notes.clear()
         recent_insts.clear()
+        stopwatch.punch()
         print('RESET')
 
     # query Notochord for a new next event
-    def query():
+    def noto_query():
         # check for stuck notes
         # and prioritize ending those
         for (inst, pitch), sw in notes.items():
@@ -188,8 +194,7 @@ def main(
             pending.event = noto.query(
                 min_time=stopwatch.read(), # event can't happen sooner than now
                 include_inst=insts,
-                # steer_pitch=0.6,
-                # steer_time=0.6,
+                **controls
                 # steer_vel=0.5,
                 )
         # display the predicted event
@@ -210,6 +215,13 @@ def main(
             # print(msg)
             if msg.control==1:
                 noto_reset()
+
+        if msg.control==2:
+            controls['steer_pitch'] = msg.value/127
+            print(f"{controls['steer_pitch']=}")
+        if msg.control==3:
+            controls['steer_time'] = msg.value/127
+            print(f"{controls['steer_time']=}")
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
@@ -234,7 +246,7 @@ def main(
         track_recent_insts(inst)
 
         # query for new prediction
-        query()
+        noto_query()
 
         # for latency testing:
         if testing: midi.cc(control=3, value=msg.note, channel=15)
@@ -258,7 +270,7 @@ def main(
             else:
                 # bad prediction: note-off without note-on
                 print('REPLACING INVALID PREDICTION')
-                query()
+                noto_query()
                 return
 
         # send as MIDI
@@ -280,6 +292,7 @@ def main(
     @repeat(1e-3, lock=True)
     def _():
         """Loop, checking if predicted next event happens"""
+        # print(stopwatch.read(), pending.event['time'])
         # check if current prediction has passed
         if (
             not testing and
@@ -292,7 +305,7 @@ def main(
                 # prediction happens -- send and feed
                 noto_event()
             # query for new prediction
-            query()
+            noto_query()
 
     @cleanup
     def _():
@@ -310,12 +323,15 @@ def main(
         notes.clear()
         # if unmuting make sure there is a pending event
         if pending.gate and pending.event is None:
-            query()
+            noto_query()
     
     @tui.set_action
     def reset():
-        # end all held notes
         noto_reset()
+    
+    @tui.set_action
+    def query():
+        noto_query()
 
     tui.run()
 

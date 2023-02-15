@@ -68,7 +68,7 @@ class Clock:
     #     self()
 
 class Stopwatch:
-    def __init__(self, punch=False):
+    def __init__(self, punch=True):
         self.t = None
         if punch:
             self.punch()
@@ -86,7 +86,7 @@ class Stopwatch:
     def read(self):
         """return elapsed time since last punch"""
         if self.t is None:
-            return 0.0
+            return self.punch()
         return (time.perf_counter_ns() - self.t) * 1e-9
 
 def maybe_lock(f, lock):

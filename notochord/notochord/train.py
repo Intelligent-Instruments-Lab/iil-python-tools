@@ -92,8 +92,8 @@ class Trainer:
         # dataset
         self.dataset = MIDIDataset(
             self.data_dir, self.batch_len)#, clamp_time=clamp_time)
-        valid_len = int(len(self.dataset)*0.03)
-        test_len = int(len(self.dataset)*0.02)
+        valid_len = max(8, int(len(self.dataset)*0.03))
+        test_len = max(8, int(len(self.dataset)*0.02))
         train_len = len(self.dataset) - valid_len - test_len
         self.train_dataset, self.valid_dataset, self.test_dataset = torch.utils.data.random_split(
             self.dataset, [train_len, valid_len, test_len], 
