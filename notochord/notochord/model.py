@@ -348,6 +348,14 @@ class Notochord(nn.Module):
 
             self.h_query = None
 
+    def query2(self):
+        pass # TODO
+        # batch query a set of allowable inst / vel>0 pairs
+        # constrain pitches based on vel>0, inst
+        # steer_density or steer_duration based on vel>0
+        # return density score along with samples
+        # resample final result
+
     # TODO: remove pitch_topk and sweep_time?
     def query(self,
             next_inst=None, next_pitch=None, next_time=None, next_vel=None,

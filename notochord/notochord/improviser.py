@@ -96,7 +96,7 @@ def main(
         midi_out: MIDI port for Notochord output
         checkpoint: path to notochord model checkpoint
     """
-    midi = MIDI(midi_in, midi_out)
+    midi = MIDI(midi_in.split(','), midi_out.split(','))
 
     ### Textual UI
     tui = NotoTUI()
@@ -166,12 +166,35 @@ def main(
         stopwatch.punch()
         print('RESET')
 
+    def query_steer_time(insts):
+        with profile('double query', print=print):
+            dens = controls.get('steer_density', None)
+            spars = None if dens is None else 1-dens
+            on_event = noto.query(
+                min_time=stopwatch.read(), # event can't happen sooner than now
+                include_inst=insts,
+                steer_time=spars,
+                steer_pitch=controls.get('steer_pitch', None),
+                min_vel=1)
+            off_event = noto.query(
+                min_time=stopwatch.read(), # event can't happen sooner than now
+                include_inst=insts,
+                steer_time=controls.get('steer_duration', None),
+                next_vel=0)
+        if (
+            (off_event['inst'], off_event['pitch']) in notes 
+            and on_event['time'] >= off_event['time']
+            ):
+            pending.event = off_event
+        else:
+            pending.event = on_event
+
     # query Notochord for a new next event
     def noto_query():
         # check for stuck notes
         # and prioritize ending those
         for (inst, pitch), sw in notes.items():
-            if sw.read() > max_note_len:
+            if sw.read() > max_note_len*controls.get('steer_duration', 1):
                 # query for the end of a note with flexible timing
                 with profile('query', print=print):
                     t = stopwatch.read()
@@ -190,13 +213,17 @@ def main(
                 insts = insts | player_map.insts
         # print(f'considering {insts}')
 
-        with profile('query', print=print):
-            pending.event = noto.query(
-                min_time=stopwatch.read(), # event can't happen sooner than now
-                include_inst=insts,
-                **controls
-                # steer_vel=0.5,
-                )
+        if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
+            query_steer_time(insts)
+        else:
+            with profile('query', print=print):
+                pending.event = noto.query(
+                    min_time=stopwatch.read(), # event can't happen sooner than now
+                    include_inst=insts,
+                    # **controls
+                    steer_pitch=controls.get('steer_pitch', None),
+                    # steer_vel=0.5,
+                    )
         # display the predicted event
         tui(prediction=pending.event)
 
@@ -210,18 +237,31 @@ def main(
 
     @midi.handle(type='control_change')
     def _(msg):
-        """any CC1 message on player channel resets Notochord"""
-        if msg.channel in player_map.channels:
+        """any CC1 message resets Notochord"""
+        # if msg.channel in player_map.channels:
             # print(msg)
-            if msg.control==1:
-                noto_reset()
+        if msg.control==4:
+            noto_reset()
 
-        if msg.control==2:
+        if msg.control==1:
             controls['steer_pitch'] = msg.value/127
             print(f"{controls['steer_pitch']=}")
+        if msg.control==2:
+            controls['steer_density'] = msg.value/127
+            print(f"{controls['steer_density']=}")
         if msg.control==3:
-            controls['steer_time'] = msg.value/127
-            print(f"{controls['steer_time']=}")
+            controls['steer_duration'] = msg.value/127
+            print(f"{controls['steer_duration']=}")
+
+        if msg.control==70:
+            controls['steer_pitch'] = msg.value/127
+            print(f"{controls['steer_pitch']=}")
+        if msg.control==71:
+            controls['steer_density'] = msg.value/127
+            print(f"{controls['steer_density']=}")
+        if msg.control==72:
+            controls['steer_duration'] = msg.value/127
+            print(f"{controls['steer_duration']=}")
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
