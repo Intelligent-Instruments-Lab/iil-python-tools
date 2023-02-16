@@ -78,8 +78,9 @@ def main(
         midi_out=None, # MIDI port for Notochord output
         n_recent=50,
         predict_player=True,
+        use_tui=True,
+        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
         testing=False,
-        checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
     """
     Args:
@@ -153,7 +154,7 @@ def main(
     # query parameters controlled via MIDI
     controls = {}
 
-    # mapping from (inst, pitch) pairs to Stopwatchs
+    # mapping from (inst, pitch) pairs to Stopwatches
     # to track sustained notochord notes
     notes = {}
 
@@ -167,34 +168,49 @@ def main(
         print('RESET')
 
     def query_steer_time(insts):
-        with profile('double query', print=print):
-            dens = controls.get('steer_density', None)
-            spars = None if dens is None else 1-dens
-            on_event = noto.query(
+        with profile('query_ivtp', print=print):
+            inst_pitch_map = {i:range(128) for i in insts}
+            note_map = {i:[] for i in insts}
+            for i,p in notes:
+                if i in insts:
+                    note_map[i].append(p)
+            print(note_map)
+            pending.event = noto.query_ivtp(
+                inst_pitch_map, note_map, 
                 min_time=stopwatch.read(), # event can't happen sooner than now
-                include_inst=insts,
-                steer_time=spars,
-                steer_pitch=controls.get('steer_pitch', None),
-                min_vel=1)
-            off_event = noto.query(
-                min_time=stopwatch.read(), # event can't happen sooner than now
-                include_inst=insts,
-                steer_time=controls.get('steer_duration', None),
-                next_vel=0)
-        if (
-            (off_event['inst'], off_event['pitch']) in notes 
-            and on_event['time'] >= off_event['time']
-            ):
-            pending.event = off_event
-        else:
-            pending.event = on_event
+                steer_duration=controls.get('steer_duration', None),
+                steer_density=controls.get('steer_density', None)
+            )
+        #     dens = controls.get('steer_density', None)
+        #     spars = None if dens is None else 1-dens
+        #     on_event = noto.query(
+        #         min_time=stopwatch.read(), # event can't happen sooner than now
+        #         include_inst=insts,
+        #         steer_time=spars,
+        #         steer_pitch=controls.get('steer_pitch', None),
+        #         min_vel=1)
+        #     off_event = noto.query(
+        #         min_time=stopwatch.read(), # event can't happen sooner than now
+        #         include_inst=insts,
+        #         steer_time=controls.get('steer_duration', None),
+        #         next_vel=0)
+        # if (
+        #     (off_event['inst'], off_event['pitch']) in notes 
+        #     and on_event['time'] >= off_event['time']
+        #     ):
+        #     pending.event = off_event
+        # else:
+        #     pending.event = on_event
 
     # query Notochord for a new next event
     def noto_query():
         # check for stuck notes
         # and prioritize ending those
         for (inst, pitch), sw in notes.items():
-            if sw.read() > max_note_len*controls.get('steer_duration', 1):
+            if (
+                inst in noto_map.insts 
+                and sw.read() > max_note_len*controls.get('steer_duration', 1)
+                ):
                 # query for the end of a note with flexible timing
                 with profile('query', print=print):
                     t = stopwatch.read()
@@ -242,6 +258,8 @@ def main(
             # print(msg)
         if msg.control==4:
             noto_reset()
+        if msg.control==5:
+            noto_query()
 
         if msg.control==1:
             controls['steer_pitch'] = msg.value/127
@@ -282,6 +300,11 @@ def main(
         # feed event to Notochord
         with profile('feed', print=print):
             noto.feed(inst, pitch, stopwatch.punch(), vel)
+
+        if vel>0:
+            notes[inst] = Stopwatch(punch=True)
+        elif inst in notes:
+            del notes[inst]
 
         track_recent_insts(inst)
 
@@ -373,7 +396,8 @@ def main(
     def query():
         noto_query()
 
-    tui.run()
+    if use_tui:
+        tui.run()
 
 
 if __name__=='__main__':
