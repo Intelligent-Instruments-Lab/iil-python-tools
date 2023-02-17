@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixtureLogistic, reweight_top_p, steer_categorical
+from .distributions import CensoredMixtureLogistic, categorical_sample#, steer_categorical, reweight_top_p
 from .util import arg_to_set
 
 class SineEmbedding(nn.Module):
@@ -445,7 +445,7 @@ class Notochord(nn.Module):
     def query_ivtp(self,
             inst_pitch_map, note_map, 
             min_time=None,
-            steer_duration=None, steer_density=None
+            steer_duration=None, steer_density=None, steer_pitch=None
             ):
         """
         Args:
@@ -547,7 +547,9 @@ class Notochord(nn.Module):
             allowed_pitches = list(allowed_pitches)
             _pp = torch.full_like(pitch_params, -np.inf)
             _pp[allowed_pitches] = pitch_params[allowed_pitches]
-            pitch = D.Categorical(logits=_pp).sample().item()
+
+            # pitch = D.Categorical(logits=_pp).sample().item()
+            pitch = categorical_sample(_pp, steer=steer_pitch).item()
 
             # print(f'{pitch=}')
 
@@ -719,14 +721,18 @@ class Notochord(nn.Module):
                     constrain_inst = [
                         i for i in constrain_inst if not self.is_drum(i)]
 
-            if constrain_inst is not None:
-                preserve_x = x[...,constrain_inst]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_inst] = preserve_x
-            probs = x.softmax(-1)
-            if instrument_temp is not None:
-                probs = reweight_top_p(probs, instrument_temp)
-            return D.Categorical(probs).sample()
+            # if constrain_inst is not None:
+            #     preserve_x = x[...,constrain_inst]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_inst] = preserve_x
+            # probs = x.softmax(-1)
+            # if instrument_temp is not None:
+            #     probs = reweight_top_p(probs, instrument_temp)
+            # return D.Categorical(probs).sample()
+
+            return categorical_sample(x, 
+                whitelist=constrain_inst,
+                top_p=instrument_temp)
 
         def sample_pitch(x):
             # conditional constraint
@@ -739,25 +745,33 @@ class Notochord(nn.Module):
                     nonlocal constrain_pitch
                     constrain_pitch = include_drum
 
-            if constrain_pitch is not None:
-                preserve_x = x[...,constrain_pitch]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_pitch] = preserve_x
-            # x is modified logits
+            if pitch_topk is not None:
+                raise NotImplementedError
 
-            if index_pitch is not None:
-                return x.argsort(-1, True)[...,index_pitch]
-            elif pitch_topk is not None:
-                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+            return categorical_sample(x,
+                whitelist=constrain_pitch, 
+                index=index_pitch,
+                top_p=pitch_temp,
+                steer=steer_pitch)
+            # if constrain_pitch is not None:
+            #     preserve_x = x[...,constrain_pitch]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_pitch] = preserve_x
+            # # x is modified logits
+
+            # if index_pitch is not None:
+            #     return x.argsort(-1, True)[...,index_pitch]
+            # elif pitch_topk is not None:
+            #     return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
             
-            probs = x.softmax(-1)
-            if pitch_temp is not None:
-                probs = reweight_top_p(probs, pitch_temp)
+            # probs = x.softmax(-1)
+            # if pitch_temp is not None:
+            #     probs = reweight_top_p(probs, pitch_temp)
 
-            if steer_pitch is not None:
-                return steer_categorical(probs, steer_pitch)
-            else:
-                return D.Categorical(probs).sample()
+            # if steer_pitch is not None:
+            #     return steer_categorical(probs, steer_pitch)
+            # else:
+            #     return D.Categorical(probs).sample()
 
         def sample_time(x):
             # TODO: respect trunc_time when sweep_time is True

@@ -160,9 +160,12 @@ def main(
 
     def noto_reset():
         noto.reset()
-        for (inst,pitch) in notes:
-            midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
-        notes.clear()
+        pairs = list(notes)
+        for (inst,pitch) in pairs:
+            if inst in noto_map.insts:
+                midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
+            del notes[inst,pitch]
+        # notes.clear()
         recent_insts.clear()
         stopwatch.punch()
         print('RESET')
@@ -179,7 +182,8 @@ def main(
                 inst_pitch_map, note_map, 
                 min_time=stopwatch.read(), # event can't happen sooner than now
                 steer_duration=controls.get('steer_duration', None),
-                steer_density=controls.get('steer_density', None)
+                steer_density=controls.get('steer_density', None),
+                steer_pitch=controls.get('steer_pitch', None)
             )
         #     dens = controls.get('steer_density', None)
         #     spars = None if dens is None else 1-dens
@@ -301,10 +305,11 @@ def main(
         with profile('feed', print=print):
             noto.feed(inst, pitch, stopwatch.punch(), vel)
 
+        k = (inst, pitch)
         if vel>0:
-            notes[inst] = Stopwatch(punch=True)
+            notes[k] = Stopwatch(punch=True)
         elif inst in notes:
-            del notes[inst]
+            del notes[k]
 
         track_recent_insts(inst)
 
@@ -374,7 +379,8 @@ def main(
     def _():
         """end any remaining notes"""
         for (inst,pitch) in notes:
-            midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
+            if inst in noto_map.insts:
+                midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
 
     @tui.set_action
     def mute():

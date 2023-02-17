@@ -6,15 +6,21 @@ from torch import nn
 import torch.distributions as D
 import torch.nn.functional as F
 
-def steer_categorical(probs, value):
+def steer_categorical(probs, value, eps=1e-3):
     cdf = probs.cumsum(-1)
-    return torch.searchsorted(cdf, torch.full((*probs.shape[:-1],1), value))[...,0]
+    value = min(1-eps, max(eps, value))
+    i = torch.searchsorted(cdf, torch.full((*probs.shape[:-1],1), value))[...,0]
+    return i.clamp(0, cdf.shape[-1]-1) # in case of bad eps value
+
+def reweight_quantile(probs, min_q=0, max_q=1):
+    cdf = probs.cumsum(-1)
+
 
 def reweight_top_p(probs, top_p):
-    """given tensor of probabilities, apply top p / "nucleus" filtering,
+    """
+    given tensor of probabilities, apply top p / "nucleus" filtering,
     or temperature if `top_p` is greater than 1
     """
-
     if top_p > 1:
         probs = probs**(1/top_p)
         return probs / probs.sum(-1)
@@ -31,6 +37,25 @@ def reweight_top_p(probs, top_p):
     weighted_probs = torch.zeros_like(probs).where(to_zero, probs)
     return weighted_probs / weighted_probs.sum(-1, keepdim=True)
     
+
+def categorical_sample(logits, whitelist=None, index=None, top_p=None, steer=None):
+    if whitelist is not None:
+        preserve_logits = logits[...,whitelist]
+        logits = torch.full_like(logits, -np.inf)
+        logits[..., whitelist] = preserve_logits
+
+    if index is not None:
+        return logits.argsort(-1, True)[..., index]
+    
+    probs = logits.softmax(-1)
+    if top_p is not None:
+        probs = reweight_top_p(probs, top_p)
+
+    if steer is not None:
+        return steer_categorical(probs, steer)
+    else:
+        return D.Categorical(probs).sample()
+
 
 class CensoredMixtureLogistic(nn.Module):
     def __init__(self, n, res=1e-2, lo='-inf', hi='inf', 
@@ -144,7 +169,8 @@ class CensoredMixtureLogistic(nn.Module):
     # TODO: 'discrete_sample' method which would re-quantize and then allow
     # e.g. nucleus sampling on the categorical distribution?
     def sample(self, h, truncate=None, shape=None, 
-        weight_top_p=None, component_temp=None, bias=None, steer=None):
+        weight_top_p=None, component_temp=None, bias=None, steer=None,
+        steer_k=256):
         """
         Args:
             h: Tensor[...,n_params]
@@ -170,7 +196,6 @@ class CensoredMixtureLogistic(nn.Module):
 
         if steer is not None:
             # draw k samples
-            steer_k = 256
             shape = shape * steer_k
 
         if truncate is None:
