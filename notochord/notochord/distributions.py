@@ -13,7 +13,12 @@ def steer_categorical(probs, value, eps=1e-3):
     return i.clamp(0, cdf.shape[-1]-1) # in case of bad eps value
 
 def reweight_quantile(probs, min_q=0, max_q=1):
+    """
+    reweight ordinal discrete distribution to have mass only between quantiles
+    """
+    # TODO
     cdf = probs.cumsum(-1)
+    raise NotImplementedError
 
 
 def reweight_top_p(probs, top_p):

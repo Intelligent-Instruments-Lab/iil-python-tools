@@ -257,8 +257,12 @@ class Trainer:
             self.model.train()
             self.dataset.testing = False
             self.dataset.batch_len = self.batch_len
-            for batch in tqdm(it.islice(train_loader, epoch_size), 
-                    desc=f'training epoch {self.epoch}', total=epoch_size):
+            for batch in tqdm(
+                # itertools incantation to support epoch_size larger than train set
+                it.islice(
+                    it.chain.from_iterable(it.repeat(train_loader)), epoch_size), 
+                desc=f'training epoch {self.epoch}', total=epoch_size
+                ):
                 mask = batch['mask'].to(self.device, non_blocking=True)
                 end = batch['end'].to(self.device, non_blocking=True)
                 inst = batch['instrument'].to(self.device, non_blocking=True)

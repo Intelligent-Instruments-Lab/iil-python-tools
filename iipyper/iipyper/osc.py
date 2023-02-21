@@ -101,7 +101,7 @@ class OSC():
                 print(f"OSC server created {self.host}:{self.port}")
 
             # start the OSC server on its own thread
-            Thread(target = self.server.serve_forever).start()
+            Thread(target=self.server.serve_forever, daemon=True).start()
             # self.server.serve_forever()
         else:
             print("OSC server already exists")
@@ -160,7 +160,7 @@ class OSC():
         Send message to default client, or with client in address
 
         Args:
-            address: '/osc/route' or 'host:port/osc/route'
+            address: '/my/osc/route' or 'host:port/my/osc/route'
             *msg: content
             client: name of client or None
         """

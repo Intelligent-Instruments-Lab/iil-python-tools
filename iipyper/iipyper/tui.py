@@ -40,7 +40,9 @@ try:
             getattr(self, f'action_{event.button.id}')()
 
         def _print(self, k, *v):
-            self.std_log.write(' '.join(str(s) for s in (k, *v)))
+            for s in (k, *v):
+                self.std_log.write(s)
+            # self.std_log.write(' '.join(str(s) for s in (k, *v)))
 
         def print(self, *a, **kw):
             """redirects to the TUI's default std output log"""

@@ -15,7 +15,9 @@ import sounddevice as sd
 class Audio:
     instances = [] # 
     def __init__(self, *a, **kw):
-        self.stream = sd.InputStream(*a, **kw) # TODO
+        print(sd.query_devices())
+        # self.stream = sd.InputStream(*a, **kw) # TODO
+        self.stream = sd.Stream(*a, **kw) # TODO
         Audio.instances.append(self)
 
 @contextmanager
@@ -37,6 +39,9 @@ class Lag:
         else:
             self.val = self.val*self.coef + val*(1-self.coef)
         return self.val
+    
+    def hpf(self, val):
+        return val - self(val)
 
 class Clock:
     def __init__(self, tick=5e-4):

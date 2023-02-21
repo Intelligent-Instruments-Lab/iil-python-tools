@@ -453,6 +453,8 @@ class Notochord(nn.Module):
             note_map: map from inst to active note pitches
         """ 
 
+        assert list(inst_pitch_map) == list(note_map)
+
         inst_proj, pitch_proj, time_proj, vel_proj = self.projections
 
         with torch.inference_mode():
@@ -513,9 +515,16 @@ class Notochord(nn.Module):
                 # note off but all notes are held
                 if len(held)>=128:
                     scores[1,i] = -np.inf
+                # print(f'{inst=},{held=}')
             resample_dist = D.Categorical(logits=flatten(scores))
             vt_idx = resample_dist.sample().item()
             i_idx = vt_idx % scores.shape[1]
+
+            # print(f'{scores=}')
+            # print(f'{vt_idx=}')
+            # print(f'{insts=}')
+            # print(f'{i_idx=}')
+            # print(f'{flatten(vels)=}')
             
             inst = insts[i_idx].item()
             vel = flatten(vels)[vt_idx]
@@ -549,6 +558,12 @@ class Notochord(nn.Module):
             _pp[allowed_pitches] = pitch_params[allowed_pitches]
 
             # pitch = D.Categorical(logits=_pp).sample().item()
+            # print(f'{inst=}')
+            # print(inst_pitch_map)
+            # print(f'{inst_pitch_map[inst]=}')
+            # print(held_notes)
+            # print(allowed_pitches)
+            # print(_pp)
             pitch = categorical_sample(_pp, steer=steer_pitch).item()
 
             # print(f'{pitch=}')
