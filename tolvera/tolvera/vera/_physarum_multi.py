@@ -180,7 +180,7 @@ def main():
     y = 1080
     # n = 8392704 # 4196352 # 2098176 # 1049088 # 524544 # 262272 # 131136 # 65568 # 32784
     n = 65568
-    physarum = Physarum(x, y, n, colormode='rgb', species=5)
+    physarum = PhysarumMulti(x, y, n, colormode='rgb', species=5)
     physarum.pause = False
     window = ti.ui.Window("Physarum", (x, y))
     canvas = window.get_canvas()
