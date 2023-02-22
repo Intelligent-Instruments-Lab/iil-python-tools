@@ -71,8 +71,8 @@ class NotoTUI(TUI):
 ### end def TUI components###
 
 def main(
-        player_config:Dict[int,int]=None, # map MIDI channel : instrument
-        noto_config:Dict[int,int]=None, # map MIDI channel : instrument
+        player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
+        noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
         max_note_len=5, # in seconds, to auto-release stuck Notochord notes
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
@@ -140,6 +140,9 @@ def main(
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
     noto_map = MIDIConfig({k-1:v for k,v in noto_config.items()})
 
+    # print(f'{player_map=}')
+    # print(f'{noto_map=}')
+    # exit(0)
 
     if len(player_map.insts & noto_map.insts):
         print("WARNING: Notochord and Player instruments shouldn't overlap")
@@ -184,7 +187,6 @@ def main(
     notes = {}
 
     def noto_reset():
-        noto.reset()
         pairs = list(notes)
         for (inst,pitch) in pairs:
             if inst in noto_map.insts:
@@ -193,6 +195,7 @@ def main(
         # notes.clear()
         recent_insts.clear()
         stopwatch.punch()
+        noto.reset()
         print('RESET')
 
     def query_steer_time(insts):
@@ -229,7 +232,7 @@ def main(
                 pending.event = noto.query(
                     next_inst=inst, next_pitch=pitch,
                     next_vel=0, min_time=t, max_time=t+0.5)
-                print('END STUCK NOTE')
+                print(f'END STUCK NOTE {inst=},{pitch=}')
                 return
 
         # force sampling a notochord instrument which hasn't played recently
@@ -327,6 +330,9 @@ def main(
         if msg.channel not in player_map.channels:
             return
         
+        # print(msg)
+        # return
+        
         if thru:
             midi.send(msg)
 
@@ -338,7 +344,10 @@ def main(
 
         inst = player_map[msg.channel]
         pitch = msg.note
-        vel = msg.velocity
+        vel = msg.velocity if msg.type=='note_on' else 0
+
+        # if thru:
+            # midi.note_on(channel=msg.channel, note=pitch, velocity=vel)
 
         # feed event to Notochord
         # with profile('feed', print=print):
@@ -356,7 +365,7 @@ def main(
         noto_query()
 
         # for latency testing:
-        if testing: midi.cc(control=3, value=msg.note, channel=15)
+        # if testing: midi.cc(control=3, value=msg.note, channel=15)
 
     def noto_event():
         """
@@ -427,7 +436,10 @@ def main(
         pending.gate = not pending.gate
         # end+feed all held notes
         for (inst,pitch) in notes:
-            midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
+            try:
+                midi.note_off(note=pitch, velocity=0, channel=noto_map.inv(inst))
+            except KeyError:
+                midi.note_off(note=pitch, velocity=0, channel=player_map.inv(inst))
             noto.feed(inst=inst, pitch=pitch, time=stopwatch.punch(), vel=0)
         notes.clear()
         # if unmuting make sure there is a pending event
