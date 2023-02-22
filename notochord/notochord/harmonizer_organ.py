@@ -6,6 +6,7 @@ Authors:
   Victor Shepardson
   Intelligent Instruments Lab 2023
 """
+import time
 
 from notochord import Notochord
 from iipyper import MIDI, run, Stopwatch, cleanup
@@ -20,6 +21,7 @@ def main(
         midi_out=None, # MIDI port for Notochord output
         thru=True, # resend player in on output
         checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+        note_off_delay=2e-3,
 
         below=False, # harmonize above
         above=True, # harmonize below
@@ -169,6 +171,7 @@ def main(
             for noto_channel, noto_inst, noto_pitch in noto_triples:
                 midi.note_off(
                     note=noto_pitch, velocity=vel, channel=noto_channel)
+                time.sleep(note_off_delay)
             # feed
             for noto_channel, noto_inst, noto_pitch in noto_triples:
                 noto.feed(noto_inst, noto_pitch, 0, 0)
