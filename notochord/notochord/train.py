@@ -92,8 +92,8 @@ class Trainer:
         # dataset
         self.dataset = MIDIDataset(
             self.data_dir, self.batch_len)#, clamp_time=clamp_time)
-        valid_len = int(len(self.dataset)*0.03)
-        test_len = int(len(self.dataset)*0.02)
+        valid_len = max(8, int(len(self.dataset)*0.03))
+        test_len = max(8, int(len(self.dataset)*0.02))
         train_len = len(self.dataset) - valid_len - test_len
         self.train_dataset, self.valid_dataset, self.test_dataset = torch.utils.data.random_split(
             self.dataset, [train_len, valid_len, test_len], 
@@ -257,8 +257,12 @@ class Trainer:
             self.model.train()
             self.dataset.testing = False
             self.dataset.batch_len = self.batch_len
-            for batch in tqdm(it.islice(train_loader, epoch_size), 
-                    desc=f'training epoch {self.epoch}', total=epoch_size):
+            for batch in tqdm(
+                # itertools incantation to support epoch_size larger than train set
+                it.islice(
+                    it.chain.from_iterable(it.repeat(train_loader)), epoch_size), 
+                desc=f'training epoch {self.epoch}', total=epoch_size
+                ):
                 mask = batch['mask'].to(self.device, non_blocking=True)
                 end = batch['end'].to(self.device, non_blocking=True)
                 inst = batch['instrument'].to(self.device, non_blocking=True)

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixtureLogistic, reweight_top_p
+from .distributions import CensoredMixtureLogistic, categorical_sample#, steer_categorical, reweight_top_p
 from .util import arg_to_set
 
 class SineEmbedding(nn.Module):
@@ -348,9 +348,234 @@ class Notochord(nn.Module):
 
             self.h_query = None
 
+    def query_ipvt(self, 
+            inst_pitch_map, note_map, 
+            steer_duration=None, steer_density=None):
+        """
+        Args:
+            inst_pitch_map: map from instruments to allowable pitches
+            note_map: map from inst to active note pitches
+        """ 
+        pairs = []
+        for i,ps in inst_pitch_map.items():
+            pairs.extend((i,p) for p in ps)
+
+        inst_proj, pitch_proj, time_proj, vel_proj = self.projections
+
+        with torch.inference_mode():
+            if self.h_query is None:
+                self.h_query = self.h_proj(self.h)
+
+            insts = torch.tensor(list(inst_pitch_map), dtype=torch.long)
+
+            hidden = self.h_query[:,0]
+
+            # singleton batch of inst predictions
+            # to get scores
+            inst_params = inst_proj(hidden.tanh())
+            # broadcasting log_prob
+            inst_scores = D.Categorical(logits=inst_params).log_prob(insts)
+            # print(f'{inst_scores.shape=}')
+
+            # get pitch predictions for each instrument
+            # broadcasting add
+            hidden = hidden + self.instrument_emb(insts)
+            inst_pitch_params = pitch_proj(hidden.tanh())      
+            # can't broadcast pitches against log_prob,
+            # since there may be different # available for each
+            pair_scores = []
+            pair_embs = []
+            for pitch_params, h, inst_score, (inst, pitches) in zip(
+                    inst_pitch_params.unbind(0), 
+                    hidden.unbind(0),
+                    inst_scores, 
+                    inst_pitch_map.items()
+                ):
+                pitches = torch.tensor(pitches, dtype=torch.long)
+                # TODO: temperature etc modifications to pitch logits
+                dist = D.Categorical(logits=pitch_params)
+                # TODO: option to sample N pitches rather than use them all here
+                pitch_scores = dist.log_prob(pitches)
+                # print(f'{pitch_scores.shape=}')
+                pair_scores.append(inst_score + pitch_scores) # broadcasting add
+                pair_embs.append(h + self.pitch_emb(pitches))
+            pair_scores = torch.cat(pair_scores)
+            hidden = torch.cat(pair_embs)
+
+            # batch dimension is now (inst,pitch) pairs
+            vel_params = vel_proj(hidden.tanh())
+            # set velocity to 0 when pitch is in note map, else sample
+            # TODO: temperature etc sampling
+            is_note_on = torch.tensor([p not in note_map[i] for i,p in pairs])
+            vel = vel_params.new_zeros(len(pairs))
+            vel[is_note_on] = self.vel_dist.sample(
+                vel_params[is_note_on], truncate=(0.5, np.inf))
+            # add velocity scores
+            vel_scores = self.vel_dist(vel_params, vel)['log_prob']
+            # print(f'{vel_scores.shape=}')
+            pair_scores = pair_scores + vel_scores
+
+            hidden = hidden + self.vel_emb(vel)
+            time_params = time_proj(hidden.tanh())
+            
+            # steer_density or steer_duration based on vel>0
+            time = time_params.new_zeros(len(pairs))
+            steer_sparsity = None if steer_density is None else 1-steer_density
+            time[is_note_on] = self.time_dist.sample(
+                time_params[is_note_on], steer=steer_sparsity)
+            time[~is_note_on] = self.time_dist.sample(
+                time_params[~is_note_on], steer=steer_duration)
+            # score time
+            time_scores = self.time_dist(time_params, time)['log_prob']
+            # print(f'{time_scores.shape=}')
+            pair_scores = pair_scores + time_scores
+
+            # resample final result
+            resample_dist = D.Categorical(logits=pair_scores)
+            # for (i,p),t,v,pr in zip(pairs, time, vel, resample_dist.probs):
+            #     print(i,p,f'{t.item():0.3f}',int(v.item()+0.5),'\t',int(pr*160)*'*')
+            idx = resample_dist.sample().item()
+            # print(f'{idx=}')
+
+        (i,p) = pairs[idx]
+        return {
+            'inst': i, 'pitch': p, 'time': time[idx].item(), 'vel': vel[idx].item()
+        }
+                
+    def query_ivtp(self,
+            inst_pitch_map, note_map, 
+            min_time=None,
+            steer_duration=None, steer_density=None, steer_pitch=None
+            ):
+        """
+        Args:
+            inst_pitch_map: map from instruments to allowable pitches
+            note_map: map from inst to active note pitches
+        """ 
+
+        assert list(inst_pitch_map) == list(note_map)
+
+        inst_proj, pitch_proj, time_proj, vel_proj = self.projections
+
+        with torch.inference_mode():
+            if self.h_query is None:
+                self.h_query = self.h_proj(self.h)
+
+            insts = torch.tensor(list(inst_pitch_map), dtype=torch.long)
+
+            hidden = self.h_query[:,0]
+
+            # singleton batch of inst predictions
+            # to get scores
+            inst_params = inst_proj(hidden.tanh())
+            # broadcasting log_prob
+            scores = D.Categorical(logits=inst_params).log_prob(insts)
+            # print(f'{scores.shape=}')
+
+            # get pitch predictions for each instrument
+            # broadcasting add
+            hidden = hidden + self.instrument_emb(insts)
+            vel_params = vel_proj(hidden.tanh())
+            # stack note-off and note-on along new batch dim
+            vels = self.vel_dist.sample(vel_params, truncate=(0.5, np.inf))
+            vels = torch.stack((torch.zeros_like(vels), vels))
+
+            # (broadcasting) add velocity scores
+            vel_scores = self.vel_dist(vel_params, vels)['log_prob']
+            # print(f'{vel_scores.shape=}')
+            scores = scores + vel_scores
+
+            hidden = hidden + self.vel_emb(vels) # broadcasting add
+            time_params_off, time_params_on = time_proj(hidden.tanh()).unbind(0)
+            
+            # steer_density or steer_duration based on vel>0
+            steer_sparsity = None if steer_density is None else 1-steer_density
+
+            time_on = self.time_dist.sample(
+                time_params_on, steer=steer_sparsity, truncate=(min_time, np.inf))
+            time_off = self.time_dist.sample(
+                time_params_off, steer=steer_duration, truncate=(min_time, np.inf))
+
+            # score time
+            times = torch.stack((time_off, time_on))
+            time_params = torch.stack((time_params_off, time_params_on))
+            time_scores = self.time_dist(time_params, times)['log_prob']
+            # print(f'{time_scores.shape=}')
+            scores = scores + time_scores
+
+            def flatten(x):
+                return x.reshape(-1, *x[2:])
+
+            # resample inst,vel,time result
+            # zero prob for any bad inst,v pairs:
+            for i,(inst,held) in enumerate(note_map.items()):
+                # note off but no notes are held
+                if len(held)==0:
+                    scores[0,i] = -np.inf
+                # note off but all notes are held
+                if len(held)>=128:
+                    scores[1,i] = -np.inf
+                # print(f'{inst=},{held=}')
+            resample_dist = D.Categorical(logits=flatten(scores))
+            vt_idx = resample_dist.sample().item()
+            i_idx = vt_idx % scores.shape[1]
+
+            # print(f'{scores=}')
+            # print(f'{vt_idx=}')
+            # print(f'{insts=}')
+            # print(f'{i_idx=}')
+            # print(f'{flatten(vels)=}')
+            
+            inst = insts[i_idx].item()
+            vel = flatten(vels)[vt_idx]
+            time = flatten(times)[vt_idx]
+            hidden = flatten(hidden)[vt_idx] + self.time_emb(time)
+
+            # for i,t,v,pr in zip(
+            #     torch.cat((insts,insts)), 
+            #     flatten(times), 
+            #     flatten(vels), 
+            #     resample_dist.probs
+            #     ):
+            #     print(i.item(), f'{t.item():0.3f}', int(v.item()+0.5),
+            #         '\t'+int(pr*80)*'*')
+
+            # sample pitch
+            vel = vel.item()
+            time = time.item()
+            pitch_params = pitch_proj(hidden.tanh())
+            held_notes = set(note_map[inst])
+            # TODO edge cases: no held or unheld notes?
+            allowed_pitches = set(inst_pitch_map[inst])
+            if vel>0:
+                # note-on: cannot be a note already on
+                allowed_pitches = allowed_pitches - held_notes
+            else:
+                # note-off: must be a note already on
+                allowed_pitches = allowed_pitches & held_notes
+            allowed_pitches = list(allowed_pitches)
+            _pp = torch.full_like(pitch_params, -np.inf)
+            _pp[allowed_pitches] = pitch_params[allowed_pitches]
+
+            # pitch = D.Categorical(logits=_pp).sample().item()
+            # print(f'{inst=}')
+            # print(inst_pitch_map)
+            # print(f'{inst_pitch_map[inst]=}')
+            # print(held_notes)
+            # print(allowed_pitches)
+            # print(_pp)
+            pitch = categorical_sample(_pp, steer=steer_pitch).item()
+
+            # print(f'{pitch=}')
+
+        return {
+            'inst': inst, 'pitch': pitch, 'time': time, 'vel': vel
+        }
+
     # TODO: remove pitch_topk and sweep_time?
     def query(self,
-            next_inst=None, next_pitch=None, next_time=None, next_vel=None, 
+            next_inst=None, next_pitch=None, next_time=None, next_vel=None,
+            steer_pitch=None, steer_time=None, steer_vel=None,
             pitch_topk=None, index_pitch=None,
             allow_end=False,
             sweep_time=False, min_time=None, max_time=None,
@@ -402,6 +627,10 @@ class Notochord(nn.Module):
                 precise, 1 is 'natural' according to the model.
             index_pitch: Optional[int]. if not None, deterministically take the
                 nth most likely pitch instead of sampling.
+            steer_*: Optional[float]. number between 0 and 1.
+                deterministic sampling method,
+                which is monotonically related to the sampled value,
+                and recovers the model distribution when uniformly distributed.
 
             # multiple predictions
             pitch_topk: Optional[int]. if not None, instead of sampling pitch, 
@@ -507,14 +736,18 @@ class Notochord(nn.Module):
                     constrain_inst = [
                         i for i in constrain_inst if not self.is_drum(i)]
 
-            if constrain_inst is not None:
-                preserve_x = x[...,constrain_inst]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_inst] = preserve_x
-            probs = x.softmax(-1)
-            if instrument_temp is not None:
-                probs = reweight_top_p(probs, instrument_temp)
-            return D.Categorical(probs).sample()
+            # if constrain_inst is not None:
+            #     preserve_x = x[...,constrain_inst]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_inst] = preserve_x
+            # probs = x.softmax(-1)
+            # if instrument_temp is not None:
+            #     probs = reweight_top_p(probs, instrument_temp)
+            # return D.Categorical(probs).sample()
+
+            return categorical_sample(x, 
+                whitelist=constrain_inst,
+                top_p=instrument_temp)
 
         def sample_pitch(x):
             # conditional constraint
@@ -527,19 +760,33 @@ class Notochord(nn.Module):
                     nonlocal constrain_pitch
                     constrain_pitch = include_drum
 
-            if constrain_pitch is not None:
-                preserve_x = x[...,constrain_pitch]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_pitch] = preserve_x
-            if index_pitch is not None:
-                return x.argsort(-1, True)[...,index_pitch]
-            elif pitch_topk is not None:
-                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
-            else:
-                probs = x.softmax(-1)
-                if pitch_temp is not None:
-                    probs = reweight_top_p(probs, pitch_temp)
-                return D.Categorical(probs).sample()
+            if pitch_topk is not None:
+                raise NotImplementedError
+
+            return categorical_sample(x,
+                whitelist=constrain_pitch, 
+                index=index_pitch,
+                top_p=pitch_temp,
+                steer=steer_pitch)
+            # if constrain_pitch is not None:
+            #     preserve_x = x[...,constrain_pitch]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_pitch] = preserve_x
+            # # x is modified logits
+
+            # if index_pitch is not None:
+            #     return x.argsort(-1, True)[...,index_pitch]
+            # elif pitch_topk is not None:
+            #     return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+            
+            # probs = x.softmax(-1)
+            # if pitch_temp is not None:
+            #     probs = reweight_top_p(probs, pitch_temp)
+
+            # if steer_pitch is not None:
+            #     return steer_categorical(probs, steer_pitch)
+            # else:
+            #     return D.Categorical(probs).sample()
 
         def sample_time(x):
             # TODO: respect trunc_time when sweep_time is True
@@ -555,20 +802,23 @@ class Notochord(nn.Module):
                 # multiple times in batch dim
                 # print(loc.shape)
                 return loc
-            else:
-                trunc = (
-                    -np.inf if min_time is None else min_time,
-                    np.inf if max_time is None else max_time)
-                return self.time_dist.sample(x, 
-                    truncate=trunc,
-                    component_temp=timing_temp, weight_top_p=rhythm_temp)
+            
+            trunc = (
+                -np.inf if min_time is None else min_time,
+                np.inf if max_time is None else max_time)
+
+            return self.time_dist.sample(x, 
+                truncate=trunc,
+                component_temp=timing_temp, 
+                weight_top_p=rhythm_temp,
+                steer=steer_time)
 
         def sample_velocity(x):
             trunc = (
                 -np.inf if min_vel is None else min_vel,
                 np.inf if max_vel is None else max_vel)
             return self.vel_dist.sample(
-                x, component_temp=velocity_temp, truncate=trunc)
+                x, component_temp=velocity_temp, truncate=trunc, steer=steer_vel)
 
         with torch.inference_mode():
             if self.h_query is None:

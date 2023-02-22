@@ -61,7 +61,6 @@ class OSC():
     TODO: Polling clients after handshake
     TODO: Enqueuing and buffering messages (?)
     """
-    instances = []
     def __init__(self, host="127.0.0.1", port=9999, verbose=True,
          concurrent=False):
         """
@@ -84,7 +83,6 @@ class OSC():
         self.clients = {} # (host,port) -> client
         self.client_names = {} # (name) -> (host,port)
 
-        # OSC.instances.append(self)
         self.create_server()
 
     def create_server(self):#, host=None, port=None):
@@ -103,7 +101,7 @@ class OSC():
                 print(f"OSC server created {self.host}:{self.port}")
 
             # start the OSC server on its own thread
-            Thread(target = self.server.serve_forever).start()
+            Thread(target=self.server.serve_forever, daemon=True).start()
             # self.server.serve_forever()
         else:
             print("OSC server already exists")
@@ -162,7 +160,7 @@ class OSC():
         Send message to default client, or with client in address
 
         Args:
-            address: '/osc/route' or 'host:port/osc/route'
+            address: '/my/osc/route' or 'host:port/my/osc/route'
             *msg: content
             client: name of client or None
         """

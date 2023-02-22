@@ -18,7 +18,7 @@ Authors:
 #   player/noto, channel, inst for both
 
 from notochord import Notochord, MIDIConfig, KlaisOrganConfig
-from iipyper import MIDI, run, Stopwatch, repeat, cleanup, TUI, profile
+from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, Lag
 from typing import Dict
 
 import mido
@@ -77,9 +77,13 @@ def main(
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
         n_recent=50,
+        osc_host='',
+        osc_port=9998,
         predict_player=True,
         use_tui=True,
-        klais=False,
+        klais=True,
+        thru=False,
+        initial_query=False,
         checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
         testing=False,
         ):
@@ -98,7 +102,10 @@ def main(
         midi_out: MIDI port for Notochord output
         checkpoint: path to notochord model checkpoint
     """
-    midi = MIDI(midi_in.split(','), midi_out.split(','))
+    osc = OSC(osc_host, osc_port)
+    midi = MIDI(
+        None if midi_in is None else midi_in.split(','), 
+        None if midi_out is None else midi_out.split(','))
 
     ### Textual UI
     tui = NotoTUI()
@@ -113,13 +120,21 @@ def main(
     if noto_config is None:
         noto_config = {2:258} # channel 2: anon 2
 
+    def get_inst(c):
+        if c in player_config:
+            return player_config[c]
+        if c in noto_config:
+            return noto_config[c]
+        raise ValueError(f"channel {c} not in config")
     if klais:
-        # TODO
         klc = KlaisOrganConfig()
-        noto_config = {1:257,2:258,3:259,4:260,5:261}
-        inst_note_map = {m.channel:m.note_range for m in klc.manuals}
+        inst_pitch_map = {get_inst(m.channel):m.note_range for m in klc.manuals}
+        # print(inst_pitch_map)
+        # print([type(k) for k in inst_pitch_map])
+        # TODO assert channels are 1-5
     else:
-        inst_note_map = None
+        inst_pitch_map = {c: range(128) for c in noto_config}
+        inst_pitch_map |= {c: range(128) for c in player_config}
 
     # convert 1-indexed MIDI channels to 0-indexed here
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
@@ -181,41 +196,23 @@ def main(
         print('RESET')
 
     def query_steer_time(insts):
-        with profile('query_ivtp', print=print):
-            # TODO: use Klais organ pitches
-            inst_pitch_map = {i:range(128) for i in insts}
-            note_map = {i:[] for i in insts}
-            for i,p in notes:
-                if i in insts:
-                    note_map[i].append(p)
-            print(note_map)
-            pending.event = noto.query_ivtp(
-                inst_pitch_map, note_map, 
-                min_time=stopwatch.read(), # event can't happen sooner than now
-                steer_duration=controls.get('steer_duration', None),
-                steer_density=controls.get('steer_density', None),
-                steer_pitch=controls.get('steer_pitch', None)
-            )
-        #     dens = controls.get('steer_density', None)
-        #     spars = None if dens is None else 1-dens
-        #     on_event = noto.query(
-        #         min_time=stopwatch.read(), # event can't happen sooner than now
-        #         include_inst=insts,
-        #         steer_time=spars,
-        #         steer_pitch=controls.get('steer_pitch', None),
-        #         min_vel=1)
-        #     off_event = noto.query(
-        #         min_time=stopwatch.read(), # event can't happen sooner than now
-        #         include_inst=insts,
-        #         steer_time=controls.get('steer_duration', None),
-        #         next_vel=0)
-        # if (
-        #     (off_event['inst'], off_event['pitch']) in notes 
-        #     and on_event['time'] >= off_event['time']
-        #     ):
-        #     pending.event = off_event
-        # else:
-        #     pending.event = on_event
+        # with profile('query_ivtp', print=print):
+        note_map = {i:[] for i in insts}
+        for i,p in notes:
+            if i in insts:
+                note_map[i].append(p)
+        # print(insts)
+        # print(inst_pitch_map)
+        # print({k:v for k,v in inst_pitch_map.items() if k in insts})
+        # print(note_map)
+        pending.event = noto.query_ivtp(
+            {k:inst_pitch_map[k] for k in note_map}, 
+            note_map, 
+            min_time=stopwatch.read(), # event can't happen sooner than now
+            steer_duration=controls.get('steer_duration', None),
+            steer_density=controls.get('steer_density', None),
+            steer_pitch=controls.get('steer_pitch', None)
+        )
 
     # query Notochord for a new next event
     def noto_query():
@@ -227,11 +224,11 @@ def main(
                 and sw.read() > max_note_len*controls.get('steer_duration', 1)
                 ):
                 # query for the end of a note with flexible timing
-                with profile('query', print=print):
-                    t = stopwatch.read()
-                    pending.event = noto.query(
-                        next_inst=inst, next_pitch=pitch,
-                        next_vel=0, min_time=t, max_time=t+0.5)
+                # with profile('query', print=print):
+                t = stopwatch.read()
+                pending.event = noto.query(
+                    next_inst=inst, next_pitch=pitch,
+                    next_vel=0, min_time=t, max_time=t+0.5)
                 print('END STUCK NOTE')
                 return
 
@@ -244,17 +241,18 @@ def main(
                 insts = insts | player_map.insts
         # print(f'considering {insts}')
 
-        if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
-            query_steer_time(insts)
-        else:
-            with profile('query', print=print):
-                pending.event = noto.query(
-                    min_time=stopwatch.read(), # event can't happen sooner than now
-                    include_inst=insts,
-                    # **controls
-                    steer_pitch=controls.get('steer_pitch', None),
-                    # steer_vel=0.5,
-                    )
+        query_steer_time(insts)
+        # if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
+        #     query_steer_time(insts)
+        # else:
+        #     with profile('query', print=print):
+        #         pending.event = noto.query(
+        #             min_time=stopwatch.read(), # event can't happen sooner than now
+        #             include_inst=insts,
+        #             # **controls
+        #             steer_pitch=controls.get('steer_pitch', None),
+        #             # steer_vel=0.5,
+        #             )
         # display the predicted event
         tui(prediction=pending.event)
 
@@ -286,21 +284,51 @@ def main(
             controls['steer_duration'] = msg.value/127
             print(f"{controls['steer_duration']=}")
 
-        if msg.control==70:
-            controls['steer_pitch'] = msg.value/127
-            print(f"{controls['steer_pitch']=}")
-        if msg.control==71:
-            controls['steer_density'] = msg.value/127
-            print(f"{controls['steer_density']=}")
-        if msg.control==72:
-            controls['steer_duration'] = msg.value/127
-            print(f"{controls['steer_duration']=}")
+    # @osc.args('/*')
+    # def _(route, *a):
+    #     print(route, *a)
+
+    norm_lag = Lag(0.9)
+    x_lag = Lag(0.99)
+    y_lag = Lag(0.99)
+    # z_lag = Lag(0.9)
+
+    @osc.args('/mapin')
+    def _(route, x, y, z):
+        # print(route, x, y, z)
+        # controls['steer_pitch'] = min(1,max(0,x/127))
+        # controls['steer_density'] = min(1,max(0,y/127))
+        # controls['steer_duration'] = min(1,max(0,z/127))
+        # print(f'x: {"*"*(x//2)}')
+        # print(f'y: {"*"*(y//2)}')
+        # print(f'z: {"*"*(z//2)}')
+        norm = (x*x + y*y + z*z)**0.5
+        norm = norm_lag.hpf(norm)
+
+        x = x_lag.hpf(x)
+        y = y_lag.hpf(y)
+
+        controls['steer_pitch'] = min(1,max(0,-x/100+0.5))
+        controls['steer_duration'] = min(1,max(0, y/100+0.5))
+        controls['steer_density'] = min(0.55,max(0,norm/30))+0.45
+        spars = 1 - controls['steer_density']
+        if (
+                pending.event is not None and 
+                pending.event['time'] - stopwatch.read() > spars*1
+            ):
+            noto_query()
+            
+        print(Panel(Pretty(controls)))
+        # print(f'norm: {int(norm):03d} {"*"*int(max(0,norm//2))}')
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
         """MIDI NoteOn events from the player"""
         if msg.channel not in player_map.channels:
             return
+        
+        if thru:
+            midi.send(msg)
 
         if noto is None:
             print('Notochord model not loaded')
@@ -313,8 +341,8 @@ def main(
         vel = msg.velocity
 
         # feed event to Notochord
-        with profile('feed', print=print):
-            noto.feed(inst, pitch, stopwatch.punch(), vel)
+        # with profile('feed', print=print):
+        noto.feed(inst, pitch, stopwatch.punch(), vel)
 
         k = (inst, pitch)
         if vel>0:
@@ -361,8 +389,8 @@ def main(
         midi.send(msg)
 
         # feed back to Notochord
-        with profile('feed', print=print):
-            noto.feed(inst, pitch, stopwatch.punch(), vel)
+        # with profile('feed', print=print):
+        noto.feed(inst, pitch, stopwatch.punch(), vel)
         # track total events played
         track_recent_insts(inst)
         # print
@@ -389,6 +417,7 @@ def main(
     @cleanup
     def _():
         """end any remaining notes"""
+        print(f'cleanup: {notes=}')
         for (inst,pitch) in notes:
             if inst in noto_map.insts:
                 midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
@@ -413,8 +442,12 @@ def main(
     def query():
         noto_query()
 
+    if initial_query:
+        noto_query()
+
     if use_tui:
         tui.run()
+
 
 
 if __name__=='__main__':

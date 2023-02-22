@@ -1,0 +1,21 @@
+TUI {
+    layout: vertical;
+}
+
+ 
+RaveDisplay {
+    height: 1fr;
+    border: solid purple;
+}
+
+
+TextLog {
+    height: 1fr;
+    border: solid purple;
+}
+
+/* 
+Button {
+    width: 16;
+}
+*/

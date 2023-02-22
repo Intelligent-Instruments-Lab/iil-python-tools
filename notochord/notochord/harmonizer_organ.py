@@ -11,34 +11,35 @@ from notochord import Notochord
 from iipyper import MIDI, run, Stopwatch, cleanup
 
 def main(
-        player_channel=0, # MIDI channel numbered from 0
+        player_channel=1, # MIDI channel numbered from 0
         noto_channel=1,
         player_inst=20, # General MIDI numbered from 1 (see Notochord.feed docstring)
-        noto_inst=20,
+        noto_inst=None,
         noto_config=None,
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
+        thru=True, # resend player in on output
+        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+
         below=False, # harmonize above
         above=True, # harmonize below
         n=1, # number of tones
-        checkpoint="artifacts/notochord-latest.ckpt" # Notochord checkpoint
         ):
     midi = MIDI(midi_in, midi_out)
 
     if noto_config is None:
-        if not below and not above:
-            raise ValueError
-        noto_config = [
-            (noto_inst, -128 if below else 1, 128 if above else -1) 
-            for _ in range(n)]
-
-    ######TEST
-    noto_config = [(5,20,3,4), (4,20,-24,-12), (3,20,-36,-24), (1,20,-48,-36)] # channel, inst, min transpose, max transpose (inclusive)
+        if noto_inst is None:
+            noto_inst = player_inst
+        noto_config = [ # channel (from 0), inst, min transpose, max transpose (inclusive)
+            (0,noto_inst,-36,0),
+            # (1,noto_inst,-36,0),
+            (2,noto_inst,0,12), 
+            (3,noto_inst,3,4), 
+            (4,noto_inst,12,24), 
+            ]
     for (_,_,lo,hi) in noto_config:
         assert lo <= hi
     ######
-
-    print(f'{above=}, {below=}')
 
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
@@ -81,6 +82,9 @@ def main(
         pitch = msg.note
         vel = msg.velocity
 
+        if thru:
+            midi.send(msg)
+
         # NoteOn
         if msg.type=='note_on' and vel > 0:
                 # feed in the performed note
@@ -92,17 +96,26 @@ def main(
             # for _ in range(n):
             for noto_channel, noto_inst, min_x, max_x in noto_config:
 
+                print(max(36,pitch+min_x), min(94, pitch+max_x+1))
+
                 pitches = (
-                    set(range(max(0,pitch+min_x), min(128, pitch+max_x+1)))
+                    set(range(max(36,pitch+min_x), min(94, pitch+max_x+1)))
                     - {pitch} - chosen_pitches
                 )
+
+                if len(pitches)==0:
+                    print(f'skipping {noto_channel=}, no pitches available')
+                    print(
+                        set(range(max(36,pitch+min_x), min(94, pitch+max_x+1))),
+                        'minus', {pitch}, 'minus', chosen_pitches)
+                    continue
 
                 # pitches = set((
                 #     *(range(max(player_pitches)+1, 128) if above else []),
                 #     *(range(0, min(player_pitches)) if below else [])
                 # )) - chosen_pitches # don't repeat pitches
 
-                print(pitches)
+                print(f'{pitches=}')
 
                 h = noto.query(
                     next_inst=noto_inst, next_time=0, next_vel=vel,
@@ -120,11 +133,13 @@ def main(
                 # # if duplicate, just transfer it in the note map 
                 new_note = True
                 for _,hs in note_map.items():
-                    for _,n_inst,n_pitch in list(hs):
-                        if noto_inst==n_inst and n_pitch==h_pitch:
+                    for tr in list(hs):
+                        n_chan,n_inst,n_pitch = tr
+                        # if noto_inst==n_inst and n_pitch==h_pitch:
+                        if n_chan==noto_channel and n_pitch==h_pitch:
                     # if n_inst==noto_inst and h_pitch in hs:
-                            hs.remove(h_pitch)
-                            new_note=False
+                            hs.remove(tr)
+                            new_note = False
                 # the model *shouldn't* pick duplicates,
                 # but the thinking is that if it wants to,
                 # it's better to have fewer notes

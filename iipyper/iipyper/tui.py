@@ -40,7 +40,9 @@ try:
             getattr(self, f'action_{event.button.id}')()
 
         def _print(self, k, *v):
-            self.std_log.write(' '.join(str(s) for s in (k, *v)))
+            for s in (k, *v):
+                self.std_log.write(s)
+            # self.std_log.write(' '.join(str(s) for s in (k, *v)))
 
         def print(self, *a, **kw):
             """redirects to the TUI's default std output log"""
@@ -49,6 +51,8 @@ try:
                     self.call_from_thread(self._print, *a, **kw)
                 except:
                     self._print(*a, **kw)
+            else:
+                print(*a, **kw)
 
         def __call__(self, *a, **kw):
             if self.is_running:
@@ -63,9 +67,7 @@ try:
 
         def do_call(self, **kw):
             """
-            Optionally override this as the main output for your iipyper app.
-
-            by default, it will expect your TUI to have child nodes
+            by default, expects your TUI to have child nodes
             with a reactive `value` attribute, which updates the node when set.
             then calling my_tui(my_node_id=my_value) will update the node.
             """
@@ -79,10 +81,6 @@ try:
                     self.print(f'TUI: node "{k}" not found')
                 except AttributeError:
                     self.print(f'TUI: node "{k}" lacks `value` reactive')
-            # raise NotImplementedError
-            ## e.g.
-            # if my_keyword_arg is not None:
-                # self.my_node.write(my_keyword_arg)
 
 
 except ImportError as e:
