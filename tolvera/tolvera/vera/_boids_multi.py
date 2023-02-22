@@ -257,6 +257,13 @@ class BoidsMulti(Particles):
         params[7] = self.size[i]
         return params
 
+    @ti.kernel
+    def boid(self, i: ti.i32) -> ti.f32:
+        # b = ti.Vector([0.0])
+        b = self._pos[i][0]
+        # b = int(self._pos[i][0])
+        return b
+
     def set_boid_vel(self, i, vel):
         self._vel[i] = vel
 
