@@ -51,10 +51,10 @@ class TiMRP:
         for t in range(self.trigger_n):
             self.trigger_pos[t] = ti.Vector([ti.random(ti.f32)*self.x, ti.random(ti.f32)*self.y])
             self.trigger_note[t] = ti.Vector([ti.cast(ti.random(ti.f32)*self.keys+self.range_start, ti.i32)])
-            x1 = ti.cast(self.trigger_pos[t][0], ti.i32) - self.trigger_w
-            x2 = ti.cast(self.trigger_pos[t][1], ti.i32) + self.trigger_w
-            y1 = ti.cast(self.trigger_pos[t][0], ti.i32) - self.trigger_w
-            y2 = ti.cast(self.trigger_pos[t][1], ti.i32) + self.trigger_w
+            x1 = ti.cast(self.trigger_pos[t][0], ti.i32) - self.trigger_width
+            x2 = ti.cast(self.trigger_pos[t][1], ti.i32) + self.trigger_width
+            y1 = ti.cast(self.trigger_pos[t][0], ti.i32) - self.trigger_width
+            y2 = ti.cast(self.trigger_pos[t][1], ti.i32) + self.trigger_width
             self.trigger_rect[t] = ti.Vector([x1,x2,y1,y2])
             for x in range(x1, x2):
                 for y in range(y1, y2):
@@ -90,3 +90,20 @@ class TiMRP:
     
     def process(self):
         return self.get_image()
+
+def main():
+    ti.init(arch=ti.vulkan)
+    x = 512
+    y = 1080
+    # n = 4096
+    mrp = TiMRP()
+    window = ti.ui.Window("MRP", (x, x))
+    canvas = window.get_canvas()
+    while window.running:
+        
+        # update(boids) # jurigged: costs 10fps
+        canvas.set_image(mrp.process())
+        window.show()
+
+if __name__ == '__main__':
+    main()

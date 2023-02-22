@@ -9,6 +9,7 @@ from tolvera.vera._physarum import main as physarum
 from tolvera.vera._physarum_multi import main as physarum_multi
 from tolvera.vera._lenia import main as lenia
 from tolvera.vera._reaction_diffusion import main as rea_diff
+from tolvera.vera._mrp import main as mrp
 
 def help():
     print("""
@@ -41,6 +42,8 @@ if __name__=='__main__':
                 world()
             case 'help':
                 help()
+            case 'mrp':
+                mrp()
             case _:
                 help()
     except IndexError:
