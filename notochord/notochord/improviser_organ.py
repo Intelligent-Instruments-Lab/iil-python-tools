@@ -120,9 +120,9 @@ def main(
 
     # default channel:instrument mappings
     if player_config is None:
-        player_config = {1:257} # channel 1: anon 1
+        player_config = {1:44} # channel 1: contrabass
     if noto_config is None:
-        noto_config = {2:258} # channel 2: anon 2
+        noto_config = {2:43, 3:42, 4:49, 5:41} # strings 
 
     def get_inst(c):
         if c in player_config:
