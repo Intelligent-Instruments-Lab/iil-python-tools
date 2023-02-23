@@ -25,7 +25,7 @@ def main(
 
         below=False, # harmonize above
         above=True, # harmonize below
-        n=1, # number of tones
+        # n=1, # number of tones
         ):
     midi = MIDI(midi_in, midi_out)
 
