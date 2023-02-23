@@ -12,14 +12,14 @@ from notochord import Notochord
 from iipyper import MIDI, run, Stopwatch, cleanup
 
 def main(
-        player_channel=1, # MIDI channel numbered from 0
-        noto_channel=1,
+        player_channel=0, # MIDI channel numbered from 0
+        # noto_channel=1,
         player_inst=20, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=None,
         noto_config=None,
         midi_in=None, # MIDI port for player input
         midi_out=None, # MIDI port for Notochord output
-        thru=True, # resend player in on output
+        thru=False, # resend player in on output
         checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
         note_off_delay=2e-3,
 
@@ -33,11 +33,11 @@ def main(
         if noto_inst is None:
             noto_inst = player_inst
         noto_config = [ # channel (from 0), inst, min transpose, max transpose (inclusive)
-            (0,noto_inst,-36,0),
-            # (1,noto_inst,-36,0),
-            (2,noto_inst,0,12), 
+            # (0,noto_inst,-36,-12),
+            (1,noto_inst,-36,-12),
+            (2,noto_inst,-12,0), 
             (3,noto_inst,3,4), 
-            (4,noto_inst,12,24), 
+            (4,noto_inst,7,36), 
             ]
     for (_,_,lo,hi) in noto_config:
         assert lo <= hi
@@ -52,16 +52,16 @@ def main(
     note_map = {} # map from player pitch to notochord pitches
     stopwatch = Stopwatch()
 
-    @midi.handle(type='program_change')
-    def _(msg):
-        """
-        Program change events set instruments
-        """
-        nonlocal player_inst, noto_inst
-        if msg.channel == player_channel:
-            player_inst = msg.program
-        if msg.channel == noto_channel:
-            noto_inst = msg.program
+    # @midi.handle(type='program_change')
+    # def _(msg):
+    #     """
+    #     Program change events set instruments
+    #     """
+    #     nonlocal player_inst, noto_inst
+    #     if msg.channel == player_channel:
+    #         player_inst = msg.program
+    #     if msg.channel == noto_channel:
+    #         noto_inst = msg.program
 
     @midi.handle(type='control_change', control=0, channel=player_channel)
     def _(msg):
