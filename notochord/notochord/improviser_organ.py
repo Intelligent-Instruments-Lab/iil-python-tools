@@ -129,14 +129,18 @@ def main(
             return player_config[c]
         if c in noto_config:
             return noto_config[c]
-        raise ValueError(f"channel {c} not in config")
+        return None
+        # raise ValueError(f"channel {c} not in config")
     if klais:
         klc = KlaisOrganConfig()
-        inst_pitch_map = {get_inst(m.channel):m.note_range for m in klc.manuals}
-        # print(inst_pitch_map)
-        # print([type(k) for k in inst_pitch_map])
-        # TODO assert channels are 1-5
+        inst_pitch_map = {}
+        for m in klc.manuals:
+            inst = get_inst(m.channel)
+            if inst is not None:
+                inst_pitch_map[inst] = m.note_range 
     else:
+        # TODO: after organ workshop, add arguments for this
+        # defaults for drums etc
         inst_pitch_map = {c: range(128) for c in noto_config}
         inst_pitch_map |= {c: range(128) for c in player_config}
 
