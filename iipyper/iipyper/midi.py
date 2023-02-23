@@ -49,21 +49,37 @@ class MIDI:
         # TODO: fuzzy match port names
 
         if in_ports is None or len(in_ports)==0:
-            in_ports = set(mido.get_input_names())  
-        self.in_ports = {# mido.ports.MultiPort([
-            port: mido.open_input(port, callback=self.get_callback(port))
-            for port in in_ports
-        }
+            in_ports = set(mido.get_input_names())
+
+        self.in_ports = {}  
+        for port in in_ports:
+            try:
+                self.in_ports[port] = mido.open_input(
+                    port, callback=self.get_callback(port))
+            except Exception:
+                print(f"""WARNING: MIDI input {port} not found""")
+
+        # self.in_ports = {# mido.ports.MultiPort([
+        #     port: mido.open_input(port, callback=self.get_callback(port))
+        #     for port in in_ports
+        # }
 
         if self.verbose:
             print(f"""opened MIDI input ports: {list(self.in_ports)}""")
 
         if out_ports is None or len(out_ports)==0:
             out_ports = set(mido.get_output_names())  
-        self.out_ports = {# mido.ports.MultiPort([
-            port: mido.open_output(port)
-            for port in out_ports
-        }
+        # self.out_ports = {# mido.ports.MultiPort([
+        #     port: mido.open_output(port)
+        #     for port in out_ports
+        # }
+        self.out_ports = {}  
+        for port in out_ports:
+            try:
+                self.out_ports[port] = mido.open_output(
+                    port, callback=self.get_callback(port))
+            except Exception:
+                print(f"""WARNING: MIDI output {port} not found""")
 
         if self.verbose:
             print(f"""opened MIDI output ports: {list(self.out_ports)}""")
