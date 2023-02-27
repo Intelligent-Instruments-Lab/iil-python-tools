@@ -106,7 +106,7 @@ def main(
         midi_out: MIDI port for Notochord output
         checkpoint: path to notochord model checkpoint
     """
-    osc = OSC(osc_host, osc_port)
+    # osc = OSC(osc_host, osc_port)
     midi = MIDI(
         None if midi_in is None else midi_in.split(','), #TODO move to iipyper
         None if midi_out is None else midi_out.split(','))
@@ -255,6 +255,7 @@ def main(
 
         if balance_sample:
             insts = set()
+            print(counts)
             if counts['noto'] > counts['player'] - 3:
                 insts |= player_map.insts
             if counts['player'] > counts['noto'] - 3:
@@ -303,17 +304,16 @@ def main(
 
     @midi.handle(type='control_change')
     def _(msg):
-        """any CC1 message resets Notochord"""
+        """CC messages on any channel"""
         # if msg.channel in player_map.channels:
             # print(msg)
 
         # print(msg)
-        # mido.Message('control_change', channel=4, control=1, value=1, time=0)
-        if msg.control==1:
-            controls['steer_density'] = msg.value/127
-            controls['steer_duration'] = msg.value/127
-            print(controls)
-            return
+        # if msg.control==1:
+        #     controls['steer_density'] = msg.value/127
+        #     controls['steer_duration'] = msg.value/127
+        #     print(controls)
+        #     return
 
         if msg.control==4:
             noto_reset()
@@ -339,37 +339,40 @@ def main(
     y_lag = Lag(0.99)
     # z_lag = Lag(0.9)
 
-    @osc.args('/mapin')
-    def _(route, x, y, z):
-        # print(route, x, y, z)
-        # controls['steer_pitch'] = min(1,max(0,x/127))
-        # controls['steer_density'] = min(1,max(0,y/127))
-        # controls['steer_duration'] = min(1,max(0,z/127))
-        # print(f'x: {"*"*(x//2)}')
-        # print(f'y: {"*"*(y//2)}')
-        # print(f'z: {"*"*(z//2)}')
-        norm = (x*x + y*y + z*z)**0.5
-        norm = norm_lag.hpf(norm)
+    # @osc.args('/mapin')
+    # def _(route, x, y, z):
+    #     # print(route, x, y, z)
+    #     # controls['steer_pitch'] = min(1,max(0,x/127))
+    #     # controls['steer_density'] = min(1,max(0,y/127))
+    #     # controls['steer_duration'] = min(1,max(0,z/127))
+    #     # print(f'x: {"*"*(x//2)}')
+    #     # print(f'y: {"*"*(y//2)}')
+    #     # print(f'z: {"*"*(z//2)}')
+    #     norm = (x*x + y*y + z*z)**0.5
+    #     norm = norm_lag.hpf(norm)
 
-        x = x_lag.hpf(x)
-        y = y_lag.hpf(y)
+    #     x = x_lag.hpf(x)
+    #     y = y_lag.hpf(y)
 
-        controls['steer_pitch'] = min(1,max(0,-x/100+0.5))
-        controls['steer_duration'] = min(1,max(0, y/100+0.5))
-        controls['steer_density'] = min(0.55,max(0,norm/30))+0.45
-        spars = 1 - controls['steer_density']
-        if (
-                pending.event is not None and 
-                pending.event['time'] - stopwatch.read() > spars*1
-            ):
-            noto_query()
+    #     controls['steer_pitch'] = min(1,max(0,-x/100+0.5))
+    #     controls['steer_duration'] = min(1,max(0, y/100+0.5))
+    #     controls['steer_density'] = min(0.55,max(0,norm/30))+0.45
+    #     spars = 1 - controls['steer_density']
+    #     if (
+    #             pending.event is not None and 
+    #             pending.event['time'] - stopwatch.read() > spars*1
+    #         ):
+    #         noto_query()
             
-        print(Panel(Pretty(controls)))
-        # print(f'norm: {int(norm):03d} {"*"*int(max(0,norm//2))}')
+    #     print(Panel(Pretty(controls)))
+    #     # print(f'norm: {int(norm):03d} {"*"*int(max(0,norm//2))}')
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
         """MIDI NoteOn events from the player"""
+        if thru and msg.channel not in noto_map.channels:
+            midi.send(msg)
+
         if msg.channel not in player_map.channels:
             return
         
@@ -392,8 +395,8 @@ def main(
         if vel > 0:
             counts['player'] += 1
 
-        if thru:
-            midi.note_on(channel=msg.channel, note=pitch, velocity=vel)
+        # if thru:
+            # midi.note_on(channel=msg.channel, note=pitch, velocity=vel)
 
         # feed event to Notochord
         # with profile('feed', print=print):
@@ -474,7 +477,7 @@ def main(
     @cleanup
     def _():
         """end any remaining notes"""
-        print(f'cleanup: {notes=}')
+        # print(f'cleanup: {notes=}')
         for (inst,pitch) in notes:
             if inst in noto_map.insts:
                 midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))

@@ -1,18 +1,133 @@
+from typing import Optional, Dict, List, Tuple, Any
+import time
+
+import pandas as pd
+import numpy as np
+
 class MIDIConfig(dict):
+    """
+    invertible map from MIDI channel: Notochord instrument
+    """
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.invertible = len(self.channels)==len(self.insts)
+
     @property
     def channels(self):
+        """set of channels"""
         return set(self)
     @property
     def insts(self):
+        """set of instruments"""
         return set(self.values())
     def inv(self, inst):
+        """map from Notochord instrument: MIDI channel"""
+        if not self.invertible:
+            print('WARNING: MIDIConfig is not invertible')
         for chan,inst_ in self.items():
             if inst_==inst:
                 return chan
-        raise KeyError
+        raise KeyError(f"""
+            instrument {inst} has no channel
+            """)
     
+class NotoPerformance:
+    """
+    track various quantities of a Notochord performance:
 
-from typing import Optional
+    event history:
+        * wall time
+        * nominal dt
+        * pitch
+        * velocity (0 for noteoff)
+        * notochord instrument
+    
+    query for:
+        * instruments present in the last N events
+        * number of note_ons by instrument in last N events
+        * currently playing notes with user data as {(inst, pitch): Any}
+        * currently playing notes as {inst: pitches}
+    """
+    def __init__(self):
+        self.init()
+        self.notes:Dict[Tuple[int,int], Any] = {} 
+        self.past_segments:List[pd.DataFrame] = []
+
+    def init(self):
+        self.events = pd.DataFrame(np.array([],dtype=[
+            ('wall_time_ns',np.int64), # actual wall time played in ns
+            ('time',np.float32), # nominal notochord dt in seconds
+            ('inst',np.int16), # notochord instrument
+            ('pitch',np.int16), # MIDI pitch
+            ('vel',np.int8), # MIDI velocity
+            ('channel',np.int8), # MIDI channel
+            ]))
+        
+    def push(self):
+        """push current events onto a list of past segments,
+            start a fresh history
+        """
+        self.past_segments.append(self.events)
+        self.init()
+        
+    def feed(self, held_note_data:Any=None, **event):
+        """
+        Args:
+            held_note_data: any Python object to be attached to held notes
+            ('wall_time_ns',np.int64), # actual wall time played in ns
+            ('time',np.float32), # nominal notochord dt in seconds
+            ('inst',np.int16), # notochord instrument
+            ('pitch',np.int16), # MIDI pitch
+            ('vel',np.int8), # MIDI velocity
+            ('channel',np.int8), # MIDI channel
+        """
+        if 'wall_time_ns' not in event:
+            event['wall_time_ns'] = time.time_ns()
+        cast_event = {}
+        for k,v in event.items():
+            if k in self.events.columns:
+                cast_event[k] = self.events.dtypes[k].type(v)
+        event = cast_event
+
+        self.events.loc[len(self.events)] = event
+
+        inst, pitch, vel = event['inst'], event['pitch'], event['vel']
+        k = (inst, pitch)
+        if vel > 0:
+            self.notes[k] = held_note_data
+        else:
+            self.notes.pop(k, None)
+   
+    def inst_counts(self, n=0, insts=None):
+        """instrument counts in last n (default all) note_ons"""
+        df = self.events
+        df = df.loc[df.vel > 0]
+        df = df.iloc[-n:]
+        counts = df.inst.value_counts()
+        for inst in insts:
+            if inst not in counts.index:
+                counts[inst] = 0
+        return counts
+    
+    def held_inst_pitch_map(self, insts):
+        """held notes as {inst:[pitch]} for given instruments"""
+        note_map = {i:[] for i in insts}
+        for i,p in self.notes:
+            if i in insts:
+                note_map[i].append(p)
+        return note_map
+    
+    @property
+    def note_pairs(self):
+        """held notes as {(inst,pitch)}
+        returns a new `set`; safe to modify history while iterating
+        """
+        return set(self.notes)
+
+    @property
+    def note_data(self):
+        """held notes as {(inst,pitch):held_note_data}"""
+        return self.notes
 
 class KlaisOrganManual:
     def __init__(self, name, channel, note_range, 

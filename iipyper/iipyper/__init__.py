@@ -164,6 +164,13 @@ def cleanup(f=None):
     else: #bare decorator case; return decorated function
         return decorator(f)
 
+# locking decorator
+def lock(f):
+    """wrap the decorated function with the global iipyper lock"""
+    def decorated(*a, **kw):
+        with _lock:
+            f(*a, **kw)
+    return decorated
 
 def run(main=None):
     try:

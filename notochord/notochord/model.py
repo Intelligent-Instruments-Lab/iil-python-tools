@@ -311,7 +311,7 @@ class Notochord(nn.Module):
         return inst > 128 and inst < 257 or inst > 288
 
     
-    def feed(self, inst, pitch, time, vel):
+    def feed(self, inst, pitch, time, vel, **kw):
         """consume an event and advance hidden state
         
         Args:
@@ -327,6 +327,7 @@ class Notochord(nn.Module):
             time: float. elapsed time in seconds since previous event.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
                 0 indicates a note-off event
+            **kw: ignored (allows doing e.g. noto.feed(**noto.query(...)))
         """
         with torch.inference_mode():
             inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)

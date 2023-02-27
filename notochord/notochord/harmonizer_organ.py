@@ -14,7 +14,7 @@ from iipyper import MIDI, run, Stopwatch, cleanup
 def main(
         player_channel=0, # MIDI channel numbered from 0
         # noto_channel=1,
-        player_inst=20, # General MIDI numbered from 1 (see Notochord.feed docstring)
+        player_inst=49, # General MIDI numbered from 1 (see Notochord.feed docstring)
         noto_inst=None,
         noto_config=None,
         midi_in=None, # MIDI port for player input
@@ -27,21 +27,22 @@ def main(
         above=True, # harmonize below
         # n=1, # number of tones
         ):
-    midi = MIDI(midi_in, midi_out)
-
+    midi = MIDI(
+        None if midi_in is None else midi_in.split(','), #TODO move to iipyper
+        None if midi_out is None else midi_out.split(','))
+    
     if noto_config is None:
-        if noto_inst is None:
-            noto_inst = player_inst
-        noto_config = [ # channel (from 0), inst, min transpose, max transpose (inclusive)
-            # (0,noto_inst,-36,-12),
-            (1,noto_inst,-36,-12),
-            (2,noto_inst,-12,0), 
-            (3,noto_inst,3,4), 
-            (4,noto_inst,7,36), 
-            ]
+        # if noto_inst is None:
+            # noto_inst = player_inst
+        noto_config = [t for t in [ # channel (from 0), inst, min transpose, max transpose (inclusive)
+            (0,44,-36,-12),
+            (1,43,-36,-12),
+            (2,43,-12,0), 
+            (3,49,3,4), 
+            (4,41,7,36), 
+            ] if t[0] != player_channel]
     for (_,_,lo,hi) in noto_config:
         assert lo <= hi
-    ######
 
     if checkpoint is not None:
         noto = Notochord.from_checkpoint(checkpoint)
