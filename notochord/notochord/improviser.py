@@ -302,17 +302,16 @@ def main(
                 insts = insts | player_map.insts
         # print(f'considering {insts}')
 
-        query_steer_time(insts)
-        # # query_steer_time(insts)
-        # if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
-        #     query_steer_time(insts)
-        # else:
-        #     # with profile('query', print=print):
-        #     pending.event = noto.query(
-        #         min_time=stopwatch.read(), # event can't happen sooner than now
-        #         include_inst=insts,
-        #         # steer_pitch=controls.get('steer_pitch', None),
-        #         )
+        # query_steer_time(insts)
+        if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
+            query_steer_time(insts)
+        else:
+            # with profile('query', print=print):
+            pending.event = noto.query(
+                min_time=stopwatch.read(), # event can't happen sooner than now
+                include_inst=insts,
+                # steer_pitch=controls.get('steer_pitch', None),
+                )
         # display the predicted event
         tui(prediction=pending.event)
 
