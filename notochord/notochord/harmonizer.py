@@ -6,7 +6,7 @@ Authors:
   Victor Shepardson
   Intelligent Instruments Lab 2023
 """
-import time
+# TODO: test with overlapping channels, instruments
 
 from notochord import Notochord, NotoPerformance
 from iipyper import MIDI, run, Stopwatch, cleanup
@@ -21,10 +21,8 @@ def main(
         midi_out=None, # MIDI port(s) for Notochord output
         thru=False, # copy player input to output
         checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
-        note_off_delay=2e-3,
         below=False, # harmonize above (overridden by noto_config)
         above=True, # harmonize below (overridden by noto_config)
-        # n=1, # number of tones
         ):
     midi = MIDI(
         None if midi_in is None else midi_in.split(','), #TODO move to iipyper
@@ -36,14 +34,6 @@ def main(
         noto_config = [[
             noto_channel, noto_inst, -128 if below else 1, 128 if above else -1]]
     
-    # if noto_config is None:
-    #     noto_config = [t for t in [ # channel (from 0), inst, min transpose, max transpose (inclusive)
-    #         (0,44,-36,-12),
-    #         (1,43,-36,-12),
-    #         (2,43,-12,0), 
-    #         (3,49,3,4), 
-    #         (4,41,7,36), 
-    #         ] if t[0] != player_channel]
     for (_,_,lo,hi) in noto_config:
         assert lo <= hi, """min transpose should be less than max transpose"""
 
@@ -98,11 +88,7 @@ def main(
             history.feed(**event)
             # feed in the performed note
             noto.feed(**event)
-            # player_pitches = set(note_map) | {pitch}
-            # chosen_pitches = set()
-            # chosen_triples = []
-            # get the harmonizing notes
-            # for _ in range(n):
+
             for noto_channel, noto_inst, min_x, max_x in noto_config:
 
                 already_playing = {i for i,p in history.note_pairs}
@@ -117,13 +103,6 @@ def main(
                     print(f'skipping {noto_channel=}, no pitches available')
                     print(pitch_range, 'minus', {pitch}, 'minus', already_playing)
                     continue
-
-                # pitches = set((
-                #     *(range(max(player_pitches)+1, 128) if above else []),
-                #     *(range(0, min(player_pitches)) if below else [])
-                # )) - chosen_pitches # don't repeat pitches
-
-                # print(f'{pitches=}')
 
                 h = noto.query(
                     next_inst=noto_inst, next_time=0, next_vel=vel,
@@ -144,22 +123,6 @@ def main(
                 if k in history.note_data:
                     history.note_data[k] = (player_inst, pitch)
                 else:
-
-                # new_note = True
-                # for _,hs in note_map.items():
-                #     for tr in list(hs):
-                #         n_chan,n_inst,n_pitch = tr
-                #         # if noto_inst==n_inst and n_pitch==h_pitch:
-                #         if n_chan==noto_channel and n_pitch==h_pitch:
-                #     # if n_inst==noto_inst and h_pitch in hs:
-                #             hs.remove(tr)
-                #             new_note = False
-                # # the model *shouldn't* pick duplicates,
-                # # but the thinking is that if it wants to,
-                # # it's better to have fewer notes
-                # # than to force it to pick something else
-
-                # if new_note:
                     # send it
                     midi.note_on(
                         note=h_pitch, velocity=h_vel, channel=noto_channel)
@@ -172,19 +135,8 @@ def main(
                         **event)
                     # feed back
                     noto.feed(**event)
-                # prepare for later NoteOff
-                # chosen_pitches.add(h_pitch)
-                # chosen_triples.append((noto_channel, h_inst, h_pitch))
-            # note_map[pitch] = chosen_pitches
-            # note_map[pitch] = chosen_triples
         # NoteOff
         else:
-            # try:
-            #     # noto_pitches = note_map.pop(pitch)
-            #     noto_triples = note_map.pop(pitch)
-            # except:
-            #     print('harmonizing NoteOffs not found')
-            #     return
             dt = stopwatch.punch()
             event = dict(
                 channel=player_channel, 
@@ -200,7 +152,7 @@ def main(
             ]
 
             for noto_channel, noto_inst, noto_pitch in dependents:
-                # send
+                # send harmonizing note offs
                 midi.note_off(
                     note=noto_pitch, velocity=vel, channel=noto_channel)
                 event = dict(
@@ -210,28 +162,11 @@ def main(
                 noto.feed(**event)
                 history.feed(**event)
 
-
-            # # send harmonizing NoteOff
-            # for noto_channel, noto_inst, noto_pitch in noto_triples:
-            #     midi.note_off(
-            #         note=noto_pitch, velocity=vel, channel=noto_channel)
-            #     time.sleep(note_off_delay)
-            # # feed
-            # for noto_channel, noto_inst, noto_pitch in noto_triples:
-            #     noto.feed(noto_inst, noto_pitch, 0, 0)
-            # noto.feed(player_inst, pitch, stopwatch.punch(), 0)
-            # history.feed(
-            #     dict(inst=player_inst, pitch=pitch, vel=0))
-
     @cleanup
     def _():
         """end any remaining notes"""
         for (c,_,p) in history.note_triples:
             midi.note_off(note=p, velocity=0, channel=c)
-
-        # for triples in note_map.values():
-        #     for channel, _, pitch in triples:
-        #         midi.note_off(note=pitch, velocity=0, channel=channel)
 
 if __name__=='__main__':
     run(main)
