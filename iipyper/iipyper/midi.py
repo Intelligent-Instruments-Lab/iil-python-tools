@@ -77,6 +77,8 @@ class MIDI:
             self.out_ports[virtual_out] = mido.open_output(
                 virtual_out, virtual=True)
 
+        if out_ports is None:
+            out_ports = []
         # if out_ports is None or len(out_ports)==0:
             # out_ports = set(mido.get_output_names())  
         # self.out_ports = {}

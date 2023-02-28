@@ -17,13 +17,17 @@ Authors:
 # TODO: unify note log / prediction format
 # TODO: grey out predictions when player or muted notochord
 
+# TODO: controls display panel
+# TODO: MIDI learn
+
+# TODO: held notes display panel
+
+
 from notochord import Notochord, MIDIConfig, NotoPerformance
 from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lock
 from typing import Dict
 
 from rich.panel import Panel
-from rich.pretty import Pretty
-from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, Button, TextLog
 
@@ -135,8 +139,6 @@ def main(
     # and sensible defaults for drums etc
     inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
 
-    # print(inst_pitch_map)
-
     # load notochord model
     try:
         noto = Notochord.from_checkpoint(checkpoint)
@@ -206,11 +208,11 @@ def main(
         tui(prediction=pending.event)
         
         # end Notochord held notes
-        for (inst,pitch) in history.note_pairs:
+        for (chan,inst,pitch) in history.note_triples:
             if inst in noto_map.insts:
                 play_event(
                     dict(inst=inst, pitch=pitch, vel=0),
-                    channel=noto_map.inv(inst), 
+                    channel=chan, 
                     feed=False, # skip feeding Notochord since we are resetting it
                     tag='NOTO', memo='reset')
         # reset stopwatch
@@ -234,14 +236,11 @@ def main(
         pending.event = None
         tui(prediction=pending.event)
         # end+feed all held notes
-        for (inst,pitch) in history.note_pairs:
-            try:
-                channel = noto_map.inv(inst)
-            except KeyError:
-                channel = player_map.inv(inst)
-            play_event(
-                dict(inst=inst, pitch=pitch, vel=0), 
-                channel=channel, tag='NOTO', memo='mute')
+        for (chan,inst,pitch) in history.note_triples:
+            if chan in noto_map:
+                play_event(
+                    dict(inst=inst, pitch=pitch, vel=0), 
+                    channel=chan, tag='NOTO', memo='mute')
 
     def query_steer_time(insts):
         # with profile('query_ivtp', print=print):
@@ -250,6 +249,9 @@ def main(
         pending.event = noto.query_ivtp(
             inst_range_map, 
             held_note_map, 
+            # TODO: if using nominal time,
+            # *subtract* estimated feed latency here;
+            # if using actual time, *add* estimated query latency
             min_time=stopwatch.read(), # event can't happen sooner than now
             steer_duration=controls.get('steer_duration', None),
             steer_density=controls.get('steer_density', None),
@@ -261,10 +263,10 @@ def main(
     def noto_query():
         # check for stuck notes
         # and prioritize ending those
-        for (inst, pitch), sw in history.note_data.items():
+        for (_, inst, pitch), sw in history.note_data.items():
             if (
                 inst in noto_map.insts 
-                and sw.read() > max_note_len*controls.get('steer_duration', 1)
+                and sw.read() > max_note_len*(.1+controls.get('steer_duration', 1))
                 ):
                 # query for the end of a note with flexible timing
                 # with profile('query', print=print):
@@ -280,7 +282,6 @@ def main(
         print(counts)
         # force sampling a notochord instrument which hasn't played recently
         if force_sample:
-            # insts = noto_map.insts - set(recent_insts)
             recent_insts = set(counts[counts > 0])
             insts = noto_map.insts - recent_insts
         else:
@@ -292,18 +293,6 @@ def main(
             # always allow instruments which have a held note
             insts |= set(i for i,p in history.note_pairs)
             print(insts)
-            # player_count = sum(v for k,v in counts.items() if k in player_map.insts)
-            # noto_count = sum(v for k,v in counts.items() if k in noto_map.insts)
-            # print(f'{player_count=}, {noto_count=}')
-            # print(counts)
-            # if noto_count > player_count - 3:
-                # insts |= player_map.insts
-            # if player_count > noto_count - 3:
-                # insts |= noto_map.insts
-            # if counts['noto'] > counts['player'] - 3:
-            #     insts |= player_map.insts
-            # if counts['player'] > counts['noto'] - 3:
-            #     insts |= noto_map.insts
 
         # if there is one
         if not len(insts):
@@ -446,10 +435,10 @@ def main(
     def _():
         """end any remaining notes"""
         # print(f'cleanup: {notes=}')
-        for (inst,pitch) in history.note_pairs:
+        for (chan,inst,pitch) in history.note_triples:
         # for (inst,pitch) in notes:
             if inst in noto_map.insts:
-                midi.note_on(note=pitch, velocity=0, channel=noto_map.inv(inst))
+                midi.note_on(note=pitch, velocity=0, channel=chan)
 
     @tui.set_action
     def mute():

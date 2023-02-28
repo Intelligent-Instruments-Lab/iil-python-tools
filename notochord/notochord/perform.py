@@ -74,6 +74,7 @@ class NotoPerformance:
         """
         Args:
             held_note_data: any Python object to be attached to held notes
+                (ignored for note-offs)
             ('wall_time_ns',np.int64), # actual wall time played in ns
             ('time',np.float32), # nominal notochord dt in seconds
             ('inst',np.int16), # notochord instrument
@@ -83,6 +84,9 @@ class NotoPerformance:
         """
         if 'wall_time_ns' not in event:
             event['wall_time_ns'] = time.time_ns()
+        if 'channel' not in event:
+            # use -1 for missing channel to avoid coercion to float
+            event['channel'] = -1 
         cast_event = {}
         for k,v in event.items():
             if k in self.events.columns:
@@ -91,8 +95,9 @@ class NotoPerformance:
 
         self.events.loc[len(self.events)] = event
 
+        chan = event.get('channel', None)
         inst, pitch, vel = event['inst'], event['pitch'], event['vel']
-        k = (inst, pitch)
+        k = (chan, inst, pitch)
         if vel > 0:
             self.notes[k] = held_note_data
         else:
@@ -119,15 +124,26 @@ class NotoPerformance:
     
     @property
     def note_pairs(self):
-        """held notes as {(inst,pitch)}
+        """held notes as {(inst,pitch)}.
+        returns a new `set`; safe to modify history while iterating
+        """
+        return {(i,p) for (c,i,p) in self.notes}
+    
+    @property
+    def note_triples(self):
+        """held notes as {(channel,inst,pitch)}.
         returns a new `set`; safe to modify history while iterating
         """
         return set(self.notes)
 
     @property
     def note_data(self):
-        """held notes as {(inst,pitch):held_note_data}"""
+        """held notes as {(chan,inst,pitch):held_note_data}.
+        mutable.
+        """
+        # NOTE: returned dictionary should be mutable
         return self.notes
+
 
 class KlaisOrganManual:
     def __init__(self, name, channel, note_range, 
