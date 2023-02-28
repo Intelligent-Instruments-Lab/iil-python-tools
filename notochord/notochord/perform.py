@@ -117,7 +117,7 @@ class NotoPerformance:
     def held_inst_pitch_map(self, insts):
         """held notes as {inst:[pitch]} for given instruments"""
         note_map = {i:[] for i in insts}
-        for i,p in self.notes:
+        for c,i,p in self.notes:
             if i in insts:
                 note_map[i].append(p)
         return note_map

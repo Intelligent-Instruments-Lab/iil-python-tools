@@ -246,13 +246,14 @@ def main(
         # with profile('query_ivtp', print=print):
         inst_range_map = {k:inst_pitch_map[k] for k in insts}
         held_note_map = history.held_inst_pitch_map(insts)
+        time_offset = -5e-3 if nominal_time else 10e-3
         pending.event = noto.query_ivtp(
             inst_range_map, 
             held_note_map, 
             # TODO: if using nominal time,
             # *subtract* estimated feed latency here;
             # if using actual time, *add* estimated query latency
-            min_time=stopwatch.read(), # event can't happen sooner than now
+            min_time=stopwatch.read()+time_offset, # event can't happen sooner than now
             steer_duration=controls.get('steer_duration', None),
             steer_density=controls.get('steer_density', None),
             steer_pitch=controls.get('steer_pitch', None)
@@ -301,16 +302,17 @@ def main(
                 insts = insts | player_map.insts
         # print(f'considering {insts}')
 
-        # query_steer_time(insts)
-        if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
-            query_steer_time(insts)
-        else:
-            # with profile('query', print=print):
-            pending.event = noto.query(
-                min_time=stopwatch.read(), # event can't happen sooner than now
-                include_inst=insts,
-                # steer_pitch=controls.get('steer_pitch', None),
-                )
+        query_steer_time(insts)
+        # # query_steer_time(insts)
+        # if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
+        #     query_steer_time(insts)
+        # else:
+        #     # with profile('query', print=print):
+        #     pending.event = noto.query(
+        #         min_time=stopwatch.read(), # event can't happen sooner than now
+        #         include_inst=insts,
+        #         # steer_pitch=controls.get('steer_pitch', None),
+        #         )
         # display the predicted event
         tui(prediction=pending.event)
 
