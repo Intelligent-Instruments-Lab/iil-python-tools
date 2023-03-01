@@ -6,12 +6,6 @@ from torch import nn
 import torch.distributions as D
 import torch.nn.functional as F
 
-def steer_categorical(probs, value, eps=1e-3):
-    cdf = probs.cumsum(-1)
-    value = min(1-eps, max(eps, value))
-    i = torch.searchsorted(cdf, torch.full((*probs.shape[:-1],1), value))[...,0]
-    return i.clamp(0, cdf.shape[-1]-1) # in case of bad eps value
-
 def reweight_quantile(probs, min_q=0, max_q=1):
     """
     reweight ordinal discrete distribution to have mass only between quantiles
@@ -41,9 +35,12 @@ def reweight_top_p(probs, top_p):
     to_zero = to_zero.gather(-1, iidx)
     weighted_probs = torch.zeros_like(probs).where(to_zero, probs)
     return weighted_probs / weighted_probs.sum(-1, keepdim=True)
-    
 
-def categorical_sample(logits, whitelist=None, index=None, top_p=None, steer=None):
+
+def categorical_sample(
+        logits, whitelist=None, index=None, top_p=None, 
+        truncate_quantile=None,
+        ):
     if whitelist is not None:
         preserve_logits = logits[...,whitelist]
         logits = torch.full_like(logits, -np.inf)
@@ -56,10 +53,20 @@ def categorical_sample(logits, whitelist=None, index=None, top_p=None, steer=Non
     if top_p is not None:
         probs = reweight_top_p(probs, top_p)
 
-    if steer is not None:
-        return steer_categorical(probs, steer)
-    else:
-        return D.Categorical(probs).sample()
+    if truncate_quantile is not None:
+        q_lo, q_hi = truncate_quantile
+        q_lo = max(0., 0. if q_lo is None else q_lo)
+        q_hi = min(1., 1. if q_hi is None else q_hi)
+        # print(q_lo, q_hi)
+        zero = torch.zeros_like(probs)
+        zcs = (1-probs.flip(-1).cumsum(-1).flip(-1))
+        cs = probs.cumsum(-1)
+        # truncate up to q_lo
+        probs -= (q_lo-zcs).clip(zero, probs)
+        # truncate from q_hi
+        probs -= (cs-q_hi).clip(zero, probs)
+
+    return D.Categorical(probs).sample()
 
 
 class CensoredMixtureLogistic(nn.Module):
@@ -174,12 +181,13 @@ class CensoredMixtureLogistic(nn.Module):
     # TODO: 'discrete_sample' method which would re-quantize and then allow
     # e.g. nucleus sampling on the categorical distribution?
     def sample(self, h, truncate=None, shape=None, 
-        weight_top_p=None, component_temp=None, bias=None, steer=None,
-        steer_k=256):
+        weight_top_p=None, component_temp=None, bias=None, 
+        truncate_quantile=None, quantile_k=1024,
+        ):
         """
         Args:
-            h: Tensor[...,n_params]
-            truncate: Optional[Tuple[2]]. lower and upper bound for truncation.
+            h: Tensor[..., n_params]
+            truncate: Optional[Tuple[float, float]]. lower and upper bound for truncation.
             shape: Optional[int]. additional sample shape to be prepended to dims.
             weight_top_p: top_p ("nucleus") filtering for mixture weights.
                 default is 1 (no change to distribution). 0 would sample top
@@ -189,7 +197,9 @@ class CensoredMixtureLogistic(nn.Module):
                 ignoring sharpness.
             bias: applied outside of truncation but inside of clamping,
                 useful e.g. for latency correction when sampling delta-time
-            steer: 
+            truncate_quantile: truncate the distribution 
+            quantile_k: truncate_quantile is implemented by drawing this many
+                samples and sorting them  
         Returns:
             Tensor[*shape,...] (h without last dimension, prepended with `shape`)
         """
@@ -199,9 +209,9 @@ class CensoredMixtureLogistic(nn.Module):
         else:
             unwrap = False
 
-        if steer is not None:
+        if truncate_quantile is not None:
             # draw k samples
-            shape = shape * steer_k
+            shape = shape * quantile_k
 
         if truncate is None:
             truncate = (-np.inf, np.inf)
@@ -247,12 +257,13 @@ class CensoredMixtureLogistic(nn.Module):
         # x = loc + scale * (u.log() - (1 - u).log())
         x = loc + bias - scale * (1/u - 1).log()
 
-        if steer is not None:
-            x = x.reshape(steer_k, -1, *x.shape[1:])
+        if truncate_quantile is not None:
             x = x.sort(dim=0).values
-            # clamp below at second position,
-            # to hopefully avoid always simultaneous / always note-off
-            idx = min(steer_k-1, max(1, int(steer*steer_k)))
+
+            idx = categorical_sample(
+                x.new_zeros(x.shape[0]), 
+                truncate_quantile=truncate_quantile)
+
             x = x[idx]
             
         x = x.clamp(self.lo, self.hi)

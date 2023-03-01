@@ -242,23 +242,6 @@ def main(
                     dict(inst=inst, pitch=pitch, vel=0), 
                     channel=chan, tag='NOTO', memo='mute')
 
-    def query_steer_time(insts):
-        # with profile('query_ivtp', print=print):
-        inst_range_map = {k:inst_pitch_map[k] for k in insts}
-        held_note_map = history.held_inst_pitch_map(insts)
-        time_offset = -5e-3 if nominal_time else 10e-3
-        pending.event = noto.query_ivtp(
-            inst_range_map, 
-            held_note_map, 
-            # TODO: if using nominal time,
-            # *subtract* estimated feed latency here;
-            # if using actual time, *add* estimated query latency
-            min_time=stopwatch.read()+time_offset, # event can't happen sooner than now
-            steer_duration=controls.get('steer_duration', None),
-            steer_density=controls.get('steer_density', None),
-            steer_pitch=controls.get('steer_pitch', None)
-        )
-
     # query Notochord for a new next event
     # @lock
     def noto_query():
@@ -283,35 +266,50 @@ def main(
         print(counts)
         # force sampling a notochord instrument which hasn't played recently
         if force_sample:
-            recent_insts = set(counts[counts > 0])
-            insts = noto_map.insts - recent_insts
+            insts = set(counts.index[counts == 0])
         else:
             insts = []
 
         if balance_sample:
             min_count = counts.min()
             insts = set(counts.index[counts <= min_count+8])
-            # always allow instruments which have a held note
-            insts |= set(i for i,p in history.note_pairs)
-            print(insts)
 
         # if there is one
         if not len(insts):
             insts = noto_map.insts
             if predict_player:
                 insts = insts | player_map.insts
-        # print(f'considering {insts}')
 
-        # query_steer_time(insts)
-        if 'steer_pitch' in controls or 'steer_density' in controls or 'steer_duration' in controls:
-            query_steer_time(insts)
-        else:
-            # with profile('query', print=print):
-            pending.event = noto.query(
-                min_time=stopwatch.read(), # event can't happen sooner than now
-                include_inst=insts,
-                # steer_pitch=controls.get('steer_pitch', None),
-                )
+        # always allow instruments which have a held note
+        insts |= set(i for i,p in history.note_pairs)
+        print(f'considering {insts}')
+
+        inst_range_map = {k:inst_pitch_map[k] for k in insts}
+        held_note_map = history.held_inst_pitch_map(insts)
+        # if using nominal time,
+        # *subtract* estimated feed latency to min_time; (TODO: really should
+        #   set no min time when querying, use stopwatch when re-querying...)
+        # if using actual time, *add* estimated query latency
+        time_offset = -5e-3 if nominal_time else 10e-3
+
+        steer_time = 1-controls.get('steer_rate', 0.5)
+        qtt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
+
+        steer_pitch = controls.get('steer_pitch', 0.5)
+        qtp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
+
+        pending.event = noto.query_vtip(
+            inst_range_map, 
+            held_note_map, 
+            min_time=stopwatch.read()+time_offset, # event can't happen sooner than now
+            # steer_duration=controls.get('steer_duration', None),
+            truncate_quantile_time = qtt,
+            truncate_quantile_pitch = qtp,
+            # steer_rate=controls.get('steer_rate', None),
+            steer_density=controls.get('steer_density', None),
+            # steer_pitch=controls.get('steer_pitch', None)
+        )
+
         # display the predicted event
         tui(prediction=pending.event)
 
@@ -334,7 +332,6 @@ def main(
 
     @midi.handle(type='pitchwheel')
     def _(msg):
-        # print(msg.pitch)
         controls['steer_pitch'] = (msg.pitch+8192)/16384
         # print(controls)
 
@@ -348,7 +345,7 @@ def main(
         if msg.control==5:
             noto_query()
         if msg.control==5:
-            mute()
+            noto_mute()
 
         if msg.control==1:
             controls['steer_pitch'] = msg.value/127
@@ -357,8 +354,8 @@ def main(
             controls['steer_density'] = msg.value/127
             print(f"{controls['steer_density']=}")
         if msg.control==3:
-            controls['steer_duration'] = msg.value/127
-            print(f"{controls['steer_duration']=}")
+            controls['steer_rate'] = msg.value/127
+            print(f"{controls['steer_rate']=}")
 
     # very basic OSC handling for controls
     if osc_port is not None:
@@ -371,7 +368,7 @@ def main(
             if ctrl=='query':
                 noto_query()
             if ctrl=='mute':
-                mute()
+                noto_mute()
 
             controls[ctrl] = a[0]
             print(controls)

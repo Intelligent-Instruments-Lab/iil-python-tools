@@ -93,42 +93,8 @@ class MIDIDataset(Dataset):
 
         assert len(pitch) == len(time)
 
-        # random transpose avoiding out of range notes
-        transpose_down = min(self.transpose, pitch.min().item())
-        transpose_up = min(self.transpose, 127-pitch.max())
-        transpose = (
-            random.randint(-transpose_down, transpose_up)
-            * self.is_melodic(program).long() # don't transpose drums
-        )
-        pitch = pitch + transpose
-
-        # scramble anonymous and extra parts to 'anonymous melodic' and 'anonymous drum' parts
-        program = self._remap_anonymous_instruments(program)
-
-        time_margin = 1e-3
-
-        # dequantize: add noise up to +/- margin
-        # move note-ons later, note-offs earlier
-        time = (time + 
-            torch.rand_like(time) * ((velocity==0).double()*2-1) * time_margin
-        )
-        # random augment tempo
-        time = time * (1 + random.random()*self.speed*2 - self.speed)
-
-        # dequantize velocity
-        velocity = velocity.float()
-        velocity = (
-            velocity + 
-            (torch.rand_like(time, dtype=torch.float)-0.5) * ((velocity>0) & (velocity<127)).float()
-            ).clamp(0., 127.)
-        # random velocity curve
-        # take care not to map any positive values closer to 0 than 1
-        to_curve = (velocity >= 0.5)
-        velocity[to_curve] -= 0.5
-        velocity[to_curve] /= 126.5
-        velocity[to_curve] = velocity[to_curve] ** (2**(torch.randn((1,))/3))
-        velocity[to_curve] *= 126.5
-        velocity[to_curve] += 0.5
+        program, pitch, time, velocity = self.data_augmentation(
+            program, pitch, time, velocity)
 
         # sort (using argsort on time and indexing the rest)
         # compute delta time
@@ -187,3 +153,44 @@ class MIDIDataset(Dataset):
             'time':time,
             'velocity':velocity
         }
+    
+    def data_augmentation(self, program, pitch, time, velocity):
+        """override this in subclass for different data augmentation"""
+        # random transpose avoiding out of range notes
+        transpose_down = min(self.transpose, pitch.min().item())
+        transpose_up = min(self.transpose, 127-pitch.max())
+        transpose = (
+            random.randint(-transpose_down, transpose_up)
+            * self.is_melodic(program).long() # don't transpose drums
+        )
+        pitch = pitch + transpose
+
+        # scramble anonymous and extra parts to 'anonymous melodic' and 'anonymous drum' parts
+        program = self._remap_anonymous_instruments(program)
+
+        time_margin = 1e-3
+
+        # dequantize: add noise up to +/- margin
+        # move note-ons later, note-offs earlier
+        time = (time + 
+            torch.rand_like(time) * ((velocity==0).double()*2-1) * time_margin
+        )
+        # random augment tempo
+        time = time * (1 + random.random()*self.speed*2 - self.speed)
+
+        # dequantize velocity
+        velocity = velocity.float()
+        velocity = (
+            velocity + 
+            (torch.rand_like(time, dtype=torch.float)-0.5) * ((velocity>0) & (velocity<127)).float()
+            ).clamp(0., 127.)
+        # random velocity curve
+        # take care not to map any positive values closer to 0 than 1
+        to_curve = (velocity >= 0.5)
+        velocity[to_curve] -= 0.5
+        velocity[to_curve] /= 126.5
+        velocity[to_curve] = velocity[to_curve] ** (2**(torch.randn((1,))/3))
+        velocity[to_curve] *= 126.5
+        velocity[to_curve] += 0.5
+
+        return program, pitch, time, velocity
