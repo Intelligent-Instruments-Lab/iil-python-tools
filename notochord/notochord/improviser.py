@@ -300,8 +300,8 @@ def main(
         min_time = stopwatch.read()+time_offset
 
         force_insts = set(counts.index[counts == 0]) if force_sample else []
-        # force sampling a notochord instrument which hasn't played recently
         if len(force_insts):
+            # force sampling a notochord instrument which hasn't played recently
             query_method = noto.query_vipt
             print(f'forcing one of {force_insts}')
             note_on_map = {
