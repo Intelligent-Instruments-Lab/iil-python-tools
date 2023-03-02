@@ -1,5 +1,7 @@
 import math
-from typing import Dict, List, Optional, Any, Tuple
+from typing import List, Tuple, Dict, Union, Any
+from numbers import Number
+from collections import namedtuple
 
 import numpy as np
 
@@ -12,6 +14,17 @@ from .rnn import GenericRNN
 from .distributions import CensoredMixtureLogistic, categorical_sample
 
 from .util import arg_to_set
+
+class Query:
+    def __init__(self, modality, then=None, **kw):
+        self.modality = modality
+        self.then = then
+        self.kw = kw
+    def __repr__(self):
+        return f"{self.modality} \n{self.then}"# {self.kw}"
+
+Range = namedtuple('Range', ('lo', 'hi', 'weight'), defaults=(-np.inf, np.inf, 1))
+Subset = namedtuple('Subset', ('values', 'weight'), defaults=(None, 1))
 
 class SineEmbedding(nn.Module):
     def __init__(self, n, hidden, w0=1e-3, w1=10, scale='log'):
@@ -350,111 +363,246 @@ class Notochord(nn.Module):
                 t[:] = new_t
 
             self.h_query = None
-    
-    def query_vtip(self,
-            inst_pitch_map:Dict[int,List[int]], 
-            note_map:Dict[int,List[int]], 
-            min_time=-np.inf, max_time=np.inf, 
-            truncate_quantile_time=None,
-            truncate_quantile_pitch=None,
-            # TODO more temp params from query
-            # TODO:
-            steer_density=None, # truncate_quantile_type ? 
-            ):
-        """ 
-            Query in velocity-time-instrument-pitch order,
-            efficiently truncating the joint distribution to just allowable
-            velocity/instrument/pitch triples
-            Args:
-                inst_pitch_map: {instrument: pitch range}
-                note_map: {instrument: notes currently held}
+
+    # TODO: add end prediction to deep_query
+    def deep_query(self, query):
+        """flexible querying with nested Query objects.
+        see query_vtip for an example.
+
+        Args:
+            query: Query object
         """
-        assert list(inst_pitch_map) == list(note_map)
+        if self.h_query is None:
+            with torch.inference_mode():
+                self.h_query = self.h_proj(self.h)
+        return self._deep_query(query, hidden=self.h_query[:,0], event={})
+        
+    def _deep_query(self, query, hidden, event):
+        m = query.modality
+        sq = query.then
+        try:
+            idx = ('inst','pitch','time','vel').index(m)
+        except ValueError:
+            raise ValueError(f'unknown modality "{m}"')
+        
+        project = self.projections[idx]
+        embed = self.embeddings[idx]
 
-        inst_proj, pitch_proj, time_proj, vel_proj = self.projections
-
-        inst_pitch_map_on = {
-            i: set(ps)-set(note_map[i]) # exclude held notes
-            for i,ps in inst_pitch_map.items()
-        }
-        inst_pitch_map_off = {
-            i: set(ps)&set(note_map[i]) # only held notes
-            for i,ps in inst_pitch_map.items()
-        }
-        no_on = all(len(ps)==0 for ps in inst_pitch_map_on.values())
-        no_off = all(len(ps)==0 for ps in inst_pitch_map_off.values())
-        if no_on and no_off:
-            raise ValueError(f"""
-                no possible notes {inst_pitch_map=} {note_map=}""")
-        # print(f'{no_off=}, {no_on=}')
+        if m=='time':
+            dist = self.time_dist
+            sample = dist.sample
+        elif m=='vel':
+            dist = self.vel_dist
+            sample = dist.sample
+        else:
+            sample = categorical_sample
 
         with torch.inference_mode():
-            if self.h_query is None:
-                self.h_query = self.h_proj(self.h)
+            if sq is None or isinstance(sq, str) or isinstance(sq, Query):
+                # this is the final query (sq is None or a path tag)
+                # or there are no cases, just proceed to next subquery
+                action = sq
+                params = project(hidden.tanh())
+                result = sample(params, **query.kw)
 
-            hidden = self.h_query[:,0]
+            elif len(sq)==0:
+                raise ValueError(f"subquery has no cases: {sq}")
             
-            # sample velocity modified by steer_density
-            vel_params = vel_proj(hidden.tanh())
-            zero = vel_params.new_zeros((1,))
-            off_score = self.vel_dist(vel_params, zero)['log_prob']
-            off_prob = off_score.exp()
+            elif len(sq)==1 and isinstance(sq[0], Number):
+                # deterministic single value case
+                key, action = sq
+                result = key
 
-            # TODO: steer_density 
+            elif m in ('inst', 'pitch'):
+                # weighted subsets case
+                try:
+                    assert all(isinstance(s, Subset) for s,_ in sq)
+                except Exception:
+                    raise ValueError(f"""
+                    subqueries should all be Subset, Query tuples here: {sq}
+                    """)
 
-            is_note_on = (torch.rand_like(off_prob) > off_prob)
-            # handle cases where no on/off possible
-            if no_on:
-                is_note_on = is_note_on & False
-            if no_off:
-                is_note_on = is_note_on | True
-            vel = torch.where(is_note_on,
-                self.vel_dist.sample(vel_params, truncate=(0.5, np.inf)),
-                zero)
-            
-            hidden = hidden + self.vel_emb(vel)
-            vel = vel.item()
+                params = project(hidden.tanh())
 
-            # sample time
-            time_params = time_proj(hidden.tanh())
+                 # sample subset
+                if len(sq) > 1:
+                    all_probs = params.softmax(-1)
+                    probs = [
+                        all_probs[...,s.values].sum(-1) * s.weight
+                        for s,_ in sq]
+                    # print(f'power_query {m} {sq=} {probs=}')
+                    idx = categorical_sample(torch.tensor(probs).log())
+                else:
+                    idx = 0
+                s,action = sq[idx]
+                # sample from range
+                result = sample(params, whitelist=s.values, **query.kw)
 
-            time = self.time_dist.sample(
-                time_params,
-                truncate=(min_time, max_time), 
-                truncate_quantile=truncate_quantile_time)
+            elif m in ('time', 'vel'):
+                # weighted ranges case
+                assert all(isinstance(r, Range) for r,_ in sq)
 
-            hidden = hidden + self.time_emb(time)
-            time = time.item()
+                params = project(hidden.tanh())
+                # sample range
+                if len(sq) > 1:
+                    probs = [
+                        (dist.cdf(params, r.hi) - dist.cdf(params, r.lo)
+                        ) * r.weight
+                        for r,_ in sq]
+                    print(f'power_query {m} {probs=}')
+                    idx = categorical_sample(torch.tensor(probs).log())
+                else:
+                    idx = 0
+                r,action = sq[idx]
+                # sample from range
+                result = sample(params, truncate=(r.lo, r.hi), **query.kw)
 
-            # sample instrument (modified by velocity+note_map)
-            inst_params = inst_proj(hidden.tanh())
+            try:
+                event[m] = result.item()
+            except Exception:
+                event[m] = result
 
-            # restrict to supplied insts with avail. pitches
-            inst_pitch_map = inst_pitch_map_on if vel>0 else inst_pitch_map_off
-            inst = categorical_sample(
-                inst_params, 
-                whitelist=[i for i,ps in inst_pitch_map.items() if len(ps)]
-                )
-            
-            hidden = hidden + self.instrument_emb(inst)
-            inst = inst.item()
+            # embed, add to hidden, recurse into subquery
+            if isinstance(action, Query):
+                emb = embed(result)
+                return self._deep_query(action, hidden+emb, event)
+            else:
+                event['path'] = action
+                return event
 
-            # sample pitch (modified by velocity+note_map+inst_pitch_map)
-            pitch_params = pitch_proj(hidden.tanh())
+    def query_vtip(self,
+            note_on_map:Dict[int,List[int]], 
+            note_off_map:Dict[int,List[int]], 
+            min_time=None, max_time=None, 
+            truncate_quantile_time=None,
+            truncate_quantile_pitch=None,
+            steer_density=None, # truncate_quantile_type ? 
+            ):
+        """ Query in velocity-time-instrument-pitch order,
+            efficiently truncating the joint distribution to just allowable
+            velocity/instrument/pitch triples.
 
-            pitch = categorical_sample(
-                pitch_params, 
-                whitelist=list(inst_pitch_map[inst]), 
-                truncate_quantile=truncate_quantile_pitch
-                )
-            
-            pitch = pitch.item()
+            Args:
+                note_on_map: possible note-ons as {instrument: [pitch]} 
+                note_off_map: possible note-offs as {instrument: [pitch]} 
+        """
+ 
+        no_on = all(len(ps)==0 for ps in note_on_map.values())
+        no_off = all(len(ps)==0 for ps in note_off_map.values())
+        if no_on and no_off:
+            raise ValueError(f"""
+                no possible notes {note_on_map=} {note_off_map=}""")
+        
+        def get_subquery(ipm, path):
+            return Query(
+                'time',
+                Query(
+                    'inst', [(
+                        Subset([i]), 
+                        Query('pitch', path, 
+                            whitelist=list(ps), 
+                            truncate_quantile=truncate_quantile_pitch)
+                    ) for i,ps in ipm.items() if len(ps)]
+                ),
+                truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+            )
+        w = 1 if steer_density is None else 2**(steer_density*2-1)
+        
+        w_on = 0 if no_on else w
+        w_off = 0 if no_off else 1/w
+        
+        return self.deep_query(Query('vel', [
+            (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+        ]))
+    
+    def query_vipt(self,
+        note_on_map, note_off_map,
+        min_time=None, max_time=None, 
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        steer_density=None,
+        ):
+        """
+        """
 
-        return {
-            'inst': inst, 'pitch': pitch, 'time': time, 'vel': vel
-        }
+        no_on = all(len(ps)==0 for ps in note_on_map.values())
+        no_off = all(len(ps)==0 for ps in note_off_map.values())
+        if no_on and no_off:
+            raise ValueError(f"""
+                no possible notes {note_on_map=} {note_off_map=}""")
+        
+        def get_subquery(note_map, path):
+            return Query(
+                'inst', 
+                then=[(Subset([i]), Query(
+                    'pitch', 
+                    whitelist=list(ps), 
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'time', path,         
+                        truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+                    )
+                )) for i,ps in note_map.items() if len(ps)]
+            )
+        
+        w = 1 if steer_density is None else 2**(steer_density*2-1)
+        
+        w_on = 0 if no_on else w
+        w_off = 0 if no_off else 1/w
+        
+        return self.deep_query(Query('vel', [
+            (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+        ]))
+      
+        # return self.deep_query(Query(
+        #     'vel',
+        #     truncate=(min_vel or -np.inf, max_vel or np.inf),
+        #     then=Query(
+        #         'inst', 
+        #         then=[(Subset([i]), Query(
+        #             'pitch', 
+        #             whitelist=list(ps), 
+        #             truncate_quantile=truncate_quantile_pitch,
+        #             then=Query(
+        #                 'time',         
+        #                 truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+        #             )
+        #         )) for i,ps in note_map.items() if len(ps)]
+        #     )
+        # ))
+    
+    # def query_ipvt(self,
+    #     note_map, 
+    #     min_time=-np.inf, max_time=np.inf, 
+    #     min_vel=-np.inf, max_vel=np.inf,
+    #     truncate_quantile_time=None,
+    #     truncate_quantile_pitch=None,
+    #     ):
+    #     """
+    #     """
+      
+    #     return self.deep_query(Query(
+    #         'inst', then=[(
+    #             Subset([i]), Query(
+    #                 'pitch', 
+    #                 whitelist=list(ps), 
+    #                 truncate_quantile=truncate_quantile_pitch,
+    #                 then=Query(
+    #                     'vel',
+    #                     truncate=(min_vel or -np.inf, max_vel or np.inf),
+    #                     then=Query(
+    #                         'time',         
+    #                         truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+    #                     )
+    #                 )
+    #             )
+    #         ) for i,ps in note_map.items() if len(ps)]
+    #     ))
 
     # TODO: remove pitch_topk and sweep_time?
+    # TODO: rewrite this to build queries and dispatch to deep_query
     def query(self,
             next_inst=None, next_pitch=None, next_time=None, next_vel=None,
             pitch_topk=None, index_pitch=None,

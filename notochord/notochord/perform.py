@@ -114,8 +114,10 @@ class NotoPerformance:
                 counts[inst] = 0
         return counts
     
-    def held_inst_pitch_map(self, insts):
+    def held_inst_pitch_map(self, insts=None):
         """held notes as {inst:[pitch]} for given instruments"""
+        if insts is None:
+            insts = self.events.inst.unique()
         note_map = {i:[] for i in insts}
         for c,i,p in self.notes:
             if i in insts:

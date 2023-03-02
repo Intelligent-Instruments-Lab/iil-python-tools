@@ -169,6 +169,8 @@ class CensoredMixtureLogistic(nn.Module):
         Returns:
             cdf: Tensor[...] (shape of `x` broadcasted with `h[...,0]`)
         """
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x)
         log_pi, loc, s = self.get_params(h)  
         cdfs = self.cdf_components(loc, s, x)
         cdf = (cdfs * log_pi.softmax(-1)).sum(-1)

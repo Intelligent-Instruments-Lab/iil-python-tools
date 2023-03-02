@@ -23,7 +23,7 @@ Authors:
 # TODO: held notes display panel
 
 
-from notochord import Notochord, MIDIConfig, NotoPerformance
+from notochord import Notochord, MIDIConfig, NotoPerformance, Query, Range, Subset
 from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lock
 from typing import Dict
 
@@ -84,6 +84,7 @@ def main(
         osc_port=None,
         predict_player=True, # forecasted next events can be for player (preserves model distribution, but can lead to Notochord deciding not to play)
         use_tui=True, # run textual UI
+        max_time=None, # max time between events
         nominal_time=False, #feed Notochord with nominal dt instead of actual
         thru=False, # copy player input to output
         initial_mute=False, # start with Notochord muted
@@ -91,6 +92,7 @@ def main(
         checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
         testing=False,
         dump_midi=False,
+        send_pc=False, # send program change messages
         ):
     """
     Args:
@@ -135,6 +137,18 @@ def main(
     # TODO:
     # check for repeated insts/channels
 
+    def warn_inst(i):
+        if i > 128:
+            if i < 257:
+                print(f"WARNING: drum instrument {i} selected, be sure to select a drum bank in your synthesizer")
+            else:
+                print(f"WARNING: instrument {i} is not General MIDI")
+
+    if send_pc:
+        for c,i in (player_map | noto_map).items():
+            warn_inst(i)
+            midi.program_change(channel=c, program=(i-1)%128)
+    
     # TODO: add arguments for this,
     # and sensible defaults for drums etc
     inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
@@ -264,55 +278,67 @@ def main(
         counts = history.inst_counts(
             n=n_recent, insts=noto_map.insts | player_map.insts)
         print(counts)
-        # force sampling a notochord instrument which hasn't played recently
-        if force_sample:
-            insts = set(counts.index[counts == 0])
-        else:
-            insts = []
 
-        if balance_sample:
-            min_count = counts.min()
-            insts = set(counts.index[counts <= min_count+8])
+        all_insts = noto_map.insts 
+        if predict_player:
+            all_insts = all_insts | player_map.insts
 
-        # if there is one
-        if not len(insts):
-            insts = noto_map.insts
-            if predict_player:
-                insts = insts | player_map.insts
+        held_notes = history.held_inst_pitch_map(all_insts)
 
-        # always allow instruments which have a held note
-        insts |= set(i for i,p in history.note_pairs)
-        print(f'considering {insts}')
+        steer_time = 1-controls.get('steer_rate', 0.5)
+        steer_pitch = controls.get('steer_pitch', 0.5)
+        steer_density = controls.get('steer_density', 0.5)
 
-        inst_range_map = {k:inst_pitch_map[k] for k in insts}
-        held_note_map = history.held_inst_pitch_map(insts)
+        tqt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
+        tqp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
+
         # if using nominal time,
         # *subtract* estimated feed latency to min_time; (TODO: really should
         #   set no min time when querying, use stopwatch when re-querying...)
         # if using actual time, *add* estimated query latency
         time_offset = -5e-3 if nominal_time else 10e-3
+        min_time = stopwatch.read()+time_offset
 
-        steer_time = 1-controls.get('steer_rate', 0.5)
-        qtt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
+        force_insts = set(counts.index[counts == 0]) if force_sample else []
+        # force sampling a notochord instrument which hasn't played recently
+        if len(force_insts):
+            query_method = noto.query_vipt
+            print(f'forcing one of {force_insts}')
+            note_on_map = {
+                i: set(inst_pitch_map[i])-set(held_notes[i])
+                for i in force_insts}
+            note_off_map = {}
 
-        steer_pitch = controls.get('steer_pitch', 0.5)
-        qtp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
+        else:
+            query_method = noto.query_vtip
 
-        pending.event = noto.query_vtip(
-            inst_range_map, 
-            held_note_map, 
-            min_time=stopwatch.read()+time_offset, # event can't happen sooner than now
-            # steer_duration=controls.get('steer_duration', None),
-            truncate_quantile_time = qtt,
-            truncate_quantile_pitch = qtp,
-            # steer_rate=controls.get('steer_rate', None),
-            steer_density=controls.get('steer_density', None),
-            # steer_pitch=controls.get('steer_pitch', None)
+            # allow only instruments which have played less
+            bal_insts = set(counts.index[counts <= counts.min()+8]) if balance_sample else []
+            # if all excluded by balance_sample, use all again
+            insts = bal_insts if len(bal_insts) else all_insts
+
+            print(f'considering {insts} for note_on')
+            # use only currently selected instruments
+            note_on_map = {
+                i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
+                for i in insts
+            }
+            # use any instruments which are currently holding notes
+            note_off_map = {
+                i: set(ps)&set(held_notes[i]) # only held notes
+                for i,ps in inst_pitch_map.items()
+            }
+
+        pending.event = query_method(
+            note_on_map, note_off_map,
+            min_time=min_time, max_time=max_time,
+            truncate_quantile_time=tqt,
+            truncate_quantile_pitch=tqp,
+            steer_density=steer_density,
         )
 
         # display the predicted event
         tui(prediction=pending.event)
-
 
     #### MIDI handling
 
