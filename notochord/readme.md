@@ -1,8 +1,8 @@
-# notochord
-
- [Paper](https://zenodo.org/record/7088404 "Notochord AIMC 2022 paper") | [Video](https://www.youtube.com/watch?v=mkBKAyudL0A "Notochord AIMC 2022 video")
-
- ![Max Ernst, Stratified Rocks, Nature's Gift of Gneiss Lava Iceland Moss 2 kinds of lungwort 2 kinds of ruptures of the perinaeum growths of the heart b) the same thing in a well-polished little box somewhat more expensive, 1920](https://uploads8.wikiart.org/images/max-ernst/stratified-rocks-nature-s-gift-of-gneiss-lava-iceland-moss-1920.jpg!Large.jpg)
+# Notochord ([Paper](https://zenodo.org/record/7088404 "Notochord AIMC 2022 paper") | [Video](https://www.youtube.com/watch?v=mkBKAyudL0A "Notochord AIMC 2022 video"))
+ 
+<div align="middle">
+<img alt="Max Ernst, Stratified Rocks, Nature's Gift of Gneiss Lava Iceland Moss 2 kinds of lungwort 2 kinds of ruptures of the perinaeum growths of the heart b) the same thing in a well-polished little box somewhat more expensive, 1920" src="https://user-images.githubusercontent.com/4522484/223191876-251d461a-5bfc-439a-8df0-3841e7c76c4a.jpeg" width="60%" />
+</div>
 
 Notochord is a neural network model for MIDI performances. This package contains the training and inference model implemented in pytorch, as well as interactive MIDI processing apps using iipyper. Some further examples involving SuperCollider and TidalCycles can be found in the parent repo under `examples`.
 
@@ -35,7 +35,7 @@ You can set the MIDI in and out ports with `--midi-in` and `--midi-out`. If you 
 
 ## Python API
 
-See the docstrings for `Notochord.feed` and `Notochord.query` in `notochord/model.py` for the low-level Notochord inference API which can be used from python code.
+See the docstrings for `Notochord.feed` and `Notochord.query` in `notochord/model.py` for the low-level Notochord inference API which can be used from Python code.
 
 ## OSC server
 
