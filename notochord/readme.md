@@ -1,5 +1,7 @@
 # notochord
 
+ [Paper](https://zenodo.org/record/7088404 "Notochord AIMC 2022 paper") | [Video](https://www.youtube.com/watch?v=mkBKAyudL0A "Notochord AIMC 2022 video")
+
 Notochord is a neural network model for MIDI performances. This package contains the training and inference model implemented in pytorch, as well as interactive MIDI processing apps using iipyper. Some further examples involving SuperCollider and TidalCycles can be found in the parent repo under `examples`.
 
 ## Getting Started
