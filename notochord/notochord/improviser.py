@@ -165,9 +165,9 @@ def main(
 
     # default channel:instrument mappings
     if player_config is None:
-        player_config = {1:257} # channel 1: anon
+        player_config = {1:1} # channel 1: grand piano
     if noto_config is None:
-        noto_config = {2:258} # channel 2: anon
+        noto_config = {2:257} # channel 2: anon
 
     # convert 1-indexed MIDI channels to 0-indexed here
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
