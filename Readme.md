@@ -8,7 +8,8 @@ See Setup below for how to install these.
 - notochord: python package for the Notochord MIDI performance model, see [readme](https://github.com/Intelligent-Instruments-Lab/iil-python-tools/blob/master/notochord/readme.md) for more details
     - notochord: package source code
     - scripts: helper scripts for training, data preprocessing etc
-- mrp: interface to [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html)
+- mrp: interface to [Magnetic Resonator Piano](http://instrumentslab.org/research/mrp.html). Note that the rest of our MRP code lives in [iil-mrp-tools](https://github.com/Intelligent-Instruments-Lab/iil-mrp-tools).
+- tölvera: an experimental artificial life simulator for agential musical instruments, see [readme](https://github.com/Intelligent-Instruments-Lab/iil-python-tools/blob/master/tolvera/readme.md) for more details
 
 ## Examples
 
@@ -46,6 +47,7 @@ You can then install any Python packages you wish to use:
 pip install -e notochord
 pip install -e iipyper
 pip install -e mrp
+pip install -e tolvera
 ```
 this will install all dependencies in a conda environment called `iil-python-tools`, and do an editable install of notochord and iipyper so you can hack on them.
 

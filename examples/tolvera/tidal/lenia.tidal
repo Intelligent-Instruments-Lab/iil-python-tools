@@ -1,0 +1,42 @@
+hush
+
+once $ leniaworld "save" # leniaworldslot 0
+
+once $ leniaworld "load" # leniaworldslot 0
+
+once $ leniapause "t" -- bool
+
+once $ leniaguiupdaterate 0.005
+
+once $ leniareset 0
+
+once $ leniatime 20 -- 1-20
+
+hush
+
+once $ leniaconvr 5 -- 5-40
+
+p2 
+  $ leniagrowmiu (seg 32 $ sl 10 $ rsinf 0.1 0.3 0.33) -- 0.01-0.3
+  # leniagrowsig (sl 7 $ rcosf 0.01 0.3 0.44) -- 0.01-0.3
+  # leniaconvr (sl 8 $ rcosf 5 40 0.55) -- 5-40
+  # leniatime (sl 9 $ rcosf 1 20 0.35) -- 5-40
+
+once $ leniagrowsig 0.03 -- 0.001-0.03
+
+p1 $ fast 4 $ leniatime 5
+
+hush
+
+-- once $ leniabrushmode "none"
+
+p1 -- $ fast 4
+  $ iter "<3 4 5 6>"
+  $ str "<1 3 2 5 4>"
+  $ leniabrushx (seg "32" $ rsinf 0 1 0.125) -- 0-res
+  # leniabrushy (rsinf 0 1 0.49) -- 0-res
+  # leniabrushmode "[draw erase]/3"
+  # leniabrushradius "0.1" -- 0.01-0.06
+  # leniabrushshow "t" -- bool
+
+hush

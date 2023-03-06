@@ -16,8 +16,10 @@ TODO:
 - harmonics_raw dict and functions
 - add simulator via sc3 lib
 - remove mido
+- rename harmonic -> harmonic_sweep and add harmonic(note, partial, amplitude)
 """
 
+import numpy as np
 import copy
 
 NOTE_ON = True
@@ -178,6 +180,19 @@ class MRP(object):
         else:
             self.print('note_off(): invalid Note Off', note)
             return None
+
+    def notes_on(self, notes, velocities=None):
+        vmax = self.settings['voices']['max']
+        if len(notes)+1 > vmax:
+            if velocities == None:
+                [self.note_on(n) for n in notes]
+            else:
+                [self.note_on(n, velocities[i]) for i,n in enumerate(notes)]
+        else:
+            print('notes_on(): too many notes', notes)
+
+    def notes_off(self, notes, channel=None):
+        [self.note_off(n) for n in notes]
     
     # def control_change(self, controller, value, channel=None):
     #     """
@@ -235,7 +250,7 @@ class MRP(object):
                 if channel is None:
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
-                if isinstance(value, list): # e.g. /harmonics/raw
+                if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
                     if relative is True:
                         self.print('quality_update(): relative updating of lists not supported')
                         # if (len(tmp['qualities'][quality]) > 0):
@@ -292,7 +307,7 @@ class MRP(object):
                     channel = self.settings['channel']
                 tmp = self.notes[self.note_index(note)]
                 for q, v in qualities.items():
-                    if isinstance(v, list): # e.g. /harmonics/raw
+                    if isinstance(value, list) or isinstance(value, np.ndarray): # e.g. /harmonics/raw
                         if relative is True:
                             self.print('quality_update(): relative updating of lists not supported')
                         else:
