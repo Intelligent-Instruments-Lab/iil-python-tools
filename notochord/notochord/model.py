@@ -397,6 +397,11 @@ class Notochord(nn.Module):
         else:
             sample = categorical_sample
 
+        # Query.then can be:
+        # None (no further sub-queries)
+        # str (no firther sub-queries, but set the 'path' property of the event)
+        # 
+
         with torch.inference_mode():
             if sq is None or isinstance(sq, str) or isinstance(sq, Query):
                 # this is the final query (sq is None or a path tag)
@@ -480,7 +485,7 @@ class Notochord(nn.Module):
             ):
         """ Query in velocity-time-instrument-pitch order,
             efficiently truncating the joint distribution to just allowable
-            velocity/instrument/pitch triples.
+            (velocity>0)/instrument/pitch triples.
 
             Args:
                 note_on_map: possible note-ons as {instrument: [pitch]} 
@@ -524,6 +529,13 @@ class Notochord(nn.Module):
         steer_density=None,
         ):
         """
+        Query in velocity-instrument-pitch-time order,
+            efficiently truncating the joint distribution to just allowable
+            (velocity>0)/instrument/pitch triples.
+
+            Args:
+                note_on_map: possible note-ons as {instrument: [pitch]} 
+                note_off_map: possible note-offs as {instrument: [pitch]} 
         """
 
         no_on = all(len(ps)==0 for ps in note_on_map.values())
@@ -555,23 +567,6 @@ class Notochord(nn.Module):
             (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
             (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
         ]))
-      
-        # return self.deep_query(Query(
-        #     'vel',
-        #     truncate=(min_vel or -np.inf, max_vel or np.inf),
-        #     then=Query(
-        #         'inst', 
-        #         then=[(Subset([i]), Query(
-        #             'pitch', 
-        #             whitelist=list(ps), 
-        #             truncate_quantile=truncate_quantile_pitch,
-        #             then=Query(
-        #                 'time',         
-        #                 truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
-        #             )
-        #         )) for i,ps in note_map.items() if len(ps)]
-        #     )
-        # ))
     
     # def query_ipvt(self,
     #     note_map, 

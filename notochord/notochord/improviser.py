@@ -22,12 +22,14 @@ Authors:
 
 # TODO: held notes display panel
 
+from typing import Optional, Dict
+from numbers import Number
 
-from notochord import Notochord, MIDIConfig, NotoPerformance, Query, Range, Subset
+from notochord import Notochord, MIDIConfig, NotoPerformance
 from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lock
-from typing import Dict
 
 from rich.panel import Panel
+from rich.pretty import Pretty
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, Button, TextLog
 
@@ -72,30 +74,39 @@ class NotoTUI(TUI):
 ### end def TUI components###
 
 def main(
+        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
         player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
         noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
-        max_note_len=5, # in seconds, to auto-release stuck Notochord notes
-        midi_in=None, # MIDI port for player input
-        midi_out=None, # MIDI port for Notochord output
-        balance_sample=False, # Notochord won't play more notes than the player
-        force_sample=True, # force prediction of not-recently seen instruments
-        n_recent=24, # number of recent events to consider for above
-        osc_host='',
-        osc_port=None,
-        predict_player=True, # forecasted next events can be for player (preserves model distribution, but can lead to Notochord deciding not to play)
-        use_tui=True, # run textual UI
-        max_time=None, # max time between events
-        nominal_time=False, #feed Notochord with nominal dt instead of actual
-        thru=False, # copy player input to output
+
         initial_mute=False, # start with Notochord muted
         initial_query=False, # let Notochord start playing immediately
-        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
-        testing=False,
-        dump_midi=False,
+
+        midi_in:Optional[str]=None, # MIDI port for player input
+        midi_out:Optional[str]=None, # MIDI port for Notochord output
+        thru=False, # copy player input to output
         send_pc=False, # send program change messages
+        dump_midi=False, # print all incoming MIDI
+
+        balance_sample=False, # choose instruments which have played less recently
+        n_recent=64, # number of recent note-on events to consider for above
+        n_margin=8, # amount of 'slack' in the balance_sample calculation
+        
+        max_note_len=5, # in seconds, to auto-release stuck Notochord notes
+        max_time=None, # max time between events
+        nominal_time=False, #feed Notochord with nominal dt instead of actual
+
+        osc_port=None, # if supplied, listen for OSC to set controls on this port
+        osc_host='', # leave this as empty string to get all traffic on the port
+
+        use_tui=True, # run textual UI
+        predict_player=True, # forecasted next events can be for player (preserves model distribution, but can lead to Notochord deciding not to play)
+        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. generally should be True except for testing purposes.
+        testing=False
         ):
     """
     Args:
+        checkpoint: path to notochord model checkpoint.
+
         player_config: mapping from MIDI channels to MIDI instruments controlled
             by the player.
         noto_config: mapping from MIDI channels to MIDI instruments controlled
@@ -103,11 +114,46 @@ def main(
             instruments should be different from the player instruments.
             channels should be different unless different ports are used.
             MIDI channels and General MIDI instruments are indexed from 1.
+
+        initial_mute: start Notochord muted so it won't play with input.
+        initial_query: query Notochord immediately so it plays even without input.
+
+        midi_in: MIDI ports for player input. 
+            default is to use all input ports.
+            can be comma-separated list of ports.
+        midi_out: MIDI ports for Notochord output. 
+            default is to use only virtual 'From iipyper' port.
+            can be comma-separated list of ports.
+        thru: if True, copy incoming MIDI to output ports.
+            only makes sense if input and output ports are different.
+        send_pc: if True, send MIDI program change messages to set the General MIDI
+            instrument on each channel according to player_config and noto_config.
+            useful when using a General MIDI synthesizer like fluidsynth.
+        dump_midi: if True, print all incoming MIDI for debugging purposes
+
+        balance_sample choose instruments which have played less recently
+            ensures that all configured instruments will play.
+        n_recent: number of recent note-on events to consider for above
+        n_margin: amount of 'slack' in the balance_sample calculation
+
         max_note_len: time in seconds after which to force-release sustained
             notochord notes.
-        midi_in: MIDI port for player input
-        midi_out: MIDI port for Notochord output
-        checkpoint: path to notochord model checkpoint
+        max_time: maximum time in seconds between predicted events.
+            default is the Notochord model's maximum (usually 10 seconds).
+        nominal_time: if True, feed Notochord with its own predicted times
+            instead of the actual elapsed time.
+            May make Notochord more likely to play chords.
+
+        osc_port: optional. if supplied, listen for OSC to set controls
+        osc_host: hostname or IP of OSC sender.
+            leave this as empty string to get all traffic on the port
+
+        use_tui: run textual UI
+        predict_player: forecasted next events can be for player
+            (preserves model distribution, but can allow Notochord deciding not to play)
+        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. gen
+        
+        
     """
     if osc_port is not None:
         osc = OSC(osc_host, osc_port)
@@ -288,7 +334,7 @@ def main(
         steer_time = 1-controls.get('steer_rate', 0.5)
         steer_pitch = controls.get('steer_pitch', 0.5)
         steer_density = controls.get('steer_density', 0.5)
-
+        
         tqt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
         tqp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
 
@@ -299,39 +345,38 @@ def main(
         time_offset = -5e-3 if nominal_time else 10e-3
         min_time = stopwatch.read()+time_offset
 
-        force_insts = set(counts.index[counts == 0]) if force_sample else []
-        if len(force_insts):
-            # force sampling a notochord instrument which hasn't played recently
-            query_method = noto.query_vipt
-            print(f'forcing one of {force_insts}')
-            note_on_map = {
-                i: set(inst_pitch_map[i])-set(held_notes[i])
-                for i in force_insts}
-            note_off_map = {}
-
+        # balance_sample: note-ons only from instruments which have played less
+        bal_insts = set(counts.index[counts <= counts.min()+n_margin])
+        if balance_sample and len(bal_insts)>0:
+            insts = bal_insts
         else:
+            insts = all_insts
+
+        # VTIP is better for time interventions,
+        # VIPT is better for instrument interventions
+        # could decide probabilistically based on value of controls + insts...
+        if insts==all_insts:
             query_method = noto.query_vtip
+        else:
+            query_method = noto.query_vipt
 
-            # allow only instruments which have played less
-            bal_insts = set(counts.index[counts <= counts.min()+8]) if balance_sample else []
-            # if all excluded by balance_sample, use all again
-            insts = bal_insts if len(bal_insts) else all_insts
+        # print(f'considering {insts} for note_on')
+        # use only currently selected instruments
+        note_on_map = {
+            i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
+            for i in insts
+        }
+        # use any instruments which are currently holding notes
+        note_off_map = {
+            i: set(ps)&set(held_notes[i]) # only held notes
+            for i,ps in inst_pitch_map.items()
+        }
 
-            print(f'considering {insts} for note_on')
-            # use only currently selected instruments
-            note_on_map = {
-                i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
-                for i in insts
-            }
-            # use any instruments which are currently holding notes
-            note_off_map = {
-                i: set(ps)&set(held_notes[i]) # only held notes
-                for i,ps in inst_pitch_map.items()
-            }
+        max_t = None if max_time is None else max(max_time, min_time+0.2)
 
         pending.event = query_method(
             note_on_map, note_off_map,
-            min_time=min_time, max_time=max_time,
+            min_time=min_time, max_time=max_t,
             truncate_quantile_time=tqt,
             truncate_quantile_pitch=tqp,
             steer_density=steer_density,
@@ -366,13 +411,6 @@ def main(
     def _(msg):
         """CC messages on any channel"""
 
-        if msg.control==4:
-            noto_reset()
-        if msg.control==5:
-            noto_query()
-        if msg.control==5:
-            noto_mute()
-
         if msg.control==1:
             controls['steer_pitch'] = msg.value/127
             print(f"{controls['steer_pitch']=}")
@@ -383,21 +421,31 @@ def main(
             controls['steer_rate'] = msg.value/127
             print(f"{controls['steer_rate']=}")
 
+        if msg.control==4:
+            noto_reset()
+        if msg.control==5:
+            noto_query()
+        if msg.control==5:
+            noto_mute()
+
     # very basic OSC handling for controls
     if osc_port is not None:
-        @osc.args('/*')
+        @osc.args('/notochord/improviser/*')
         def _(route, *a):
             print('OSC:', route, *a)
-            ctrl = route.split['/'][1]
+            ctrl = route.split['/'][3]
             if ctrl=='reset':
                 noto_reset()
-            if ctrl=='query':
+            elif ctrl=='query':
                 noto_query()
-            if ctrl=='mute':
+            elif ctrl=='mute':
                 noto_mute()
-
-            controls[ctrl] = a[0]
-            print(controls)
+            else:
+                assert len(a)==0
+                arg = a[0]
+                assert isinstance(arg, Number)
+                controls[ctrl] = arg
+                print(controls)
 
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
@@ -421,7 +469,7 @@ def main(
         # query for new prediction
         noto_query()
 
-        # for latency testing:
+        # send a MIDI reply for latency testing purposes:
         # if testing: midi.cc(control=3, value=msg.note, channel=15)
 
     def noto_event():
@@ -453,7 +501,8 @@ def main(
                 # prediction happens
                 noto_event()
             # query for new prediction
-            noto_query()
+            if auto_query:
+                noto_query()
 
     @cleanup
     def _():
