@@ -8,32 +8,119 @@ Authors:
 """
 from typing import Optional, List, Tuple
 
+import mido
+
 from notochord import Notochord, NotoPerformance
-from iipyper import MIDI, run, Stopwatch, cleanup
+from iipyper import MIDI, run, Stopwatch, cleanup, TUI
+
+from rich.panel import Panel
+from rich.pretty import Pretty
+from textual.reactive import reactive
+from textual.widgets import Header, Footer, Static, Button, TextLog
+
+### def TUI components ###
+class NotoLog(TextLog):
+    value = reactive('')
+    def watch_value(self, time: float) -> None:
+        self.write(self.value)
+
+class NotoControl(Static):
+    def compose(self):
+        yield Button("Mute", id="mute", variant="error")
+        yield Button("Reset", id="reset", variant='warning')
+
+class NotoTUI(TUI):
+    CSS_PATH = 'harmonizer.css'
+
+    BINDINGS = [
+        ("m", "mute", "Mute Notochord"),
+        ("r", "reset", "Reset Notochord")]
+
+    def compose(self):
+        """Create child widgets for the app."""
+        yield Header()
+        yield self.std_log
+        yield NotoLog(id='note')
+        yield NotoControl()
+        yield Footer()
 
 def main(
-        player_channel=0, # MIDI channel numbered from 0
-        noto_channel=1, # channel for single notochord voice (overriden by noto_config)
-        player_inst=257, # General MIDI numbered from 1 (see Notochord.feed docstring)
-        noto_inst=257, # instrument for single notochord voice (overridden by noto_config)
-        noto_config:Optional[List[Tuple[int,int,int,int]]]=None, # list of tuples of (channel, instrument, min transpose, max transpose)
-        midi_in:Optional[str]=None, # MIDI port(s) for player input
-        midi_out:Optional[str]=None, # MIDI port(s) for Notochord output
-        thru=False, # copy player input to output
-        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
-        below=False, # harmonize above (overridden by noto_config)
-        above=True, # harmonize below (overridden by noto_config)
-        send_pc=False, # send program change messages to match player and noto_config (useful if using a General MIDI synth like fluidsynth or hardware)
-        ):
-    midi = MIDI(
-        None if midi_in is None else midi_in.split(','), #TODO move to iipyper
-        None if midi_out is None else midi_out.split(','))
+    checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+
+    player_channel=1, # MIDI channel numbered from 0
+    player_inst=1, # General MIDI numbered from 1 (see Notochord.feed docstring)
+    noto_config:Optional[List[Tuple[int,int,int,int]]]=None, # list of tuples of (channel, instrument, min transpose, max transpose)
+    noto_channel=2, # channel for single notochord voice (overriden by noto_config)
+    noto_inst=1, # instrument for single notochord voice (overridden by noto_config)
+    below=False, # harmonize above (overridden by noto_config)
+    above=True, # harmonize below (overridden by noto_config)
+
+    midi_in:Optional[str]=None, # MIDI port(s) for player input
+    midi_out:Optional[str]=None, # MIDI port(s) for Notochord output
+    thru=False, # copy player input to output
+    send_pc=False, # send program change messages to match player and noto_config (useful if using a General MIDI synth like fluidsynth or hardware)
+
+    use_tui=True,
+    ):
+    """
+    Args:
+        checkpoint: path to notochord model checkpoint.
+
+        player_channel: MIDI channels for player input.
+        player_inst: Notochord instrument for the player.
+        noto_config: list voices played by Notochord. Each voice is a tuple of: (
+            MIDI channel indexed from 1,
+            General MIDI instrument from 1,
+            minimum transpose from the performed pitch,
+            maximum transpose
+            ).
+            For example, [(2,1,-12,0), (3,13,0,12)] would play the grand piano on channel 2 in the octave below, and the marimba on channel 3 in the octave above.
+            see https://en.wikipedia.org/wiki/General_MIDI for instrument numbers.
+        noto_channel: alternative to using noto_config for a single voice
+        noto_inst: alternative to using noto_config for a single voice
+        below: alternative to using noto_config for a single voice -- allows
+            harmonizing notes below the performed pitch
+        above: alternative to using noto_config for a single voice -- allows
+            harmonizing notes above the performed pitch
+
+        midi_in: MIDI ports for player input. 
+            default is to use all input ports.
+            can be comma-separated list of ports.
+        midi_out: MIDI ports for Notochord output. 
+            default is to use only virtual 'From iipyper' port.
+            can be comma-separated list of ports.
+        thru: if True, copy incoming MIDI to output ports.
+            only makes sense if input and output ports are different.
+        send_pc: if True, send MIDI program change messages to set the General MIDI
+            instrument according to player_inst, player_channel and noto_config.
+            useful when using a General MIDI synthesizer like fluidsynth.
+
+        use_tui: run textual UI.
+    """
+        # nominal_time: if True, feed Notochord with its own predicted times
+        #     instead of the actual elapsed time.
+        #     May make Notochord more likely to play chords.
+    midi = MIDI(midi_in, midi_out)
+
+    ### Textual UI
+    tui = NotoTUI()
+    print = tui.print
+
+    def display_event(tag, inst, pitch, vel, channel, **kw):
+        """print an event to the terminal"""
+        if tag is None:
+            return
+        s = f'{tag}:\t {inst=:4d}    {pitch=:4d}    {vel=:4d}    {channel=:3d}'
+        tui(note=s)
+    ###
     
     if noto_config is None:
         if not below and not above:
             raise ValueError
         noto_config = [[
-            noto_channel, noto_inst, -128 if below else 1, 128 if above else -1]]
+            noto_channel-1, noto_inst, -128 if below else 1, 128 if above else -1]]
+    # convert to 0-index
+    player_channel = player_channel-1
         
     # TODO: per-channel absolute range config
 
@@ -60,6 +147,32 @@ def main(
     
     history = NotoPerformance()
     stopwatch = Stopwatch()
+    
+    class AppState():
+        def __init__(self):
+            self.muted = False
+    state = AppState()
+
+    def noto_mute():
+        state.muted = not state.muted
+        print('MUTE' if state.muted else 'UNMUTE')
+
+    def noto_reset():
+        """reset Notochord and end all of its held notes"""
+        print('RESET')
+
+        # end Notochord held notes
+        # noto_pairs = {(c,i) for (c,i,_,_) in noto_config}
+        # for (c,i,p) in history.note_triples:
+        #     if (c,i) in noto_pairs:
+        #         midi.note_off(note=p, velocity=0, channel=c)
+
+        # reset stopwatch
+        stopwatch.punch()
+        # reset notochord state
+        noto.reset()
+        # # reset history
+        # history.push()
 
     @midi.handle(type='control_change', control=0, channel=player_channel)
     def _(msg):
@@ -73,8 +186,7 @@ def main(
         """
         MIDI NoteOn events from the player
         """
-
-        print('PLAYER:', msg)
+        # print('PLAYER:', msg)
 
         pitch = msg.note
         vel = msg.velocity
@@ -94,6 +206,10 @@ def main(
             history.feed(**event)
             # feed in the performed note
             noto.feed(**event)
+            display_event('PLAYER', **event)
+
+            if state.muted:
+                return
 
             for noto_channel, noto_inst, min_x, max_x in noto_config:
 
@@ -120,7 +236,6 @@ def main(
                     h = noto.query(
                         next_inst=noto_inst, next_time=0, next_vel=vel,
                         include_pitch=pitches)
-                print('NOTO:', h)
 
                 h_inst = h['inst'] # noto_inst
                 h_pitch = h['pitch']
@@ -128,8 +243,7 @@ def main(
                 h_vel = round(h['vel'])
 
                 # send it
-                midi.note_on(
-                    note=h_pitch, velocity=h_vel, channel=noto_channel)
+                midi.note_on(note=h_pitch, velocity=h_vel, channel=noto_channel)
                 # track
                 event = dict(
                     channel=noto_channel,
@@ -139,6 +253,7 @@ def main(
                     **event)
                 # feed back
                 noto.feed(**event)
+                display_event('NOTO', **event)
         # NoteOff
         else:
             dt = stopwatch.punch()
@@ -147,6 +262,7 @@ def main(
                 inst=player_inst, pitch=pitch, time=dt, vel=0)
             noto.feed(**event)
             history.feed(**event)
+            display_event('PLAYER', **event)
 
             dependents = [
                 noto_k
@@ -159,18 +275,31 @@ def main(
                 # send harmonizing note offs
                 midi.note_off(
                     note=noto_pitch, velocity=vel, channel=noto_channel)
+
                 event = dict(
                     channel=noto_channel, 
                     inst=noto_inst, pitch=noto_pitch, time=dt, vel=0)
                 # TODO: nominal time option?
                 noto.feed(**event)
                 history.feed(**event)
+                display_event('NOTO', **event)
 
     @cleanup
     def _():
         """end any remaining notes"""
         for (c,_,p) in history.note_triples:
             midi.note_off(note=p, velocity=0, channel=c)
+
+    @tui.set_action
+    def mute():
+        noto_mute()
+    
+    @tui.set_action
+    def reset():
+        noto_reset()
+
+    if use_tui:
+        tui.run()
 
 if __name__=='__main__':
     run(main)

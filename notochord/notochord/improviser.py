@@ -74,35 +74,35 @@ class NotoTUI(TUI):
 ### end def TUI components###
 
 def main(
-        checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
-        player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
-        noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
+    checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+    player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
+    noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
 
-        initial_mute=False, # start with Notochord muted
-        initial_query=False, # let Notochord start playing immediately
+    initial_mute=False, # start with Notochord muted
+    initial_query=False, # let Notochord start playing immediately
 
-        midi_in:Optional[str]=None, # MIDI port for player input
-        midi_out:Optional[str]=None, # MIDI port for Notochord output
-        thru=False, # copy player input to output
-        send_pc=False, # send program change messages
-        dump_midi=False, # print all incoming MIDI
+    midi_in:Optional[str]=None, # MIDI port for player input
+    midi_out:Optional[str]=None, # MIDI port for Notochord output
+    thru=False, # copy player input to output
+    send_pc=False, # send program change messages
+    dump_midi=False, # print all incoming MIDI
 
-        balance_sample=False, # choose instruments which have played less recently
-        n_recent=64, # number of recent note-on events to consider for above
-        n_margin=8, # amount of 'slack' in the balance_sample calculation
-        
-        max_note_len=5, # in seconds, to auto-release stuck Notochord notes
-        max_time=None, # max time between events
-        nominal_time=False, #feed Notochord with nominal dt instead of actual
+    balance_sample=False, # choose instruments which have played less recently
+    n_recent=64, # number of recent note-on events to consider for above
+    n_margin=8, # amount of 'slack' in the balance_sample calculation
+    
+    max_note_len=5, # in seconds, to auto-release stuck Notochord notes
+    max_time=None, # max time between events
+    nominal_time=False, #feed Notochord with nominal dt instead of actual
 
-        osc_port=None, # if supplied, listen for OSC to set controls on this port
-        osc_host='', # leave this as empty string to get all traffic on the port
+    osc_port=None, # if supplied, listen for OSC to set controls on this port
+    osc_host='', # leave this as empty string to get all traffic on the port
 
-        use_tui=True, # run textual UI
-        predict_player=True, # forecasted next events can be for player (preserves model distribution, but can lead to Notochord deciding not to play)
-        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. generally should be True except for testing purposes.
-        testing=False
-        ):
+    use_tui=True, # run textual UI
+    predict_player=True, # forecasted next events can be for player (preserves model distribution, but can lead to Notochord deciding not to play)
+    auto_query=True, # query notochord whenever it is unmuted and there is no pending event. generally should be True except for testing purposes.
+    testing=False
+    ):
     """
     Args:
         checkpoint: path to notochord model checkpoint.
@@ -148,12 +148,11 @@ def main(
         osc_host: hostname or IP of OSC sender.
             leave this as empty string to get all traffic on the port
 
-        use_tui: run textual UI
-        predict_player: forecasted next events can be for player
-            (preserves model distribution, but can allow Notochord deciding not to play)
-        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. gen
-        
-        
+        use_tui: run textual UI.
+        predict_player: forecasted next events can be for player.
+            generally should be true, use balance_sample to force Notochord to
+            play.
+        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. generally should be True unless debugging.
     """
     if osc_port is not None:
         osc = OSC(osc_host, osc_port)
