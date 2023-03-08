@@ -138,7 +138,7 @@ class PhysarumMulti(Particles):
 
     def get_image(self):
         # return self.px_g.to_numpy()[0]
-        return self.px_rgba.to_numpy()
+        return self.px_rgba#.to_numpy()
 
     def process(self):
         if self.pause == False:

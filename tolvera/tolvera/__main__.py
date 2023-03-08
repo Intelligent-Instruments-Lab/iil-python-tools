@@ -10,6 +10,7 @@ from tolvera.vera._physarum_multi import main as physarum_multi
 from tolvera.vera._lenia import main as lenia
 from tolvera.vera._reaction_diffusion import main as rea_diff
 from tolvera.vera._mrp import main as mrp
+from tolvera.vera._obstacles import main as obstacles
 
 def help():
     print("""
@@ -20,6 +21,7 @@ def help():
         lenia:    run Lenia example
         physarum: run Physarum example
         reaction_diffusion: run ReactionDiffusion example
+        obstacles: run Obstacles exmaple
     """)
 
 if __name__=='__main__':
@@ -43,6 +45,8 @@ if __name__=='__main__':
             case 'help':
                 help()
             case 'mrp':
+                mrp()
+            case 'obstacles':
                 mrp()
             case _:
                 help()

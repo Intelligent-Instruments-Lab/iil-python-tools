@@ -39,7 +39,7 @@ class BoidsMulti(Particles):
                  radius=40.0,
                  speed=3.0,
                  colormode='rgb',
-                 size=2):
+                 size=1):
         super().__init__(x, y, n)
         self._vel = ti.Vector.field(2, dtype=ti.f32, shape=(self._n))
         self._species_n = species
@@ -94,7 +94,7 @@ class BoidsMulti(Particles):
             self.dt[s]       = 3.0  * r[7]  + 0.2
             self.radius[s]   = 100  * r[8]  + 5
             self.speed[s]    = 2.0  * r[9]  + 0.2
-            self.size[s]     = 3.0  * r[10] + 3
+            self.size[s]     = 2.0  * r[10] + 1
 
     @ti.kernel
     def move(self):
@@ -156,24 +156,6 @@ class BoidsMulti(Particles):
             self._vel[b] = self._vel[b].normalized()*self.speed[self._species[0,b]]
 
     @ti.kernel
-    def avoid(self, obs: ti.template()):
-        for b in range(self._n):
-            self._avoid(b, obs)
-
-    @ti.func
-    def _avoid(self, b: int, obs: ti.template()):
-        obs_to_avoid = [] # ti.field?
-        for o in obs:
-            # dis = self._pos[b] - o._pos
-            # dis_norm = dis.norm()
-            # if dis_norm <= self._fov[b] # field of view
-            #   obs_to_avoid.append(o)
-            pass
-        for o in obs_to_avoid:
-            # self._vel[b] = ... # update velocity to avoid
-            pass
-
-    @ti.kernel
     def render_g(self):
         for i,j in ti.ndrange((0, self._x),(0, self._y)):
             self.px_g[0, i, j] = 0.0
@@ -193,11 +175,20 @@ class BoidsMulti(Particles):
                     self.px_g[0, x, y] = self._palette[self._species[0, b]][0] *0.5 + 0.5#1.0
 
     @ti.kernel
-    def render_rgb(self):
-        # TODO: Fix rgb vs rgba
+    def render_clear(self):
         for i,j in ti.ndrange((0, self._x),(0, self._y)):
-            # self.px_rgb[i, j] = ti.Vector([0.0,0.0,0.0])
-            self.px_rgba[i, j] = ti.Vector([0.0,0.0,0.0,1.0])
+            self.px_rgb[i, j] = ti.Vector([0.0,0.0,0.0])
+            # self.px_rgba[i, j] = ti.Vector([0.0,0.0,0.0,1.0])
+
+    # TODO: Abstract out
+    @ti.kernel
+    def render_evaporate(self):
+        for i,j in ti.ndrange((0, self._x),(0, self._y)):
+            self.px_rgb[i, j] *= 0.8
+            # self.px_rgba[i, j] *= 0.8
+
+    @ti.kernel
+    def render_rgb(self):
         for b in range(self._n):
             if self._alive[0, b] > 0.0:
                 xi = ti.cast(self._pos[b][0], ti.i32) - self.size[self._species[0,b]]# *self._vel[b].norm()
@@ -208,8 +199,8 @@ class BoidsMulti(Particles):
                     for y in range(yi, yj):
                         p = self._palette[self._species[0, b]] * (self._vel[b].norm()*0.5)
                         # p[3] = 1-
-                        self.px_rgba[x, y] = p
-                        # self.px_rgb[x, y] = ti.Vector([
+                        # self.px_rgba[x, y] = p
+                        self.px_rgb[x, y] = ti.Vector([p[0], p[1], p[2]])
                         #     ti.cast(self._vel[b][1]     * 255, ti.i32),
                         #     ti.cast(self._vel[b].norm() * 255, ti.i32),
                         #     ti.cast(self._vel[b][0]     * 255, ti.i32)])
@@ -217,7 +208,8 @@ class BoidsMulti(Particles):
     def get_px(self):
         if self.colormode == 'rgb':
             # return self.px_rgb.to_numpy()
-            return self.px_rgba.to_numpy()
+            # return self.px_rgba#.to_numpy()
+            return self.px_rgb#.to_numpy()
         elif self.colormode == 'g':
             return self.px_g.to_numpy()[0]
         return False
@@ -228,6 +220,8 @@ class BoidsMulti(Particles):
             # self.avoid(obs)
             self.move()
             if self.colormode == 'rgb':
+                # self.render_clear()
+                self.render_evaporate()
                 self.render_rgb()
             elif self.colormode == 'g':
                 self.render_g()
@@ -283,7 +277,7 @@ def update(b):
 def main():
     t = int(time.time())
     print(t)
-    ti.init(arch=ti.vulkan, random_seed=t)
+    ti.init(arch=ti.vulkan)
     x = 1920
     y = 1080
     n = 4096

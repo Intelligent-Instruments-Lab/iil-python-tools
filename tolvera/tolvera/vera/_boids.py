@@ -203,7 +203,7 @@ class Boids(Particles):
     def get_px(self):
         if self.colormode == 'rgb':
             # return self.px_rgb.to_numpy()
-            return self.px_rgba.to_numpy()
+            return self.px_rgba
         elif self.colormode == 'g':
             return self.px_g.to_numpy()[0]
         return False
