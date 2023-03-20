@@ -91,10 +91,14 @@ class Obstacles(Particles):
                 att = ((self._pos[o] - pos[i]) / dis) * self.attract[o]
                 rep = ((pos[i] - self._pos[o]) / dis) * self.repel[o]
                 vel[i] += (att + rep).normalized()
+    
+    def set(self, s):
+        self._pos[s[0]] = [s[1], s[2]]
+        self._vel[s[0]] = [s[3], s[4]]
 
-    def set(self, i, pos, vel):
-        self._pos[i] = pos
-        self._vel[i] = vel
+    # def set(self, i, pos, vel):
+    #     self._pos[i] = pos
+    #     self._vel[i] = vel
 
     def get_px(self):
         return self.px_rgb

@@ -1,14 +1,5 @@
 import taichi as ti
 
-# @ti.dataclass
-# class Particle:
-#     x : ti.i32
-#     y : ti.i32
-#     n : ti.i32
-#     pos : ti.types.vector(2, ti.f32)
-
-# Particle.field(shape=(n))
-
 @ti.data_oriented
 class Particles:
     def __init__(self,
