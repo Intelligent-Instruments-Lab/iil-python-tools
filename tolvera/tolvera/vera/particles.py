@@ -103,7 +103,26 @@ class Particles:
                 for x in range(xi, xj):
                     for y in range(yi, yj):
                         px[x, y] = p.rgba
+    def osc_set_pos(self, s):
+        self.field[s[0]].particle.pos = [s[1], s[2]]
+    def osc_set_vel(self, s):
+        self.field[s[0]].particle.vel = [s[1], s[2]]
+    def osc_get_pos(self, i):
+        return self.field[i].particle.pos.to_numpy().tolist()
+    def osc_get_vel(self, i):
+        return self.field[i].particle.vel.to_numpy().tolist()
+    def osc_get_pos_all(self):
+        # TODO: parellelise for loop
+        pos = ti.field(ti.f32, shape=self.max_n*2)
+        j = 0
+        for i in range(self.max_n):
+            p = self.field[i].particle
+            if p.active > 0.0:
+                pos[j] = p.pos[0]
+                j+=1
+                pos[j] = p.pos[1]
+                j+=1
+        return pos.to_numpy().tolist()
     def __call__(self, px):
         self.process()
         self.render(px)
-

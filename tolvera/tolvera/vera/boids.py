@@ -2,6 +2,7 @@ import taichi as ti
 
 from tolvera.vera.particles import Particle, Particles
 from tolvera.vera.pixels import Pixels
+from tolvera.utils import OSCUpdaters
 
 from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
@@ -80,23 +81,36 @@ class Boids(Particles):
 def main(host="127.0.0.1", port=4000):
     ti.init(arch=ti.vulkan)
     osc = OSC(host, port, verbose=False, concurrent=True)
+    osc.create_client("boids", host="127.0.0.1", port=7564)
     x = 1920
     y = 1080
-    n = 1024
+    n = 8
     b = Boids(n, x, y)
     b.randomise(n)
     px = Pixels(x,y)
     window = ti.ui.Window("Boids", (x, y))
     canvas = window.get_canvas()
 
+    o = OSCUpdaters(osc, client="boids", count=10,
+        receives={
+            "/tolvera/boids/pos": b.osc_set_pos,
+            "/tolvera/boids/vel": b.osc_set_vel
+        },
+        sends={
+            "/tolvera/boids/pos/all": b.osc_get_pos_all
+        }
+    )
+
     while window.running:
         with _lock:
             # px.diffuse()
-            # px.decay()
+            # px.decay() tower
+
+            o()
             px.clear()
             b(px())
             canvas.set_image(px())
             window.show()
 
 if __name__ == '__main__':
-    main()
+    run(main())
