@@ -1,114 +1,111 @@
+import time
 import taichi as ti
 
-from tolvera.vera.particles import Particle, Particles
-from tolvera.vera.pixels import Pixels
+from tolvera.particles import Particle, Particles
+from tolvera.pixels import Pixels
 from tolvera.utils import OSCUpdaters
+from tolvera.utils import Updater
 
 from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
 
-vec1 = ti.types.vector(1, ti.f32)
-vec2 = ti.math.vec2
-vec3 = ti.math.vec3
-vec4 = ti.math.vec4
-
 @ti.dataclass
-class BoidsParticle:
-    particle: Particle
-    align:    ti.f32
+class BoidsParams:
     separate: ti.f32
+    align:    ti.f32
     cohere:   ti.f32
     radius:   ti.f32
 
 @ti.data_oriented
-class Boids(Particles):
+class Boids():
     def __init__(self,
-                 max_n: ti.i32,
                  x: ti.i32,
-                 y: ti.i32) -> None:
-        super().__init__(BoidsParticle, x, y, max_n)
+                 y: ti.i32,
+                 species=3) -> None:
+        self.x = x
+        self.y = y
+        self.species_n = species
+        self.rules = BoidsParams.field(shape=(species,species))
+        self.init()
     @ti.kernel
-    def randomise(self, n: int):
-        for i in range(n):
-            p = Particle(
-                    pos=[self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)],
-                    active=1,size=2,speed=1,max_speed=2)
-            p.vel=[p.max_speed * (ti.random(ti.f32)-0.5),p.max_speed * (ti.random(ti.f32)-0.5)]
-            p.rgba=[1,1,1,1]
-            # p.rgba=[ti.random(ti.f32),
-            #         ti.random(ti.f32),
-            #         ti.random(ti.f32),1]
-            self.field[i] = BoidsParticle(
-                separate=0.2,#ti.random(ti.f32),
-                align=0.7,#ti.random(ti.f32),
-                cohere=0.7,#,ti.random(ti.f32),
-                radius=50,#ti.random(ti.f32)*100,
-                particle=p)
-    @ti.kernel
-    def step(self):
-        for i in range(self.max_n):
-            if self.field[i].particle.active > 0.0:
-                self.step_inner(i)
+    def init(self):
+        self.init_rules()
     @ti.func
-    def step_inner(self, i: ti.i32):
-        # FIXME: repro disappearing dataclass @ti.func 'bp.dist'
-        b = self.field[i]
-        bp = b.particle
+    def init_rules(self):
+        for i in range(self.species_n):
+            for j in range(self.species_n):
+                self.rules[i,j] = BoidsParams(
+                    separate= ti.random(ti.f32),
+                    align   = ti.random(ti.f32)*0.7+0.3, 
+                    cohere  = ti.random(ti.f32)*0.7+0.3,
+                    radius  = ti.random(ti.f32)*300.0)
+    @ti.kernel
+    def step(self, field: ti.template()):
+        for i in range(field.shape[0]):
+            if field[i].active > 0.0:
+                self.step_inner(field, i)
+    @ti.func
+    def step_inner(self, field: ti.template(), i: ti.i32):
+        p1 = field[i]
         separate = ti.Vector([0.,0.])
         align    = ti.Vector([0.,0.])
         cohere   = ti.Vector([0.,0.])
         nearby = 0
-        for i_near in range(self.max_n):
-            if i!=i_near and self.field[i_near].particle.active > 0.0:
-                dis = self.field[i].particle.dist(
-                    self.field[i_near].particle)
+        r = BoidsParams()
+        for j in range(field.shape[0]):
+            p2 = field[j]
+            if i!=j and p2.active > 0.0:
+                dis = field[i].dist(p2)
                 dis_norm = dis.norm()
-                if dis_norm < b.radius:
-                    self.field[i].particle.vel += \
-                        dis.normalized()/dis_norm * bp.max_speed
+                r = self.rules[p1.species, p2.species]
+                if dis_norm < r.radius:
+                    field[i].vel += \
+                        dis.normalized()/dis_norm * p1.max_speed
                     separate += dis
-                    align    += bp.vel
-                    cohere   += bp.pos
+                    align    += p2.vel
+                    cohere   += p2.pos
                     nearby   += 1
         if nearby != 0:
-            separate = separate/nearby        * b.separate
-            align    = align/nearby           * b.align
-            cohere   = (cohere/nearby-bp.pos) * b.cohere
-            self.field[i].particle.vel += \
-                (cohere + align + separate).normalized()
-            self.limit_speed(i)
+            separate = separate/nearby         * r.separate
+            align    = align/nearby            * r.align
+            cohere   = (cohere/nearby-p1.pos)  * r.cohere
+            field[i].vel += (cohere+align+separate).normalized()
+    def reset(self):
+        self.init()
+    def __call__(self, field):
+        self.step(field)
 
 def main(host="127.0.0.1", port=4000):
-    ti.init(arch=ti.vulkan)
-    osc = OSC(host, port, verbose=False, concurrent=True)
-    osc.create_client("boids", host="127.0.0.1", port=7564)
+    # TODO: CL args
+    seed = int(time.time())
+    ti.init(arch=ti.vulkan, random_seed=seed)
+    # ti.init(random_seed=seed)
+    # osc = OSC(host, port, verbose=False, concurrent=True)
+    fps = 120
     x = 1920
     y = 1080
-    n = 8
-    b = Boids(n, x, y)
-    b.randomise(n)
-    px = Pixels(x,y)
-    window = ti.ui.Window("Boids", (x, y))
+    n = 8192
+    species = 16
+    p = Particles(x, y, n, species)
+    b = Boids(x, y, species)
+    px = Pixels(x, y, evaporate=0.95)
+    window = ti.ui.Window("Boids", (x, y),fps_limit=fps)
     canvas = window.get_canvas()
 
-    o = OSCUpdaters(osc, client="boids", count=10,
-        receives={
-            "/tolvera/boids/pos": b.osc_set_pos,
-            "/tolvera/boids/vel": b.osc_set_vel
-        },
-        sends={
-            "/tolvera/boids/pos/all": b.osc_get_pos_all
-        }
-    )
+    def reset():
+        b.reset()
+        p.reset()
+        px.reset()
+    u = Updater(reset, fps*4)
 
     while window.running:
         with _lock:
-            # px.diffuse()
-            # px.decay() tower
-
-            o()
-            px.clear()
-            b(px())
+            u()
+            px.diffuse()
+            # px.decay()
+            # px.clear()
+            b(p.field)
+            p(px())
             canvas.set_image(px())
             window.show()
 

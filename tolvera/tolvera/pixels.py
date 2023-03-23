@@ -72,5 +72,7 @@ class Pixels:
     @ti.kernel
     def update(self):
         pass
+    def reset(self):
+        self.clear()
     def __call__(self):
         return self.get()

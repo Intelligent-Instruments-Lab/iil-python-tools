@@ -2,6 +2,20 @@
 TODO: send args? maybe this is only useful for sending repeated things with fixed args.
 '''
 
+class Updater():
+    '''
+    Rate-limited function call
+    '''
+    def __init__(self, f, count=30):
+        self.f = f
+        self.count = count
+        self.counter = 0
+    def __call__(self):
+        self.counter += 1
+        if self.counter >= self.count:
+            self.f()
+            self.counter = 0
+
 class ReceiveUpdater:
     '''
     Decouples event handling from updating
@@ -28,7 +42,7 @@ class ReceiveUpdater:
                 self.counter>self.count and 
                 self.state is not None):
             return
-        self.f(self.state)
+        self.f(*self.state)
         self.counter = 0
         self.update = False
 
