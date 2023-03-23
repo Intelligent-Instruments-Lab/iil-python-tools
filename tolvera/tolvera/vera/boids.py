@@ -3,11 +3,9 @@ import taichi as ti
 
 from tolvera.particles import Particle, Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import OSCUpdaters
-from tolvera.utils import Updater
+from tolvera.utils import OSCUpdaters, Updater
 
-from iipyper import OSC, run, repeat, cleanup
-from iipyper.state import _lock
+from iipyper import OSC, run
 
 @ti.dataclass
 class BoidsParams:
@@ -80,34 +78,43 @@ def main(host="127.0.0.1", port=4000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
-    # osc = OSC(host, port, verbose=False, concurrent=True)
+    osc = OSC(host, port, verbose=False, concurrent=True)
     fps = 120
     x = 1920
     y = 1080
     n = 8192
     species = 16
-    p = Particles(x, y, n, species)
-    b = Boids(x, y, species)
-    px = Pixels(x, y, evaporate=0.95)
-    window = ti.ui.Window("Boids", (x, y),fps_limit=fps)
-    canvas = window.get_canvas()
+    particles = Particles(x, y, n, species)
+    pixels = Pixels(x, y, evaporate=0.95, fps=fps)
+    boids = Boids(x, y, species)
 
     def reset():
-        b.reset()
-        p.reset()
-        px.reset()
-    u = Updater(reset, fps*4)
+        particles.reset()
+        pixels.reset()
+        boids.reset()
+    update = Updater(reset, fps*4)
 
-    while window.running:
-        with _lock:
-            u()
-            px.diffuse()
-            # px.decay()
-            # px.clear()
-            b(p.field)
-            p(px())
-            canvas.set_image(px())
-            window.show()
+    osc_update = OSCUpdaters(osc, client="particles",
+        receives={
+            "/tolvera/boids/reset":   reset,
+            "/tolvera/boids/set/pos": particles.osc_set_pos,
+            "/tolvera/boids/set/vel": particles.osc_set_vel
+        }, receive_count=10,
+        sends={
+            "/tolvera/boids/get/pos/all": particles.osc_get_pos_all
+        }, send_count=60
+    )
+
+    def render():
+        # osc_update() 
+        update()
+        pixels.diffuse()
+        # pixels.decay()
+        # pixels.clear()
+        boids(particles.field)
+        particles(pixels())
+
+    pixels.show(render)
 
 if __name__ == '__main__':
     run(main())

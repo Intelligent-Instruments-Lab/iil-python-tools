@@ -5,7 +5,6 @@ import time
 from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
 
-# TODO: abstract out ti.ui.Window? fps_limit
 # TODO: color palette
 # FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 
@@ -142,7 +141,7 @@ class Particles:
         return self.field[i].pos.to_numpy().tolist()
     def osc_get_vel(self, i):
         return self.field[i].vel.to_numpy().tolist()
-    @ti.kernel
+    # @ti.kernel
     def osc_get_pos_all(self):
         # TODO: parellelise for loop
         pos = ti.field(ti.f32, shape=self.max_n*2)

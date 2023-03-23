@@ -4,10 +4,9 @@ import taichi as ti
 
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import Updater
+from tolvera.utils import Updater, OSCUpdaters
 
-from iipyper import OSC, run, repeat, cleanup
-from iipyper.state import _lock
+from iipyper import OSC, run
 
 @ti.dataclass
 class PhysarumParams:
@@ -32,7 +31,7 @@ class Physarum():
         self.x = trail_x
         self.y = trail_y
         self.substep = substep
-        self.trail = Pixels(self.x, self.y, evaporate=diffuse_amount)
+        self.trail = Pixels(self.x, self.y, evaporate=diffuse_amount, render=False)
         self.init()
     @ti.kernel
     def init(self):
@@ -101,31 +100,40 @@ def main(host="127.0.0.1", port=4000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
-    # osc = OSC(host, port, verbose=False, concurrent=True)
+    osc = OSC(host, port, verbose=False, concurrent=True)
     fps = 120
     x = 1920
     y = 1080
     n = 8192
     species = 5
-    px  = Pixels(x,y)
-    p   = Particles(x, y, n, species)
-    phy = Physarum(x, y, n, species)
-    window = ti.ui.Window("Physarum", (x, y), fps_limit=fps)
-    canvas = window.get_canvas()
+    particles = Particles(x, y, n, species)
+    pixels = Pixels(x,y, fps=fps)
+    physarum = Physarum(x, y, n, species)
 
     def reset():
-        phy.reset()
-        p.reset()
-        px.reset()
-    u = Updater(reset, fps)
+        particles.reset()
+        pixels.reset()
+        physarum.reset()
+    update = Updater(reset, fps*4)
 
-    while window.running:
-        with _lock:
-            u()
-            phy(p.field)
-            px.set(phy.trail.px)
-            canvas.set_image(px())
-            window.show()
+    osc_update = OSCUpdaters(osc, client="particles",
+        receives={
+            "/tolvera/physarum/reset":   reset,
+            "/tolvera/physarum/set/pos": particles.osc_set_pos,
+            "/tolvera/physarum/set/vel": particles.osc_set_vel
+        }, receive_count=10,
+        sends={
+            "/tolvera/physarum/get/pos/all": particles.osc_get_pos_all
+        }, send_count=60
+    )
+
+    def render():
+        # osc_update() 
+        update()
+        physarum(particles.field)
+        pixels.set(physarum.trail.px)
+
+    pixels.show(render)
 
 if __name__ == '__main__':
-    main()
+    run(main())

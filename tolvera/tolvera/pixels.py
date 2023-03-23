@@ -1,5 +1,4 @@
 import taichi as ti
-from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
 
 # FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
@@ -41,12 +40,21 @@ class Pixels:
                  x: ti.i32,
                  y: ti.i32,
                  mode='rgba',
-                 evaporate=0.99):
+                 evaporate=0.99,
+                 fps=120,
+                 name='Tolvera',
+                 render=True):
+        self.lock = _lock
         self.x = x
         self.y = y
+        self.fps = fps
         self.px = Pixel.field(shape=(x,y))
         self.mode = mode
         self.evaporate = evaporate
+        self.render = render
+        if render:
+            self.window = ti.ui.Window(name, (x,y), fps_limit=fps)
+            self.canvas = self.window.get_canvas()
     def set(self, px):
         self.px.rgba = px.rgba
     def get(self):
@@ -74,5 +82,12 @@ class Pixels:
         pass
     def reset(self):
         self.clear()
+    def show(self, f):
+        if self.render:
+            while self.window.running:
+                with self.lock:
+                    f()
+                    self.canvas.set_image(self.get())
+                    self.window.show()
     def __call__(self):
         return self.get()
