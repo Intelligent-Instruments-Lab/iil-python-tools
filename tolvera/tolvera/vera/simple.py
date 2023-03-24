@@ -7,18 +7,17 @@ from tolvera.particles import Particles
 from tolvera.pixels import Pixels
 from tolvera.utils import OSCUpdaters
 
-def main(host="127.0.0.1", port=4000):
+def main(x=1920, y=1080, n=1024, species=4, fps=120, host="127.0.0.1", port=4000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
     osc = OSC(host, port, verbose=False, concurrent=True)
     osc.create_client("particles", host="127.0.0.1", port=7564)
-    fps = 120
-    x = 1920
-    y = 1080
-    n = 1024
-    particles = Particles(x,y,n)
+    particles = Particles(x,y,n,species)
     pixels = Pixels(x,y, evaporate=0.9, fps=fps)
+
+    # particles.activate(5, (x/2, y/2), species=0)
+    # particles.deactivate(5, species=0)
 
     osc_update = OSCUpdaters(osc, client="particles",
         receives={
@@ -30,12 +29,18 @@ def main(host="127.0.0.1", port=4000):
         }, send_count=60
     )
 
+    '''
+    particles(n=1024, species=5)
+        .flock()
+        .slime()
+    '''
+
     def render():
         # pixels.diffuse()
         # pixels.decay()
         pixels.clear()
         # osc_update()
-        particles(pixels())
+        particles(pixels)
 
     pixels.show(render)
 

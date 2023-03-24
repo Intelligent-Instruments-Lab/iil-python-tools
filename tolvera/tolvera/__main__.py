@@ -1,7 +1,7 @@
 import sys
 import taichi as ti
 
-# TODO: CL args for arch, iipyper
+# TODO: CL args for ti.arch, iipyper
 
 from tolvera.tolvera import main as world
 

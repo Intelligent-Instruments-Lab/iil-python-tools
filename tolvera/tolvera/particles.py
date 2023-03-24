@@ -1,6 +1,4 @@
 import taichi as ti
-import numpy as np
-import time
 
 from iipyper import OSC, run, repeat, cleanup
 from iipyper.state import _lock
@@ -30,6 +28,7 @@ class Particle:
     rgba: vec4
     pos:  vec2
     vel:  vec2
+    ang:  ti.f32
     # acc:  vec2
     mass:      ti.f32
     size:      ti.f32
@@ -37,6 +36,7 @@ class Particle:
     max_speed: ti.f32
     active:    ti.f32
     species:   ti.i32
+    decay:     ti.f32
     @ti.func
     def dist(self, other):
         # FIXME: wrap around walls
@@ -62,7 +62,6 @@ class Particles:
         self.y = y
         self.field = Particle.field(shape=(self.max_n))
         self.substep = substep
-        np.random.seed(int(time.time()))
         self.init()
     @ti.kernel
     def init(self):
@@ -74,6 +73,7 @@ class Particles:
             self.field[i] = Particle(
                 pos=[self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)],
                 vel=[2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)],
+                ang=2.0 * ti.math.pi * ti.random(ti.f32),
                 active=1)
     @ti.func
     def speciate(self):
@@ -83,16 +83,17 @@ class Particles:
             s = i % self.species_n
             self.field[i].species = s
             self.field[i].rgba    = self.species_c[s]
-            self.field[i].size      = 1 * ti.random(ti.f32) + 1.0
-            self.field[i].speed     = 1 * ti.random(ti.f32) + 0.2
-            self.field[i].max_speed = 2 * ti.random(ti.f32) + 1.0
-            self.field[i].mass      = 1 * ti.random(ti.f32) + 1.0
+            self.field[i].size      = 3.0 + 1     * ti.random(ti.f32)
+            self.field[i].speed     = 0.1 + 2     * ti.random(ti.f32)
+            self.field[i].max_speed = 0.5 + 2     * ti.random(ti.f32)
+            self.field[i].mass      = 1.0 + 5     * ti.random(ti.f32)
+            self.field[i].decay     = 0.9 + 0.099 * ti.random(ti.f32)
     @ti.kernel
     def move(self):
         for i in range(self.max_n):
             p = self.field[i]
             if p.active > 0.0:
-                self.field[i].pos += p.speed * p.vel
+                self.field[i].pos += p.speed * p.vel * p.active
                 x = p.pos[0]
                 y = p.pos[1]
                 if  (x > self.x): self.field.pos[i][0] = 1
@@ -112,27 +113,28 @@ class Particles:
         if p.vel.norm() > p.max_speed:
             self.field[i].vel = p.vel.normalized() * p.max_speed
     @ti.kernel
+    def activity_decay(self):
+        for i in range(self.max_n):
+            if self.field[i].active > 0.0:
+                self.field[i].active *= self.field[i].decay
     def step(self):
-        pass
+        self.activity_decay()
     def process(self):
         for i in range(self.substep):
             self.step()
             self.move()
     @ti.kernel
-    def render(self, px: ti.template()):
+    def render(self, pixels: ti.template()):
+        # FIXME: low activity particles rendering...
         # TODO: support g, rgb, rgba
         # TODO: render shapes
         # l = len(px[0,0])
         for i in range(self.max_n):
             p = self.field[i]
-            if p.active > 0.0:
-                xi = ti.cast(p.pos[0], ti.i32) - p.size
-                xj = ti.cast(p.pos[0], ti.i32) + p.size
-                yi = ti.cast(p.pos[1], ti.i32) - p.size
-                yj = ti.cast(p.pos[1], ti.i32) + p.size
-                for x in range(xi, xj):
-                    for y in range(yi, yj):
-                        px[x, y] = p.rgba
+            if p.active > 0.1:
+                x = ti.cast(p.pos[0], ti.i32)
+                y = ti.cast(p.pos[1], ti.i32)
+                pixels.circle(x, y, p.size, p.rgba * p.active)
     def osc_set_pos(self, i, x, y):
         self.field[i].pos = [x, y]
     def osc_set_vel(self, i, x, y):
@@ -156,6 +158,6 @@ class Particles:
         return pos.to_numpy().tolist()
     def reset(self):
         self.init()
-    def __call__(self, px):
+    def __call__(self, pixels):
         self.process()
-        self.render(px)
+        self.render(pixels)

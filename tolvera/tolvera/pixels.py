@@ -73,6 +73,57 @@ class Pixels:
                     d += self.px.rgba[dx, dy]
             d *= self.evaporate/9.0
             self.px.rgba[i,j] = d
+    @ti.func
+    def point(self, x: ti.i32, y: ti.i32, rgba: vec4):
+        self.px.rgba[x,y] = rgba
+    @ti.func
+    def points(self, x: ti.template(), y: ti.template(), rgba: vec4):
+        for i in ti.static(range(len(x))):
+            self.point(x[i], y[i], rgba)
+    @ti.func
+    def rect(self, x: ti.i32, y: ti.i32, w: ti.i32, h: ti.i32, rgba: vec4):
+        for i, j in ti.ndrange(w, h):
+            self.px.rgba[x+i, y+j] = rgba
+    @ti.func
+    def line(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, rgba: vec4):
+        dx = ti.abs(x1 - x0)
+        dy = ti.abs(y1 - y0)
+        x, y = x0, y0
+        sx = -1 if x0 > x1 else 1
+        sy = -1 if y0 > y1 else 1
+        if dx > dy:
+            err = dx / 2.0
+            while x != x1:
+                self.px.rgba[x, y] = rgba
+                err -= dy
+                if err < 0:
+                    y += sy
+                    err += dx
+                x += sx
+        else:
+            err = dy / 2.0
+            while y != y1:
+                self.px.rgba[x, y] = rgba
+                err -= dx
+                if err < 0:
+                    x += sx
+                    err += dy
+                y += sy
+        self.px.rgba[x, y] = rgba
+    @ti.func
+    def circle(self, x: ti.i32, y: ti.i32, r: ti.i32, rgba: vec4):
+        for i in range(r + 1):
+            d = ti.sqrt(r ** 2 - i ** 2)
+            d_int = ti.cast(d, ti.i32)
+            for j in range(d_int):
+                self.px.rgba[x + i, y + j] = rgba
+                self.px.rgba[x + i, y - j] = rgba
+                self.px.rgba[x - i, y - j] = rgba
+                self.px.rgba[x - i, y + j] = rgba
+    # @ti.func
+    # def triangle(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, x2: ti.i32, y2: ti.i32, rgba: vec4):
+    # @ti.func
+    # def polygon(self, x: ti.template(), y: ti.template(), rgba: vec4):
     @ti.kernel
     def decay(self):
         for i, j in ti.ndrange(self.x, self.y):

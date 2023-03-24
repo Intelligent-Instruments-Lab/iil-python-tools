@@ -8,6 +8,9 @@ from tolvera.utils import Updater, OSCUpdaters
 
 from iipyper import OSC, run
 
+# TODO: multi-species sensing
+# TODO: rendering brightness
+
 @ti.dataclass
 class PhysarumParams:
     sense_angle: ti.f32
@@ -20,14 +23,11 @@ class Physarum():
     def __init__(self,
                  trail_x: ti.i32,
                  trail_y: ti.i32,
-                 max_n:   ti.i32,
                  species: ti.i32 = 3,
                  diffuse_amount: ti.f32 = 0.95,
                  substep: ti.i32 = 1) -> None:
-        self.max_n = max_n
         self.species_n = species
-        self.rules = PhysarumParams.field(shape=(self.max_n))
-        self.heading = ti.field(dtype=ti.f32, shape=(self.max_n))
+        self.rules = PhysarumParams.field(shape=(species))
         self.x = trail_x
         self.y = trail_y
         self.substep = substep
@@ -36,11 +36,6 @@ class Physarum():
     @ti.kernel
     def init(self):
         self.init_rules()
-        self.init_angle()
-    @ti.func
-    def init_angle(self):
-        for i in range(self.max_n):
-            self.heading[i] = ti.random(ti.f32) * 2.0 * ti.math.pi
     @ti.func
     def init_rules(self):
         for i in range(self.species_n):
@@ -51,11 +46,10 @@ class Physarum():
                 move_dist   = ti.random(ti.f32) * 4.0 + 0.1)
     @ti.kernel
     def move(self, field: ti.template()):
-        for i in range(self.max_n):
+        for i in range(field.shape[0]):
             if field[i].active > 0.0:
-                p = field[i]
-                rule = self.rules[p.species]
-                pos, ang = p.pos, self.heading[i]
+                pos, ang = field[i].pos, field[i].ang
+                rule = self.rules[field[i].species]
                 c = self.sense(pos, ang,                    rule.sense_dist).norm()
                 l = self.sense(pos, ang - rule.sense_angle, rule.sense_dist).norm()
                 r = self.sense(pos, ang + rule.sense_angle, rule.sense_dist).norm()
@@ -65,9 +59,10 @@ class Physarum():
                     ang -= rule.move_angle
                 elif r > c and c < l:
                     ang += rule.move_angle * (2 * (ti.random() < 0.5) - 1) # TODO: magic numbers
-                pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) * rule.move_dist
+                pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) \
+                    * rule.move_dist * field[i].active
                 field[i].pos = pos
-                self.heading[i] = ang
+                field[i].ang = ang
     @ti.func
     def sense(self, pos, ang, dist):
         # TODO: speciate based on rgba compared with field[i].rgba
@@ -77,38 +72,34 @@ class Physarum():
         return self.trail.px.rgba[px, py]
     @ti.kernel
     def deposit(self, field: ti.template()):
-        for i in range(self.max_n):
+        for i in range(field.shape[0]):
             if field[i].active > 0.0:
                 p = field[i]
                 x = ti.cast(p.pos[0], ti.i32) % self.x
                 y = ti.cast(p.pos[1], ti.i32) % self.y
-                self.trail.px.rgba[x, y] += p.rgba# * p.mass
+                self.trail.circle(x, y, p.size, p.rgba * p.active)
     def step(self, field):
         self.deposit(field)
         self.trail.diffuse()
-    def process(self, field):
+    def process(self, particles):
         for i in range(self.substep):
-            self.move(field)
-            self.step(field)
+            self.move(particles.field)
+            self.step(particles.field)
+            particles.activity_decay()
     def reset(self):
         self.init()
-    def __call__(self, field):
-        self.process(field)
+    def __call__(self, particles):
+        self.process(particles)
         return self.trail.px.rgba
 
-def main(host="127.0.0.1", port=4000):
+def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=4000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
     osc = OSC(host, port, verbose=False, concurrent=True)
-    fps = 120
-    x = 1920
-    y = 1080
-    n = 8192
-    species = 5
     particles = Particles(x, y, n, species)
     pixels = Pixels(x,y, fps=fps)
-    physarum = Physarum(x, y, n, species)
+    physarum = Physarum(x, y, species)
 
     def reset():
         particles.reset()
@@ -130,7 +121,7 @@ def main(host="127.0.0.1", port=4000):
     def render():
         # osc_update() 
         update()
-        physarum(particles.field)
+        physarum(particles)
         pixels.set(physarum.trail.px)
 
     pixels.show(render)

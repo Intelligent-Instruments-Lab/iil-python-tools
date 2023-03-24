@@ -34,8 +34,8 @@ class Boids():
             for j in range(self.species_n):
                 self.rules[i,j] = BoidsParams(
                     separate= ti.random(ti.f32),
-                    align   = ti.random(ti.f32)*0.7+0.3, 
-                    cohere  = ti.random(ti.f32)*0.7+0.3,
+                    align   = ti.random(ti.f32), 
+                    cohere  = ti.random(ti.f32),
                     radius  = ti.random(ti.f32)*300.0)
     @ti.kernel
     def step(self, field: ti.template()):
@@ -64,26 +64,20 @@ class Boids():
                     cohere   += p2.pos
                     nearby   += 1
         if nearby != 0:
-            separate = separate/nearby         * r.separate
-            align    = align/nearby            * r.align
-            cohere   = (cohere/nearby-p1.pos)  * r.cohere
+            separate = separate/nearby         * r.separate * p1.active
+            align    = align/nearby            * r.align    * p1.active
+            cohere   = (cohere/nearby-p1.pos)  * r.cohere   * p1.active
             field[i].vel += (cohere+align+separate).normalized()
     def reset(self):
         self.init()
-    def __call__(self, field):
-        self.step(field)
+    def __call__(self, particles):
+        self.step(particles.field)
 
-def main(host="127.0.0.1", port=4000):
-    # TODO: CL args
+def main(x=1920, y=1080, n=4096, species=4, fps=120, host="127.0.0.1", port=4000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
     osc = OSC(host, port, verbose=False, concurrent=True)
-    fps = 120
-    x = 1920
-    y = 1080
-    n = 8192
-    species = 16
     particles = Particles(x, y, n, species)
     pixels = Pixels(x, y, evaporate=0.95, fps=fps)
     boids = Boids(x, y, species)
@@ -111,8 +105,8 @@ def main(host="127.0.0.1", port=4000):
         pixels.diffuse()
         # pixels.decay()
         # pixels.clear()
-        boids(particles.field)
-        particles(pixels())
+        boids(particles)
+        particles(pixels)
 
     pixels.show(render)
 
