@@ -43,7 +43,8 @@ class Pixels:
                  evaporate=0.99,
                  fps=120,
                  name='Tolvera',
-                 render=True):
+                 render=True,
+                 polygon_mode='crossing'):
         self.lock = _lock
         self.x = x
         self.y = y
@@ -52,6 +53,7 @@ class Pixels:
         self.mode = mode
         self.evaporate = evaporate
         self.render = render
+        self._polygon_mode = polygon_mode
         if render:
             self.window = ti.ui.Window(name, (x,y), fps_limit=fps)
             self.canvas = self.window.get_canvas()
@@ -84,8 +86,13 @@ class Pixels:
     def rect(self, x: ti.i32, y: ti.i32, w: ti.i32, h: ti.i32, rgba: vec4):
         for i, j in ti.ndrange(w, h):
             self.px.rgba[x+i, y+j] = rgba
+    # def line(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, rgba: vec4):
     @ti.func
     def line(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, rgba: vec4):
+        '''
+        Bresenham's line algorithm
+        TODO: line with stroke width
+        '''
         dx = ti.abs(x1 - x0)
         dy = ti.abs(y1 - y0)
         x, y = x0, y0
@@ -120,10 +127,55 @@ class Pixels:
                 self.px.rgba[x + i, y - j] = rgba
                 self.px.rgba[x - i, y - j] = rgba
                 self.px.rgba[x - i, y + j] = rgba
-    # @ti.func
-    # def triangle(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, x2: ti.i32, y2: ti.i32, rgba: vec4):
-    # @ti.func
-    # def polygon(self, x: ti.template(), y: ti.template(), rgba: vec4):
+    @ti.func
+    def triangle(self, a, b, c, rgba: vec4):
+        x = ti.Vector([a[0], b[0], c[0]])
+        y = ti.Vector([a[1], b[1], c[1]])
+        self.polygon(x,y,rgba)
+    @ti.func
+    def polygon(self, x: ti.template(), y: ti.template(), rgba: vec4):
+        # after http://www.dgp.toronto.edu/~mac/e-stuff/point_in_polygon.py
+        x_min, x_max = x.min(), x.max()
+        y_min, y_max = y.min(), y.max()
+        l = len(x)
+        for i, j in ti.ndrange(x_max-x_min, y_max-y_min):
+            p = [x_min+i, y_min+j]
+            if self._is_inside(p,x,y,l) != 0:
+                self.px.rgba[p[0],p[1]] = rgba
+    @ti.func
+    def _is_inside(self,p,x,y,l):
+        is_inside = 0
+        if self._polygon_mode == 'crossing':
+            is_inside = self._is_inside_crossing(p,x,y,l)
+        elif self._polygon_mode == 'winding':
+            is_inside = self._is_inside_winding(p,x,y,l)
+        return is_inside
+    @ti.func
+    def _is_inside_crossing(self,p,x,y,l):
+        n = 0
+        v0, v1 = ti.Vector([0.0,0.0]), ti.Vector([0.0,0.0])
+        for i in range(l):
+            i1 = i + 1 if i < l - 1 else 0
+            v0, v1 = [x[i], y[i]], [x[i1], y[i1]]
+            if (v0[1] <= p[1] and v1[1] > p[1]) or \
+                (v0[1] > p[1] and v1[1] <= p[1]):
+                vt = (p[1] - v0[1]) / (v1[1] - v0[1])
+                if p[0] < v0[0] + vt * (v1[0] - v0[0]):
+                    n += 1
+        return n % 2
+    @ti.func
+    def _is_inside_winding(self,p,x,y,l):
+        n = 0
+        v0, v1 = ti.Vector([0.0,0.0]), ti.Vector([0.0,0.0])
+        for i in range(l):
+            i1 = i + 1 if i < l - 1 else 0
+            v0, v1 = [x[i], y[i]], [x[i1], y[i1]]
+            if v0[1] <= p[1] and v1[1] > p[1] and \
+                (v0 - v1).cross(p - v1) > 0:
+                n += 1
+            elif v1[1] <= p[1] and (v0-v1).cross(p-v1) < 0:
+                n -= 1
+        return n
     @ti.kernel
     def decay(self):
         for i, j in ti.ndrange(self.x, self.y):
