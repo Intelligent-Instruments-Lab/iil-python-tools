@@ -118,7 +118,8 @@ class Particles:
             if self.field[i].active > 0.0:
                 self.field[i].active *= self.field[i].decay
     def step(self):
-        self.activity_decay()
+        # self.activity_decay()
+        pass
     def process(self):
         for i in range(self.substep):
             self.step()

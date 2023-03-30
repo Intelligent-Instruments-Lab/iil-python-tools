@@ -76,6 +76,10 @@ class Pixels:
             d *= self.evaporate/9.0
             self.px.rgba[i,j] = d
     @ti.func
+    def background(self,r,g,b):
+        bg = ti.Vector([r,g,b,1.0])
+        self.rect(0, 0, self.x, self.y, bg)
+    @ti.func
     def point(self, x: ti.i32, y: ti.i32, rgba: vec4):
         self.px.rgba[x,y] = rgba
     @ti.func
@@ -84,14 +88,15 @@ class Pixels:
             self.point(x[i], y[i], rgba)
     @ti.func
     def rect(self, x: ti.i32, y: ti.i32, w: ti.i32, h: ti.i32, rgba: vec4):
+        # TODO: fill arg
         for i, j in ti.ndrange(w, h):
             self.px.rgba[x+i, y+j] = rgba
-    # def line(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, rgba: vec4):
     @ti.func
     def line(self, x0: ti.i32, y0: ti.i32, x1: ti.i32, y1: ti.i32, rgba: vec4):
         '''
         Bresenham's line algorithm
-        TODO: line with stroke width
+        TODO: thickness
+        TODO: anti-aliasing
         '''
         dx = ti.abs(x1 - x0)
         dy = ti.abs(y1 - y0)
@@ -129,11 +134,13 @@ class Pixels:
                 self.px.rgba[x - i, y + j] = rgba
     @ti.func
     def triangle(self, a, b, c, rgba: vec4):
+        # TODO: fill arg
         x = ti.Vector([a[0], b[0], c[0]])
         y = ti.Vector([a[1], b[1], c[1]])
         self.polygon(x,y,rgba)
     @ti.func
     def polygon(self, x: ti.template(), y: ti.template(), rgba: vec4):
+        # TODO: fill arg
         # after http://www.dgp.toronto.edu/~mac/e-stuff/point_in_polygon.py
         x_min, x_max = x.min(), x.max()
         y_min, y_max = y.min(), y.max()

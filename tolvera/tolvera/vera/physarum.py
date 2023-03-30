@@ -85,7 +85,6 @@ class Physarum():
         for i in range(self.substep):
             self.move(particles.field)
             self.step(particles.field)
-            particles.activity_decay()
     def reset(self):
         self.init()
     def __call__(self, particles):

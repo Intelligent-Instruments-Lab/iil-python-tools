@@ -1,15 +1,18 @@
 '''
 TODO: send args? maybe this is only useful for sending repeated things with fixed args.
 '''
+import json
 
 class Updater():
     '''
     Rate-limited function call
     '''
+
     def __init__(self, f, count=30):
         self.f = f
         self.count = count
         self.counter = 0
+
     def __call__(self):
         self.counter += 1
         if self.counter >= self.count:
@@ -21,56 +24,64 @@ class ReceiveUpdater:
     Decouples event handling from updating
     Updating is rate-limited by a counter
     '''
+
     def __init__(self, f, state=None, count=5, update=False):
         self.f = f
         self.count = count
         self.counter = 0
         self.update = update
         self.state = state
+
     def set(self, state):
         '''
         Set the Updater's state
         '''
         self.state = state
         self.update = True
+
     def __call__(self):
         '''
         Update the target function with internal state
         '''
         self.counter += 1
-        if not (self.update and 
-                self.counter>self.count and 
+        if not (self.update and
+                self.counter > self.count and
                 self.state is not None):
             return
         self.f(*self.state)
         self.counter = 0
         self.update = False
 
+
 class OSCReceiveUpdater(ReceiveUpdater):
     '''
     ReceiveUpdater with an OSC handler
     '''
+
     def __init__(self, osc, address: str, f, state=None, count=10, update=False):
         super().__init__(f, state, count, update)
         self.osc = osc
         self.address = address
         osc.add_handler(self.address, self.receive)
+
     def receive(self, address, *args):
         # FIXME: ip:port/args
         '''
         v: first argument to the handler is the IP:port of the sender
-        v: or you can use dispatcher.map directly 
+        v: or you can use dispatcher.map directly
            and not set needs_reply_address=True
         j: can I get ip:port from osc itself?
-        v: if you know the sender ahead of time yeah, 
+        v: if you know the sender ahead of time yeah,
            but that lets you respond to different senders dynamically
         '''
         self.set(args[1:])
+
 
 class OSCSendUpdater():
     '''
     Rate-limited OSC send
     '''
+
     def __init__(self, osc, address: str, f, count=30, client=None):
         self.osc = osc
         self.address = address
@@ -78,36 +89,43 @@ class OSCSendUpdater():
         self.count = count
         self.counter = 0
         self.client = client
+
     def __call__(self):
         self.counter += 1
         if self.counter >= self.count:
             self.osc.send(self.address, *self.f(), client=self.client)
             self.counter = 0
 
+
 class OSCReceiveUpdaters:
     '''
     o = OSCReceiveUpdaters(osc,
-        {"/tolvera/particles/pos": s.osc_set_pos, 
+        {"/tolvera/particles/pos": s.osc_set_pos,
          "/tolvera/particles/vel": s.osc_set_vel})
     '''
+
     def __init__(self, osc, receives=None, count=10):
         self.osc = osc
         self.receives = []
         self.count = count
         if receives is not None:
             self.add_dict(receives, count=self.count)
+
     def add_dict(self, receives, count=None):
         if count is None:
             count = self.count
         {a: self.add(a, f, count=count) for a, f in receives.items()}
+
     def add(self, address, function, state=None, count=None, update=False):
         if count is None:
             count = self.count
         self.receives.append(
-            OSCReceiveUpdater(self.osc, address, function, \
+            OSCReceiveUpdater(self.osc, address, function,
                               state, count, update))
+
     def __call__(self):
         [r() for r in self.receives]
+
 
 class OSCSendUpdaters:
     '''
@@ -116,6 +134,7 @@ class OSCSendUpdaters:
             "/tolvera/particles/get/pos/all": s.osc_get_pos_all
         })
     '''
+
     def __init__(self, osc, sends=None, count=10, client=None):
         self.osc = osc
         self.sends = []
@@ -123,12 +142,15 @@ class OSCSendUpdaters:
         self.client = client
         if sends is not None:
             self.add_dict(sends, self.count, self.client)
+
     def add_dict(self, sends, count=None, client=None):
         if count is None:
             count = self.count
         if client is None:
             client = self.client
-        {a: self.add(a, f, count=count, client=client) for a, f in sends.items()}
+        {a: self.add(a, f, count=count, client=client)
+                     for a, f in sends.items()}
+
     def add(self, address, function, state=None, count=None, update=False, client=None):
         if count is None:
             count = self.count
@@ -136,8 +158,10 @@ class OSCSendUpdaters:
             client = self.client
         self.sends.append(
             OSCSendUpdater(self.osc, address, function, count, client))
+
     def __call__(self):
         [s() for s in self.sends]
+
 
 class OSCUpdaters:
     '''
@@ -151,40 +175,308 @@ class OSCUpdaters:
         }
     )
     '''
-    def __init__(self, osc, 
-                 sends=None, receives=None, 
-                 send_count=60, receive_count=10, 
+
+    def __init__(self, osc,
+                 sends=None, receives=None,
+                 send_count=60, receive_count=10,
                  client=None):
         self.osc = osc
         self.client = client
         self.send_count = send_count
         self.receive_count = receive_count
-        self.sends = OSCSendUpdaters(self.osc, count=self.send_count, client=self.client)
+        self.sends = OSCSendUpdaters(
+            self.osc, count=self.send_count, client=self.client)
         self.receives = OSCReceiveUpdaters(self.osc, count=self.receive_count)
         if sends is not None:
             self.add_sends(sends)
         if receives is not None:
             self.add_receives(receives)
+
     def add_sends(self, sends, count=None, client=None):
         if count is None:
             count = self.send_count
         if client is None:
             client = self.client
         self.sends.add_dict(sends, count, client)
+
     def add_send(self, send, count=None, client=None):
         if count is None:
             count = self.send_count
         if client is None:
             client = self.client
         self.sends.add(send, client=client, count=count)
+
     def add_receives(self, receives, count=None):
         if count is None:
             count = self.receive_count
         self.receives.add_dict(receives, count=count)
+
     def add_receive(self, receive, count=None):
         if count is None:
             count = self.receive_count
         self.receives.add(receive, count=count)
+
     def __call__(self):
         self.sends()
         self.receives()
+
+class MaxPatcher:
+    '''
+    TODO: copy-paste using stdout
+    
+    example:
+    ```py
+    patcher = MaxPatcher()
+    x = 100
+    y = 30
+    send_ip, send_port = "127.0.0.1", 4000
+    send_id = patcher.add_osc_send(send_ip, send_port, x, 700)
+    slider_ids, pack_id, msg_id = patcher.add_osc_msg_with_controls(x, 100, \
+        "/tolvera/particles/set", [
+            { "data": "float", "min_val": 0.0, "size": 1.0 },
+            { "data": "float", "min_val": 0.0, "size": 1.0 }
+        ], send_id)
+    patcher.save("controller")
+    ```
+    '''
+    def __init__(self, x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.3') -> None:
+        self.patch = {
+            "patcher": 	{
+                "fileversion": 1,
+                "appversion": 		{
+                    "major": v[0],
+                    "minor": v[2],
+                    "revision": v[4],
+                    "architecture": "x64",
+                    "modernui": 1
+                },
+                "classnamespace": "box",
+                "rect": [x, y, w, h],
+                "bglocked": 0,
+                "openinpresentation": 0,
+                "default_fontsize": 12.0,
+                "default_fontface": 0,
+                "default_fontname": "Arial",
+                "gridonopen": 1,
+                "gridsize": [15.0, 15.0],
+                "gridsnaponopen": 1,
+                "objectsnaponopen": 1,
+                "statusbarvisible": 2,
+                "toolbarvisible": 1,
+                "lefttoolbarpinned": 0,
+                "toptoolbarpinned": 0,
+                "righttoolbarpinned": 0,
+                "bottomtoolbarpinned": 0,
+                "toolbars_unpinned_last_save": 0,
+                "tallnewobj": 0,
+                "boxanimatetime": 200,
+                "enablehscroll": 1,
+                "enablevscroll": 1,
+                "devicewidth": 0.0,
+                "description": "",
+                "digest": "",
+                "tags": "",
+                "style": "",
+                "subpatcher_template": "",
+                "assistshowspatchername": 0,
+                "boxes": [],
+                "lines": [],
+                "dependency_cache": [],
+                "autosave": 0
+            }
+        }
+        self.types = {
+            "print": "print",
+            "message": "message",
+            "object": "newobj",
+            "comment": "comment",
+            "slider": "slider",
+            "float": "flonum",
+            "int": "number",
+            "bang": "button",
+        }
+        self.w = 5.5 # default width (scaling factor)
+        self.h = 22.0 # default height (pixels)
+
+    def add_box(self, box_type, inlets, outlets, x, y, w, h=None):
+        if h is None: h = self.h
+        box_id, box = self.create_box(box_type, inlets, outlets, x, y, w, h)
+        return self._add_box(box)
+
+    def _add_box(self, box):
+        self.patch["patcher"]["boxes"].append(box)
+        return self.id_from_str(box["box"]["id"])
+
+    def create_box(self, box_type, inlets, outlets, x, y, w, h=None):
+        if h is None: h = self.h
+        box_id = len(self.patch["patcher"]["boxes"])+1
+        box = {"box": {
+            "id": 'obj-'+str(box_id),
+            "maxclass": self.types[box_type],
+            "numinlets": inlets, "numoutlets": outlets,
+            "patching_rect": [x, y, w, h]
+        }}
+        if outlets > 0:
+            if outlets == 1:
+                box["box"]["outlettype"] = [""]
+            match box_type:
+                case "int" | "float" | "bang":
+                    box["box"]["outlettype"] = ["", "bang"]
+        return box_id, box
+
+    def add_object(self, text, inlets, outlets, x, y):
+        box_id, box = self.create_box(
+            "object", inlets, outlets, x, y, len(text)*self.w)
+        box["box"]["text"] = text
+        self._add_box(box)
+        return box_id
+
+    def add_message(self, text, x, y):
+        box_id, box = self.create_box("message", 2, 1, x, y, len(text)*self.w)
+        box["box"]["text"] = text
+        self._add_box(box)
+        return box_id
+    
+    def add_comment(self, text, x, y):
+        box_id, box = self.create_box("comment", 0, 0, x, y, len(text)*self.w)
+        box["box"]["text"] = text
+        self._add_box(box)
+        return box_id
+    
+    def add_bang(self, x, y):
+        box_id, box = self.create_box("bang", 1, 1, x, y, 20.0)
+        self._add_box(box)
+        return box_id
+
+    def add_slider(self, x, y, min_val, size, float=False):
+        box_id, box = self.create_box("slider", 1, 1, x, y, 20.0, 140.0)
+        if float:
+            box["box"]["floatoutput"] = 1
+        box["box"]["min"] = min_val
+        box["box"]["size"] = size
+        self._add_box(box)
+        return box_id
+
+    def connect(self, src, src_outlet, dst, dst_inlet):
+        patchline = {"patchline": {
+            "destination": ['obj-'+str(dst), dst_inlet],
+            "source": ['obj-'+str(src), src_outlet]
+        }}
+        self.patch["patcher"]["lines"].append(patchline)
+        return patchline
+
+    def save(self, name):
+        with open(name+".maxpat", "w") as f:
+            f.write(json.dumps(self.patch, indent=2))
+
+    def load(self, name):
+        with open(name+".maxpat", "r") as f:
+            self.patch = json.loads(f.read())
+
+    def get_box_by_id(self, id):
+        for box in self.patch["patcher"]["boxes"]:
+            if self.id_from_str(box["box"]["id"]) == id:
+                return box
+        return None
+    
+    def str_from_id(self, id):
+        return 'obj-'+str(id)
+
+    def id_from_str(self, obj_str):
+        return int(obj_str[4:])
+
+    def add_osc_send(self, ip, port, x, y, print=True, print_label=None):
+        box_id = self.add_object("udpsend "+ip+" "+str(port), 1, 0, x, y)
+        if print:
+            text = "print" if print_label is None else "print "+print_label
+            print_id = self.add_object(text, 1, 0, x+150, y)
+            return box_id, print_id
+        return box_id
+
+    def add_sliders(self, x, y, sliders):
+        '''
+        sliders = [
+          { 'label': 'x', data: 'float', min_val: 0.0, size: 0.0 },
+        ]
+        '''
+        slider_ids = []
+        float_ids = []
+        comment_ids = []
+        for i, s in enumerate(sliders):
+            x_i = x+(i*52.0)
+            comment_id = self.add_comment(s["label"], x_i, y)
+            slider_id = self.add_slider(x_i, y+self.h,
+                s["min_val"], s["size"], float=s["data"]=="float")
+            float_id = self.add_box("float", 1, 2, x_i, y+self.h+150, 50)
+            comment_ids.append(comment_id)
+            slider_ids.append(slider_id)
+            float_ids.append(float_id)
+        return slider_ids, float_ids, comment_ids
+
+    def add_osc_msg_with_controls(self, x, y, path, parameters, send_obj_id):
+        '''
+        TODO: add bang to trigger msg on any param update
+        TODO: add text comments to label each param
+        x, y = 100, 30
+        send_ip, send_port = "127.0.0.1", 4000
+        send_id = patcher.add_osc_send(send_ip, send_port, x, 700)
+        slider_ids, pack_id, msg_id = patcher.add_osc_msg_with_controls(x, 100, \
+        "/tolvera/particles/set", [
+            { "label": "x", data": "float", "min_val": 0.0, "size": 1.0 },
+            { "label": "y", data": "float", "min_val": 0.0, "size": 1.0 }
+        ], send_id)
+        '''
+        comment_id = self.add_comment(path, x, y)
+        slider_ids, float_ids, comment_ids = self.add_sliders(x, y+self.h, parameters)
+        pack_id = self.add_object(
+            "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+200+self.h)
+        pack_width = self.get_box_by_id(pack_id)["box"]["patching_rect"][2]
+        bang_id = self.add_bang(x+pack_width+10, y+200+self.h)
+        msg_id = self.add_message(
+            path+" "+self._msg_args(parameters), x, y+225+self.h)
+        [self.connect(slider_ids[i], 0, float_ids[i], 0)
+            for i in range(len(parameters))]
+        [self.connect(slider_ids[i+1], 0, bang_id, 0)
+            for i in range(len(parameters)-1)]
+        [self.connect(float_ids[i], 0, pack_id, i)
+            for i in range(len(parameters))]
+        self.connect(bang_id, 0, pack_id, 0)
+        self.connect(pack_id, 0, msg_id, 0)
+        self.connect(msg_id, 0, send_obj_id[0], 0)
+        self.connect(msg_id, 0, send_obj_id[1], 0)
+        return slider_ids, pack_id, msg_id
+
+    def _msg_args(self, args):
+        return " ".join(["$"+str(i+1) for i in range(len(args))])
+
+    def _pack_args(self, args):
+        arg_types = []
+        for a in args:
+            match a["data"]:
+                case "int":
+                    arg_types.append("i")
+                case "float":
+                    arg_types.append("f")
+                case "string":
+                    arg_types.append("s")
+        return " ".join(arg_types)
+
+class OSCMaxPatcher():
+    '''
+    https://github.com/Intelligent-Instruments-Lab/iil-python-tools/issues/43
+    '''
+    def __init__(self, osc, sends, receives, send_count, receive_count, client) -> None:
+        self.osc_updaters = OSCUpdaters(osc, sends, receives, send_count, receive_count, client)
+        self.patcher = MaxPatcher()
+        self.host, self.port = osc.host, osc.port
+        self.patcher.add_osc_send(self.host, self.port, 100, 100)
+        self.add_osc_to_patcher()
+    def add_osc_to_patcher(self):
+        # print(self.osc_updaters.sends.sends[0].address)
+        for i, send in enumerate(self.osc_updaters.sends.sends):
+            '''
+            Need method names, args, and types
+            Also need arg parameter ranges (min, max)
+            '''
+            print(send.address, type(send.f))
+            # self.patcher.add_osc_msg_with_controls(100, 100, send.path, send.parameters, 0)
