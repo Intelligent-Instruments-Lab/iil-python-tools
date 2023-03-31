@@ -196,7 +196,13 @@ def main(
     
     # TODO: add arguments for this,
     # and sensible defaults for drums etc
-    inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
+    # inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
+    inst_pitch_map = {
+        265: (41,43),
+        266: (41,43),
+        267: (41,43),
+        268: (41,43),
+    }
 
     # load notochord model
     try:
