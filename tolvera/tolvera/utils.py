@@ -392,6 +392,24 @@ class MaxPatcher:
             print_id = self.add_object(text, 1, 0, x+150, y)
             return box_id, print_id
         return box_id
+    
+    def add_osc_receive(self, port, x, y, print=True, print_label=None):
+        box_id = self.add_object("udpreceive "+str(port), 1, 1, x, y)
+        if print:
+            text = "print" if print_label is None else "print "+print_label
+            print_id = self.add_object(text, 1, 0, x+100, y)
+            self.connect(box_id, 0, print_id, 0)
+            return box_id, print_id
+        return box_id
+    
+    def add_osc_route(self, port, x, y, print=True, print_label=None):
+        '''
+        [route path]
+        [s name] [print]
+        [unpack] ?
+        [r name]
+        '''
+        pass
 
     def add_sliders(self, x, y, sliders):
         '''
@@ -415,8 +433,7 @@ class MaxPatcher:
 
     def add_osc_msg_with_controls(self, x, y, path, parameters, send_obj_id):
         '''
-        TODO: add bang to trigger msg on any param update
-        TODO: add text comments to label each param
+        TODO: add default param value and a loadbang
         x, y = 100, 30
         send_ip, send_port = "127.0.0.1", 4000
         send_id = patcher.add_osc_send(send_ip, send_port, x, 700)
@@ -445,6 +462,12 @@ class MaxPatcher:
         self.connect(msg_id, 0, send_obj_id[0], 0)
         self.connect(msg_id, 0, send_obj_id[1], 0)
         return slider_ids, pack_id, msg_id
+    
+    def add_osc_msg(self, x, y, path, send_obj_id):
+        msg_id = self.add_message(path, x, y+225+self.h)
+        self.connect(msg_id, 0, send_obj_id[0], 0)
+        self.connect(msg_id, 0, send_obj_id[1], 0)
+        return msg_id
 
     def _msg_args(self, args):
         return " ".join(["$"+str(i+1) for i in range(len(args))])
