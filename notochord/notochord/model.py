@@ -435,7 +435,7 @@ class Notochord(nn.Module):
                     probs = [
                         all_probs[...,s.values].sum(-1) * s.weight
                         for s,_ in sq]
-                    # print(f'power_query {m} {sq=} {probs=}')
+                    # print(f'deep_query {m} {sq=} {probs=}')
                     idx = categorical_sample(torch.tensor(probs).log())
                 else:
                     idx = 0
@@ -454,7 +454,7 @@ class Notochord(nn.Module):
                         (dist.cdf(params, r.hi) - dist.cdf(params, r.lo)
                         ) * r.weight
                         for r,_ in sq]
-                    print(f'power_query {m} {probs=}')
+                    # print(f'deep_query {m} {probs=}')
                     idx = categorical_sample(torch.tensor(probs).log())
                 else:
                     idx = 0

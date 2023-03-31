@@ -424,7 +424,7 @@ def main(
             noto_reset()
         if msg.control==5:
             noto_query()
-        if msg.control==5:
+        if msg.control==6:
             noto_mute()
 
     # very basic OSC handling for controls
