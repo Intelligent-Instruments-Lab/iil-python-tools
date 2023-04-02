@@ -13,6 +13,7 @@ class Pixel:
     g: vec1
     rgb: vec3
     rgba: vec4
+    rgba_inv: vec4
     @ti.func
     def rgba_to_g(self):# -> vec1:
         # TODO: rgba_to_g
@@ -89,6 +90,7 @@ class Pixels:
     @ti.func
     def rect(self, x: ti.i32, y: ti.i32, w: ti.i32, h: ti.i32, rgba: vec4):
         # TODO: fill arg
+        # TODO: gradients, lerp with ti.math.mix(x, y, a)
         for i, j in ti.ndrange(w, h):
             self.px.rgba[x+i, y+j] = rgba
     @ti.func
@@ -142,8 +144,8 @@ class Pixels:
     def polygon(self, x: ti.template(), y: ti.template(), rgba: vec4):
         # TODO: fill arg
         # after http://www.dgp.toronto.edu/~mac/e-stuff/point_in_polygon.py
-        x_min, x_max = x.min(), x.max()
-        y_min, y_max = y.min(), y.max()
+        x_min, x_max = ti.cast(x.min(), ti.i32), ti.cast(x.max(), ti.i32)
+        y_min, y_max = ti.cast(y.min(), ti.i32), ti.cast(y.max(), ti.i32)
         l = len(x)
         for i, j in ti.ndrange(x_max-x_min, y_max-y_min):
             p = [x_min+i, y_min+j]
@@ -184,6 +186,10 @@ class Pixels:
                 n -= 1
         return n
     @ti.kernel
+    def invert(self):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba_inv[i,j] = self.px.rgba[i,self.y-1-j]
+    @ti.kernel
     def decay(self):
         for i, j in ti.ndrange(self.x, self.y):
             self.px.rgba[i,j] *= self.evaporate
@@ -197,7 +203,8 @@ class Pixels:
             while self.window.running:
                 with self.lock:
                     f()
-                    self.canvas.set_image(self.get())
+                    self.invert()
+                    self.canvas.set_image(self.px.rgba_inv)
                     self.window.show()
     def __call__(self):
         return self.get()
