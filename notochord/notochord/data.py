@@ -7,19 +7,21 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class MIDIDataset(Dataset):
-    def __init__(self, data_dir, batch_len, transpose=5, speed=0.1, glob='**/*.pkl', test_len=2048):
-        #, clamp_time=(-,10)):
+    def __init__(self, data_dir, batch_len, 
+        transpose=5, speed=0.1, glob='**/*.pkl', test_len=2048):
         """
         """
         super().__init__()
-        self.files = list(Path(data_dir).glob(glob))
+        dirs = data_dir.split(',')
+        self.files = []
+        for d in dirs:
+            self.files.extend(list(Path(d).glob(glob)))
         self.batch_len = batch_len
         self.transpose = transpose
         self.speed = speed
         self.start_token = 128
-        self.n_anon = 32
+        self.n_anon = 32 # this needs to match n_instruments in model.py
         self.prog_start_token = 0
-        # self.clamp_time = clamp_time
         self.testing = False
         self.max_test_len = test_len
         

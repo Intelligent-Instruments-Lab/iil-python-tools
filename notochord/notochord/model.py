@@ -759,8 +759,8 @@ class Notochord(nn.Module):
             'inst': int. id of predicted instrument.
                 1-128 are General MIDI standard melodic instruments
                 129-256 are drumkits for MIDI programs 1-128
-                257-264 are 'anonymous' melodic instruments
-                265-272 are 'anonymous' drums
+                257-288 are 'anonymous' melodic instruments
+                289-320 are 'anonymous' drumkits
             'pitch': int. predicted MIDI number of next note, 0-128.
             'time': float. predicted time to next note in seconds.
             'vel': float. unquantized predicted velocity of next note.
