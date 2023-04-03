@@ -7,21 +7,6 @@ Authors:
   Intelligent Instruments Lab 2023
 """
 
-# TODO: make key bindings visibly click corresponding buttons
-# TODO: make Mute a toggle but Reset a momentary
-
-# TODO: color note by pitch class + register
-# TODO: color instrument 1-128, MEL, DRUM, ANON, ANONDRUM
-# TODO: color time
-# TODO: id prediction as player / noto
-# TODO: unify note log / prediction format
-# TODO: grey out predictions when player or muted notochord
-
-# TODO: controls display panel
-# TODO: MIDI learn
-
-# TODO: held notes display panel
-
 from typing import Optional, Dict
 from numbers import Number
 
@@ -165,9 +150,9 @@ def main(
 
     # default channel:instrument mappings
     if player_config is None:
-        player_config = {1:1} # channel 1: grand piano
+        player_config = {1:265,2:266}
     if noto_config is None:
-        noto_config = {2:257} # channel 2: anon
+        noto_config = {3:267,4:268}
 
     # convert 1-indexed MIDI channels to 0-indexed here
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
@@ -354,12 +339,12 @@ def main(
     def _(msg):
         """CC messages on any channel"""
 
-        if msg.control==1:
-            controls['steer_pitch'] = msg.value/127
-            print(f"{controls['steer_pitch']=}")
-        if msg.control==2:
-            controls['steer_density'] = msg.value/127
-            print(f"{controls['steer_density']=}")
+        # if msg.control==1:
+        #     controls['steer_pitch'] = msg.value/127
+        #     print(f"{controls['steer_pitch']=}")
+        # if msg.control==2:
+        #     controls['steer_density'] = msg.value/127
+        #     print(f"{controls['steer_density']=}")
         if msg.control==3:
             controls['steer_rate'] = msg.value/127
             print(f"{controls['steer_rate']=}")
@@ -449,7 +434,8 @@ def main(
 
     @cleanup
     def _():
-        """end any remaining notes"""
+        """"""
+        pass
         # print(f'cleanup: {notes=}')
         # for (chan,inst,pitch) in history.note_triples:
         # # for (inst,pitch) in notes:
