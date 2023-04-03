@@ -197,12 +197,13 @@ def main(
     # TODO: add arguments for this,
     # and sensible defaults for drums etc
     # inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
-    inst_pitch_map = {
-        265: (41,43),
-        266: (41,43),
-        267: (41,43),
-        268: (41,43),
-    }
+    # inst_pitch_map = {
+    #     265: (41,43),
+    #     266: (41,43),
+    #     267: (41,43),
+    #     268: (41,43),
+    # }
+    pitch_set = (41,43)
 
     # load notochord model
     try:
@@ -337,11 +338,11 @@ def main(
         # held_notes = history.held_inst_pitch_map(all_insts)
 
         steer_time = 1-controls.get('steer_rate', 0.5)
-        steer_pitch = controls.get('steer_pitch', 0.5)
-        steer_density = controls.get('steer_density', 0.5)
+        # steer_pitch = controls.get('steer_pitch', 0.5)
+        # steer_density = controls.get('steer_density', 0.5)
         
         tqt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
-        tqp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
+        # tqp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
 
         # if using nominal time,
         # *subtract* estimated feed latency to min_time; (TODO: really should
@@ -360,19 +361,20 @@ def main(
         # VTIP is better for time interventions,
         # VIPT is better for instrument interventions
         # could decide probabilistically based on value of controls + insts...
-        if insts==all_insts:
-            query_method = noto.query_vtip
-        else:
-            query_method = noto.query_vipt
+        # if insts==all_insts:
+        #     query_method = noto.query_vtip
+        # else:
+        #     query_method = noto.query_vipt
+        query_method = noto.query_tipv_onsets
 
         # print(f'considering {insts} for note_on')
         # use only currently selected instruments
-        note_on_map = {
-            i: set(inst_pitch_map[i])#-set(held_notes[i]) # exclude held notes
-            for i in insts
-        }
+        # note_on_map = {
+            # i: set(inst_pitch_map[i])#-set(held_notes[i]) # exclude held notes
+            # for i in insts
+        # }
         # use any instruments which are currently holding notes
-        note_off_map = {}
+        # note_off_map = {}
         #     i: set(ps)&set(held_notes[i]) # only held notes
         #     for i,ps in inst_pitch_map.items()
         # }
@@ -380,12 +382,20 @@ def main(
         max_t = None if max_time is None else max(max_time, min_time+0.2)
 
         pending.event = query_method(
-            note_on_map, note_off_map,
+            include_pitch=pitch_set,
+            include_inst=list(insts),
             min_time=min_time, max_time=max_t,
             truncate_quantile_time=tqt,
-            truncate_quantile_pitch=tqp,
-            steer_density=steer_density,
+            # truncate_quantile_pitch=tqp,
+            # steer_density=steer_density,
         )
+        # pending.event = query_method(
+        #     note_on_map, note_off_map,
+        #     min_time=min_time, max_time=max_t,
+        #     truncate_quantile_time=tqt,
+        #     truncate_quantile_pitch=tqp,
+        #     steer_density=steer_density,
+        # )
 
         # display the predicted event
         tui(prediction=pending.event)

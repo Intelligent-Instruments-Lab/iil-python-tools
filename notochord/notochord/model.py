@@ -398,11 +398,24 @@ class Notochord(nn.Module):
             sample = categorical_sample
 
         # Query.then can be:
+
         # None (no further sub-queries)
-        # str (no firther sub-queries, but set the 'path' property of the event)
-        # 
+        # or str (no further sub-queries, set the 'path' property of the event)
+
+        # Query describing what to do next
+
+        # pair of Number, Query
+        # setting a deterministic value for the current query,
+        # and the query to execute next
+
+        # list of Range, Query pairs
+        # or list of Subset, Query pairs
+        #    describing what to do next given where the sampled value falls
+        #    Range and Subset can also carry weights
+
 
         with torch.inference_mode():
+            #
             if sq is None or isinstance(sq, str) or isinstance(sq, Query):
                 # this is the final query (sq is None or a path tag)
                 # or there are no cases, just proceed to next subquery
@@ -413,8 +426,13 @@ class Notochord(nn.Module):
             elif len(sq)==0:
                 raise ValueError(f"subquery has no cases: {sq}")
             
-            elif len(sq)==1 and isinstance(sq[0], Number):
-                # deterministic single value case
+            # deterministic single value cases
+            # elif len(sq)==1 and len(sq[0])==3 and isinstance(sq[0][0], Number):
+            #     # singleton list case
+            #     key, action = sq[0]
+            #     result = key
+            elif len(sq)==2 and isinstance(sq[0], Number):
+                # bare pair case
                 key, action = sq
                 result = key
 
@@ -474,6 +492,38 @@ class Notochord(nn.Module):
             else:
                 event['path'] = action
                 return event
+            
+    def query_tipv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'time',
+            truncate=(min_time or -np.inf, max_time or np.inf), 
+            truncate_quantile=truncate_quantile_time,
+            then=Query(
+                'inst',
+                whitelist=include_inst,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
+
 
     def query_vtip(self,
             note_on_map:Dict[int,List[int]], 

@@ -174,13 +174,18 @@ def lock(f):
             f(*a, **kw)
     return decorated
 
+def start_audio():
+    for a in Audio.instances:
+        if not a.stream.active:
+            a.stream.start()
+
 def run(main=None):
     try:
         if main is not None:
             fire.Fire(main)
 
-        for a in Audio.instances:
-            a.stream.start()
+        # non-blocking main case:
+        start_audio()
 
         # enter a loop if there is not one in main
         while True:
