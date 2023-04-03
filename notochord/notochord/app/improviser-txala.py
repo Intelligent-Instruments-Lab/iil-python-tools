@@ -313,7 +313,8 @@ def main(
         else:
             insts = all_insts
 
-        query_method = noto.query_tipv_onsets
+        # query_method = noto.query_tipv_onsets
+        query_method = noto.query_itpv_onsets
 
         max_t = None if max_time is None else max(max_time, min_time+0.2)
 
@@ -322,6 +323,7 @@ def main(
             include_inst=list(insts),
             min_time=min_time, max_time=max_t,
             truncate_quantile_time=tqt,
+            min_vel=80, max_vel=120
         )
         # display the predicted event
         tui(prediction=pending.event)

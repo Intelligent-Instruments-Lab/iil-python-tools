@@ -523,6 +523,37 @@ class Notochord(nn.Module):
             )
         )
         return self.deep_query(q)
+    
+    def query_itpv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'inst',
+            whitelist=include_inst,
+            then=Query(
+                'time',
+                truncate=(min_time or -np.inf, max_time or np.inf), 
+                truncate_quantile=truncate_quantile_time,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
 
 
     def query_vtip(self,
