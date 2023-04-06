@@ -59,10 +59,10 @@ class NotoTUI(TUI):
 ### end def TUI components###
 
 def main(
-    checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+    checkpoint="artifacts/noto-txala-011-0020.ckpt", # Notochord checkpoint
     player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
     noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
-    pitch_set=(41,43), # MIDI pitches used
+    pitch_set=(41,43,45), # MIDI pitches used
 
     initial_mute=False, # start with Notochord muted
     initial_query=False, # let Notochord start playing immediately
@@ -79,6 +79,7 @@ def main(
     
     max_time=None, # max time between events
     nominal_time=False, #feed Notochord with nominal dt instead of actual
+    backoff_time=1e-3, #time to wait when a predicted player event doesn't happen
 
     osc_port=None, # if supplied, listen for OSC to set controls on this port
     osc_host='', # leave this as empty string to get all traffic on the port
@@ -150,9 +151,11 @@ def main(
 
     # default channel:instrument mappings
     if player_config is None:
-        player_config = {1:265,2:266}
+        # player_config = {1:265,2:266}
+        player_config = {1:290,2:291}
     if noto_config is None:
-        noto_config = {3:267,4:268}
+        # noto_config = {3:267,4:268}
+        noto_config = {3:292,4:293}
 
     # convert 1-indexed MIDI channels to 0-indexed here
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
@@ -270,7 +273,7 @@ def main(
 
     # query Notochord for a new next event
     # @lock
-    def noto_query():
+    def noto_query(delay=0):
 
         counts = history.inst_counts(
             n=n_recent, insts=noto_map.insts | player_map.insts)
@@ -289,7 +292,7 @@ def main(
         #   set no min time when querying, use stopwatch when re-querying...)
         # if using actual time, *add* estimated query latency
         time_offset = -5e-3 if nominal_time else 10e-3
-        min_time = stopwatch.read()+time_offset
+        min_time = stopwatch.read()+time_offset+delay
 
         # balance_sample: note-ons only from instruments which have played less
         bal_insts = set(counts.index[counts <= counts.min()+n_margin])
@@ -428,9 +431,12 @@ def main(
             if pending.event['inst'] in noto_map.insts:
                 # prediction happens
                 noto_event()
+                delay = 0
+            else:
+                delay = backoff_time
             # query for new prediction
             if auto_query:
-                noto_query()
+                noto_query(delay=delay)
 
     @cleanup
     def _():

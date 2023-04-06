@@ -31,7 +31,7 @@ from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lo
 from rich.panel import Panel
 from rich.pretty import Pretty
 from textual.reactive import reactive
-from textual.widgets import Header, Footer, Static, Button, TextLog
+from textual.widgets import Header, Footer, Static, Button, TextLog, Switch, Checkbox
 
 ### def TUI components ###
 class NotoLog(TextLog):
@@ -49,9 +49,17 @@ class NotoPrediction(Static):
             s = f"\tinstrument: {evt['inst']:3d}    pitch: {evt['pitch']:3d}    time: {int(evt['time']*1000):4d} ms    velocity:{int(evt['vel']):3d}"
         self.update(Panel(s, title='prediction'))
 
+# class NotoToggle(Static):
+#     def compose(self):
+#         yield Button("Mute", id="mute", variant="error")
+#         yield Switch()
+
 class NotoControl(Static):
     def compose(self):
+        # yield NotoToggle()
+        # yield Checkbox("Mute", id="mute")
         yield Button("Mute", id="mute", variant="error")
+        yield Button("Sustain", id="sustain", variant="primary")
         yield Button("Query", id="query")
         yield Button("Reset", id="reset", variant='warning')
 
@@ -60,6 +68,7 @@ class NotoTUI(TUI):
 
     BINDINGS = [
         ("m", "mute", "Mute Notochord"),
+        ("s", "sustain", "Mute without ending notes"),
         ("q", "query", "Re-query Notochord"),
         ("r", "reset", "Reset Notochord")]
 
@@ -285,15 +294,29 @@ def main(
             noto_query()
 
     # @lock
-    def noto_mute():
+    def noto_mute(sustain=False):
+        tui.query_one('#mute').label = 'UNMUTE' if pending.gate else 'MUTE'
+        # if sustain:
+        tui.query_one('#sustain').label = 'END SUSTAIN' if pending.gate else 'SUSTAIN'
+
         pending.gate = not pending.gate
-        print('UNMUTE' if pending.gate else 'MUTE')
+
+        if sustain:
+            print('END SUSTAIN' if pending.gate else 'SUSTAIN')
+        else:
+            print('UNMUTE' if pending.gate else 'MUTE')
         # if unmuting, we're done
         if pending.gate:
+            if sustain:
+                noto_query()
             return
         # cancel pending predictions
         pending.event = None
         tui(prediction=pending.event)
+
+        if sustain:
+            return
+        
         # end+feed all held notes
         for (chan,inst,pitch) in history.note_triples:
             if chan in noto_map:
@@ -515,6 +538,10 @@ def main(
     @tui.set_action
     def mute():
         noto_mute()
+
+    @tui.set_action
+    def sustain():
+        noto_mute(sustain=True)
     
     @tui.set_action
     def reset():
