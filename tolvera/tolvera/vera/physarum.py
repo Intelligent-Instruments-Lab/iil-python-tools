@@ -113,7 +113,9 @@ def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=400
             "/tolvera/physarum/set/vel": particles.osc_set_vel
         }, receive_count=10,
         sends={
-            "/tolvera/physarum/get/pos/all": particles.osc_get_pos_all
+            "/tolvera/physarum/get/pos/all": particles.osc_get_pos_all,
+            "/tolvera/physarum/get/pos/": particles.osc_get_pos,
+            "/tolvera/physarum/get/vel/": particles.osc_get_vel
         }, send_count=60
     )
 
@@ -121,6 +123,7 @@ def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=400
         # osc_update() 
         update()
         physarum(particles)
+        particles.activity_decay()
         pixels.set(physarum.trail.px)
 
     pixels.show(render)

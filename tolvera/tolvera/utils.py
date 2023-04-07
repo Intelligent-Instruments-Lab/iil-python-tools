@@ -223,6 +223,7 @@ class OSCUpdaters:
 class MaxPatcher:
     '''
     TODO: copy-paste using stdout
+    TODO: replace OSC wires with send/receive objects
     
     example:
     ```py
