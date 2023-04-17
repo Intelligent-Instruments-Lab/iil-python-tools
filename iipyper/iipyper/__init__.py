@@ -80,12 +80,18 @@ class Stopwatch:
         if punch:
             self.punch()
 
-    def punch(self):
-        """return elapsed time since last punch, then punch"""
-        t = time.perf_counter_ns()
+    def punch(self, latency=0):
+        """return elapsed time since last punch, then punch
+        
+        Args:
+            latency: punch `latency` seconds in the past, 
+                unless it would be before the previous punch
+        """
+        t = time.perf_counter_ns() - latency
         if self.t is None:
             dt_ns = 0
         else:
+            t = max(self.t, t)
             dt_ns = t - self.t
         self.t = t
         return dt_ns * 1e-9

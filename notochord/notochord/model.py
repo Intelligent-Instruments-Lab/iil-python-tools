@@ -365,7 +365,7 @@ class Notochord(nn.Module):
             self.h_query = None
 
     # TODO: add end prediction to deep_query
-    def deep_query(self, query):
+    def deep_query(self, query, predict_end=True):
         """flexible querying with nested Query objects.
         see query_vtip for an example.
 
@@ -375,8 +375,21 @@ class Notochord(nn.Module):
         if self.h_query is None:
             with torch.inference_mode():
                 self.h_query = self.h_proj(self.h)
-        return self._deep_query(query, hidden=self.h_query[:,0], event={})
+        event = self._deep_query(
+            query, hidden=self.h_query[:,0], event={})
         
+        if predict_end:
+            # print('END')
+            # print(f'{self.h}')
+            with torch.inference_mode():
+                end_params = self.end_proj(self.h)
+                event['end'] = end_params.softmax(-1)[...,1].item()
+                # event['end'] = D.Categorical(logits=end_params).sample().item()
+        else:
+            event['end'] = 0#torch.zeros(self.h.shape[:-1])
+
+        return event
+    
     def _deep_query(self, query, hidden, event):
         m = query.modality
         sq = query.then
@@ -488,7 +501,8 @@ class Notochord(nn.Module):
             # embed, add to hidden, recurse into subquery
             if isinstance(action, Query):
                 emb = embed(result)
-                return self._deep_query(action, hidden+emb, event)
+                hidden = hidden + emb
+                return self._deep_query(action, hidden, event)
             else:
                 event['path'] = action
                 return event
@@ -499,6 +513,7 @@ class Notochord(nn.Module):
         include_pitch=None,
         truncate_quantile_time=None,
         truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
         min_vel=None, max_vel=None
         ):
         """
@@ -508,6 +523,7 @@ class Notochord(nn.Module):
             'time',
             truncate=(min_time or -np.inf, max_time or np.inf), 
             truncate_quantile=truncate_quantile_time,
+            weight_top_p=rhythm_temp, component_temp=timing_temp,
             then=Query(
                 'inst',
                 whitelist=include_inst,
@@ -530,6 +546,7 @@ class Notochord(nn.Module):
         include_pitch=None,
         truncate_quantile_time=None,
         truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
         min_vel=None, max_vel=None
         ):
         """
@@ -542,6 +559,7 @@ class Notochord(nn.Module):
                 'time',
                 truncate=(min_time or -np.inf, max_time or np.inf), 
                 truncate_quantile=truncate_quantile_time,
+                weight_top_p=rhythm_temp, component_temp=timing_temp,
                 then=Query(
                     'pitch',
                     whitelist=include_pitch,
