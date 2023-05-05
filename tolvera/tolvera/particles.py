@@ -1,8 +1,5 @@
 import taichi as ti
 
-from iipyper import OSC, run, repeat, cleanup
-from iipyper.state import _lock
-
 # TODO: color palette
 # FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 
@@ -67,8 +64,10 @@ class Particles:
         self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
         self.x = x
         self.y = y
-        self.turn_factor = turn_factor
-        self.wall_margin = wall_margin
+        self.turn_factor = ti.field(ti.f32, shape=())
+        self.turn_factor[None] = turn_factor
+        self.wall_margin = ti.field(ti.f32, shape=())
+        self.wall_margin[None] = wall_margin
         self.field = Particle.field(shape=(self.max_n))
         self.substep = substep
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
@@ -99,7 +98,7 @@ class Particles:
     @ti.func
     def speciate(self):
         for i in range(self.species_n):
-            self.species_c[i] = [ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
+            self.species_c[i] = [ti.random(ti.f32)*ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
         for i in range(self.max_n):
             s = i % self.species_n
             self.field[i].species = s
@@ -130,7 +129,7 @@ class Particles:
     @ti.func
     def wall_repel(self, i):
         p = self.field[i]
-        w, t = self.wall_margin, self.turn_factor
+        w, t = self.wall_margin[None], self.turn_factor[None]
         x, y = p.pos[0], p.pos[1]
         if  (x > self.x-w): # left
             self.field.vel[i][0] -= t
@@ -182,20 +181,20 @@ class Particles:
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
     @ti.kernel
     def osc_set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
-        for i in range(self.max_n):
-            if self.field[i].species == i:
-                self.field[i].speed = speed
-                self.field[i].max_speed = max_speed
+        for j in range(self.max_n):
+            if self.field[j].species == i:
+                self.field[j].speed = speed
+                self.field[j].max_speed = max_speed
     @ti.kernel
     def osc_set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
-        for i in range(self.max_n):
-            if self.field[i].species == i:
-                self.field[i].rgba = [r,g,b,1]
+        for j in range(self.max_n):
+            if self.field[j].species == i:
+                self.field[j].rgba = [r,g,b,1]
     @ti.kernel
     def osc_set_species_size(self, i: ti.i32, size: ti.f32):
-        for i in range(self.max_n):
-            if self.field[i].species == i:
-                self.field[i].size = size
+        for j in range(self.max_n):
+            if self.field[j].species == i:
+                self.field[j].size = size
     def osc_set_pos(self, i, x, y):
         self.field[i].pos = [x, y]
     def osc_set_vel(self, i, x, y):
@@ -206,8 +205,8 @@ class Particles:
     def osc_set_size(self, i, s):
         self.field[i].size = s
     def osc_set_wall_repel(self, m, t):
-        self.wall_margin = m
-        self.turn_factor = t
+        self.wall_margin[None] = m
+        self.turn_factor[None] = t
     def osc_get_pos(self, i):
         return self.field[i].pos.to_numpy().tolist()
     def osc_get_vel(self, i):
