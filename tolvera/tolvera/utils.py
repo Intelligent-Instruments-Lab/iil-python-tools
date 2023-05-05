@@ -2,6 +2,8 @@
 TODO: send args? maybe this is only useful for sending repeated things with fixed args.
 '''
 import json
+import typing
+from typing import Any
 
 class Updater():
     '''
@@ -224,6 +226,12 @@ class MaxPatcher:
     '''
     TODO: copy-paste using stdout
     TODO: replace OSC wires with send/receive objects
+    TODO: add scale objects before send and after receive
+    TODO: add parameter range text labels
+    TODO: add default values via loadbangs
+    TODO: manage x,y insertion point
+    TODO: rows based on max width
+    TODO: move udpsend/udpreceive to the top left
     
     example:
     ```py
@@ -240,7 +248,7 @@ class MaxPatcher:
     patcher.save("controller")
     ```
     '''
-    def __init__(self, x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.3') -> None:
+    def __init__(self, x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
         self.patch = {
             "patcher": 	{
                 "fileversion": 1,
@@ -387,20 +395,25 @@ class MaxPatcher:
         return int(obj_str[4:])
 
     def add_osc_send(self, ip, port, x, y, print=True, print_label=None):
+        box_id_0 = self.add_object("r send", 0, 1, x, y-25)
         box_id = self.add_object("udpsend "+ip+" "+str(port), 1, 0, x, y)
         if print:
             text = "print" if print_label is None else "print "+print_label
-            print_id = self.add_object(text, 1, 0, x+150, y)
-            return box_id, print_id
+            print_id = self.add_object(text, 1, 0, x+50, y-25)
+            self.connect(box_id_0, 0, box_id, 0)
+            self.connect(box_id_0, 0, print_id, 0)
+            return box_id_0
         return box_id
     
     def add_osc_receive(self, port, x, y, print=True, print_label=None):
+        box_id_0 = self.add_object("s receive", 0, 1, x, y+25)
         box_id = self.add_object("udpreceive "+str(port), 1, 1, x, y)
         if print:
             text = "print" if print_label is None else "print "+print_label
-            print_id = self.add_object(text, 1, 0, x+100, y)
+            print_id = self.add_object(text, 1, 0, x+60, y+25)
             self.connect(box_id, 0, print_id, 0)
-            return box_id, print_id
+            self.connect(box_id, 0, box_id_0, 0)
+            return box_id_0
         return box_id
     
     def add_osc_route(self, port, x, y, print=True, print_label=None):
@@ -421,16 +434,24 @@ class MaxPatcher:
         slider_ids = []
         float_ids = []
         comment_ids = []
+        y_off = 0
         for i, s in enumerate(sliders):
+            y_off = 0
             x_i = x+(i*52.0)
-            comment_id = self.add_comment(s["label"], x_i, y)
-            slider_id = self.add_slider(x_i, y+self.h,
+            s_max = s["min_val"]+s["size"] if s["data"] == "float" else s["min_val"]+s["size"]-1
+            comment_id1 = self.add_comment(f'{s["label"]}', x_i, y)
+            y_off+=15
+            comment_id2 = self.add_comment(f'{s["min_val"]}-{s_max}', x_i, y+y_off)
+            y_off+=self.h
+            slider_id = self.add_slider(x_i, y+y_off,
                 s["min_val"], s["size"], float=s["data"]=="float")
-            float_id = self.add_box("float", 1, 2, x_i, y+self.h+150, 50)
-            comment_ids.append(comment_id)
+            y_off+=150
+            float_id = self.add_box("float", 1, 2, x_i, y+y_off, 50)
+            comment_ids.append(comment_id1)
+            comment_ids.append(comment_id2)
             slider_ids.append(slider_id)
             float_ids.append(float_id)
-        return slider_ids, float_ids, comment_ids
+        return slider_ids, float_ids, comment_ids, y_off
 
     def add_osc_msg_with_controls(self, x, y, path, parameters, send_obj_id):
         '''
@@ -445,13 +466,15 @@ class MaxPatcher:
         ], send_id)
         '''
         comment_id = self.add_comment(path, x, y)
-        slider_ids, float_ids, comment_ids = self.add_sliders(x, y+self.h, parameters)
+        slider_ids, float_ids, comment_ids, y_off = self.add_sliders(x, y+self.h, parameters)
+        y_off+=50
         pack_id = self.add_object(
-            "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+200+self.h)
+            "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
         pack_width = self.get_box_by_id(pack_id)["box"]["patching_rect"][2]
-        bang_id = self.add_bang(x+pack_width+10, y+200+self.h)
+        bang_id = self.add_bang(x+pack_width+10, y+y_off)
+        y_off+=25
         msg_id = self.add_message(
-            path+" "+self._msg_args(parameters), x, y+225+self.h)
+            path+" "+self._msg_args(parameters), x, y+y_off)
         [self.connect(slider_ids[i], 0, float_ids[i], 0)
             for i in range(len(parameters))]
         [self.connect(slider_ids[i+1], 0, bang_id, 0)
@@ -460,14 +483,15 @@ class MaxPatcher:
             for i in range(len(parameters))]
         self.connect(bang_id, 0, pack_id, 0)
         self.connect(pack_id, 0, msg_id, 0)
-        self.connect(msg_id, 0, send_obj_id[0], 0)
-        self.connect(msg_id, 0, send_obj_id[1], 0)
+        y_off+=25
+        send_id = self.add_object("s send", 1, 0, x, y+y_off)
+        self.connect(msg_id, 0, send_id, 0)
         return slider_ids, pack_id, msg_id
     
     def add_osc_msg(self, x, y, path, send_obj_id):
         msg_id = self.add_message(path, x, y+225+self.h)
-        self.connect(msg_id, 0, send_obj_id[0], 0)
-        self.connect(msg_id, 0, send_obj_id[1], 0)
+        send_id = self.add_object("s send", 1, 0, x, y+250+self.h)
+        self.connect(msg_id, 0, send_id, 0)
         return msg_id
 
     def _msg_args(self, args):
@@ -485,22 +509,101 @@ class MaxPatcher:
                     arg_types.append("s")
         return " ".join(arg_types)
 
-class OSCMaxPatcher():
+class OSCMap:
     '''
-    https://github.com/Intelligent-Instruments-Lab/iil-python-tools/issues/43
+    OSCMap maps OSC messages to functions
+    It creates a Max/MSP patcher that can be used to control the OSCMap
+    It uses OSCSendUpdater and OSCReceiveUpdater to decouple incoming messages
     '''
-    def __init__(self, osc, sends, receives, send_count, receive_count, client) -> None:
-        self.osc_updaters = OSCUpdaters(osc, sends, receives, send_count, receive_count, client)
+    def __init__(self, osc, client_name="client", max_patch_filepath="tolvera_osc") -> None:
+        self.osc = osc
+        self.client_name = client_name
+        self.client_address, self.client_port = self.osc.client_names[self.client_name]
+        self.dict = {'send': {}, 'receive': {}}
+        self.patcher_filepath = max_patch_filepath
+        self.init_patcher()
+    
+    def init_patcher(self):
         self.patcher = MaxPatcher()
-        self.host, self.port = osc.host, osc.port
-        self.patcher.add_osc_send(self.host, self.port, 100, 100)
-        self.add_osc_to_patcher()
-    def add_osc_to_patcher(self):
-        # print(self.osc_updaters.sends.sends[0].address)
-        for i, send in enumerate(self.osc_updaters.sends.sends):
-            '''
-            Need method names, args, and types
-            Also need arg parameter ranges (min, max)
-            '''
-            print(send.address, type(send.f))
-            # self.patcher.add_osc_msg_with_controls(100, 100, send.path, send.parameters, 0)
+        self.p_x, self.p_y = 30, 30 # insertion point
+        self.patcher_ids = {}
+        self.patcher_ids['send_id'] = self.patcher.add_osc_send(self.osc.host, self.osc.port, self.p_x, 700, print_label="sent")
+        self.patcher_ids['receive_id'] = self.patcher.add_osc_receive(self.client_port, self.p_x+250, 700, print_label="received")
+        self.save_patcher()
+    
+    def save_patcher(self, filepath=None):
+        if filepath is None:
+            filepath = self.patcher_filepath
+        self.patcher.save(filepath)
+
+    def add_func_to_osc_map(self, func, kwargs):
+        n = func.__name__
+        address = '/'+n.replace('_', '/')
+        params = {k: v for k, v in kwargs.items() \
+                    if k != 'io' and k != 'count'}
+        f = {'f': func, 'address': address, 'params': params}
+        if 'io' not in kwargs:
+            raise ValueError('io must be specified')
+        if 'count' not in kwargs:
+            raise ValueError('count must be specified')
+        if kwargs['io'] == 'send':
+            f['updater'] = OSCSendUpdater(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
+            self.dict['send'][n] = f
+        elif kwargs['io'] == 'receive':
+            f['updater'] = OSCReceiveUpdater(self.osc, address, f=func, count=kwargs['count'])
+            self.dict['receive'][n] = f
+        else:
+            raise ValueError('io must be send or receive')
+        return f
+
+    def add_func_to_patcher(self, func, io):
+        f = self.dict[io][func.__name__]
+        if io == 'send':
+            self.add_send_to_patcher(f)
+        elif io == 'receive':
+            self.add_receive_to_patcher(f)
+    
+    def add_send_to_patcher(self, f):
+        self.save_patcher()
+
+    def add_receive_to_patcher(self, f):
+        hints = typing.get_type_hints(f['f'])
+        f_p = f['params']
+        params = []
+        if len(f_p) == 0:
+            self.patcher.add_osc_msg(self.p_x, self.p_y, f['address'], self.patcher_ids['send_id'])
+        else:
+            for p in f_p:
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label": p, 
+                    "data": hints[p].__name__, 
+                    "min_val": p_min, 
+                    "size": p_max-p_min
+                })
+            self.patcher.add_osc_msg_with_controls(
+                self.p_x, self.p_y, 
+                f['address'], params, self.patcher_ids['send_id'])
+        self.p_x += max(len(params) * 52.0 + 25.0, len(f['address'])*6.0 + 25.0)
+        self.save_patcher()
+    
+    def add(self, **kwargs):
+        def decorator(func):
+            def wrapper(*args):
+                self.add_func_to_osc_map(func, kwargs)
+                self.add_func_to_patcher(func, kwargs['io'])
+                # TODO: type checking/scaling/clamping of params
+                # modified_kwargs = {key: decorator_kwargs.get(key, value) for key, value in kwargs.items()}
+                return func(*args)
+            # call wrapped function on declaration to add to map
+            default_args = [kwargs[a][0] for a in kwargs \
+                            if a != 'io' and a != 'count']
+            wrapper(*default_args)
+            return wrapper
+        return decorator
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        for k, v in self.dict['send'].items():
+            v['updater']()
+        for k, v in self.dict['receive'].items():
+            v['updater']()
