@@ -484,7 +484,7 @@ class MaxPatcher:
         [r path_arg_name]
         sliders
         |                   |
-        [pack $1 $2 $3 ...] [bang]
+        [pak $1 $2 $3 ...]
         |
         [msg /path $1 $2 $3 ...]
         |
@@ -504,11 +504,10 @@ class MaxPatcher:
         # sliders
         slider_ids, slider_float_ids, _y_off = self.add_sliders(x, y+y_off, parameters)
         y_off+=_y_off+50
-        # [pack $1 $2 $3 ...] [bang]
+        # [pak $1 $2 $3 ...]
         pack_id = self.add_object(
-            "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
+            "pak "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
         pack_width = self.get_box_by_id(pack_id)["box"]["patching_rect"][2]
-        bang_id = self.add_bang(x+pack_width+10, y+y_off)
         # [msg /path $1 $2 $3 ...]
         y_off+=25
         msg_id = self.add_message(
@@ -519,9 +518,7 @@ class MaxPatcher:
         # connections
         [self.connect(receive_ids[i], 0, slider_ids[i], 0) for i in range(len(parameters))]
         [self.connect(slider_ids[i], 0, slider_float_ids[i], 0) for i in range(len(parameters))]
-        [self.connect(slider_ids[i+1], 0, bang_id, 0) for i in range(len(parameters)-1)]
         [self.connect(slider_float_ids[i], 0, pack_id, i) for i in range(len(parameters))]
-        self.connect(bang_id, 0, pack_id, 0)
         self.connect(pack_id, 0, msg_id, 0)
         self.connect(msg_id, 0, send_id, 0)
         return slider_ids, pack_id, msg_id
