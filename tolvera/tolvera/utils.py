@@ -503,7 +503,7 @@ class MaxPatcher:
 
         # sliders
         slider_ids, slider_float_ids, _y_off = self.add_sliders(x, y+y_off, parameters)
-        y_off+=_y_off+50
+        y_off+=_y_off+25
         # [pak $1 $2 $3 ...]
         pack_id = self.add_object(
             "pak "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
