@@ -232,21 +232,7 @@ class MaxPatcher:
     TODO: manage x,y insertion point
     TODO: rows based on max width
     TODO: move udpsend/udpreceive to the top left
-    
-    example:
-    ```py
-    patcher = MaxPatcher()
-    x = 100
-    y = 30
-    send_ip, send_port = "127.0.0.1", 4000
-    send_id = patcher.add_osc_send(send_ip, send_port, x, 700)
-    slider_ids, pack_id, msg_id = patcher.add_osc_msg_with_controls(x, 100, \
-        "/tolvera/particles/set", [
-            { "data": "float", "min_val": 0.0, "size": 1.0 },
-            { "data": "float", "min_val": 0.0, "size": 1.0 }
-        ], send_id)
-    patcher.save("controller")
-    ```
+    TODO: dict of object ids
     '''
     def __init__(self, x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
         self.patch = {
@@ -395,11 +381,11 @@ class MaxPatcher:
         return int(obj_str[4:])
 
     def add_osc_send(self, ip, port, x, y, print=True, print_label=None):
-        box_id_0 = self.add_object("r send", 0, 1, x, y-25)
-        box_id = self.add_object("udpsend "+ip+" "+str(port), 1, 0, x, y)
+        box_id_0 = self.add_object("r send", 0, 1, x, y)
+        box_id = self.add_object("udpsend "+ip+" "+str(port), 1, 0, x, y+25)
         if print:
             text = "print" if print_label is None else "print "+print_label
-            print_id = self.add_object(text, 1, 0, x+50, y-25)
+            print_id = self.add_object(text, 1, 0, x+50, y)
             self.connect(box_id_0, 0, box_id, 0)
             self.connect(box_id_0, 0, print_id, 0)
             return box_id_0
@@ -430,6 +416,11 @@ class MaxPatcher:
         sliders = [
           { 'label': 'x', data: 'float', min_val: 0.0, size: 0.0 },
         ]
+        [comment arg_name]
+        [comment type min-max]
+        [slider] ...
+        |
+        [number] ...
         '''
         slider_ids = []
         float_ids = []
@@ -453,38 +444,44 @@ class MaxPatcher:
             float_ids.append(float_id)
         return slider_ids, float_ids, comment_ids, y_off
 
-    def add_osc_send_with_controls(self, x, y, path, parameters, send_obj_id):
+    def add_osc_send_with_controls(self, x, y, path, parameters):
+        # TODO: add default param value and a loadbang
         '''
-        TODO: add default param value and a loadbang
-        x, y = 100, 30
-        send_ip, send_port = "127.0.0.1", 4000
-        send_id = patcher.add_osc_send(send_ip, send_port, x, 700)
-        slider_ids, pack_id, msg_id = patcher.add_osc_msg_with_controls(x, 100, \
-        "/tolvera/particles/set", [
-            { "label": "x", data": "float", "min_val": 0.0, "size": 1.0 },
-            { "label": "y", data": "float", "min_val": 0.0, "size": 1.0 }
-        ], send_id)
+        [comment path]
+        sliders
+        |                   |
+        [pack $1 $2 $3 ...] [bang]
+        |
+        [msg /path $1 $2 $3 ...]
+        |
+        [s send]
         '''
-        comment_id = self.add_comment(path, x, y)
-        slider_ids, float_ids, comment_ids, y_off = self.add_sliders(x, y+self.h, parameters)
+        # [comment path]
+        path_comment_id = self.add_comment(path, x, y)
+        # sliders
+        slider_ids, slider_float_ids, slider_comment_ids, y_off = self.add_sliders(x, y+self.h, parameters)
         y_off+=50
+        # [pack $1 $2 $3 ...] [bang]
         pack_id = self.add_object(
             "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
         pack_width = self.get_box_by_id(pack_id)["box"]["patching_rect"][2]
         bang_id = self.add_bang(x+pack_width+10, y+y_off)
+        # [msg /path $1 $2 $3 ...]
         y_off+=25
         msg_id = self.add_message(
             path+" "+self._msg_args(parameters), x, y+y_off)
-        [self.connect(slider_ids[i], 0, float_ids[i], 0)
+        # [s send]
+        y_off+=25
+        send_id = self.add_object("s send", 1, 0, x, y+y_off)
+        # connections
+        [self.connect(slider_ids[i], 0, slider_float_ids[i], 0)
             for i in range(len(parameters))]
         [self.connect(slider_ids[i+1], 0, bang_id, 0)
             for i in range(len(parameters)-1)]
-        [self.connect(float_ids[i], 0, pack_id, i)
+        [self.connect(slider_float_ids[i], 0, pack_id, i)
             for i in range(len(parameters))]
         self.connect(bang_id, 0, pack_id, 0)
         self.connect(pack_id, 0, msg_id, 0)
-        y_off+=25
-        send_id = self.add_object("s send", 1, 0, x, y+y_off)
         self.connect(msg_id, 0, send_id, 0)
         return slider_ids, pack_id, msg_id
     
@@ -499,6 +496,59 @@ class MaxPatcher:
         msg_id = self.add_message(path, x, y+250+self.h)
         self.connect(receive_id, 0, msg_id, 0)
         return msg_id
+    
+    def add_osc_receive_with_controls(self, x, y, path, parameters):
+        # TODO: add default param value and a loadbang
+        '''
+        [comment path]
+        [r receive]
+        |
+        [route /path]
+        |                  |
+        [unpack f f f ...] [print /path]
+        |
+        [slider] ...
+        |
+        [number] ...
+        |
+        [s arg_name]
+        [comment arg_name]
+        [comment type min-max]
+        '''
+        # [comment path]
+        y_off = 0
+        path_comment_id = self.add_comment(path, x, y+y_off)
+        
+        # [r receive]
+        y_off+=25
+        receive_id = self.add_object("r receive", 0, 1, x, y+y_off)
+
+        # [route /path]
+        y_off+=25
+        route_id = self.add_object("route "+path, 1, 1, x, y+y_off)
+
+        # [unpack f f f ...] [print /path]
+        y_off+=25
+        unpack_id = self.add_object("unpack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
+        unpack_width = self.get_box_by_id(unpack_id)["box"]["patching_rect"][2]
+        print_id = self.add_object("print "+path, 1, 0, x+unpack_width+10, y+y_off)
+
+        # sliders
+        slider_ids, float_ids, comment_ids, _y_off = self.add_sliders(x, y+y_off+self.h, parameters)
+
+        # [s arg_name]
+        y_off+=_y_off+50
+        send_ids = [self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'], 1, 0, x+i*52.0, y+y_off+i*25) for i, p in enumerate(parameters)]
+        
+        # connections
+        self.connect(receive_id, 0, route_id, 0)
+        self.connect(route_id, 0, unpack_id, 0)
+        self.connect(route_id, 0, print_id, 0)
+        [self.connect(unpack_id, i, slider_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(slider_ids[i], 0, float_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(float_ids[i], 0, send_ids[i], 0) for i in range(len(parameters))]
+
+        return slider_ids, unpack_id
 
     def _msg_args(self, args):
         return " ".join(["$"+str(i+1) for i in range(len(args))])
@@ -532,11 +582,11 @@ class OSCMap:
     def init_patcher(self):
         # TODO: Refactor p_x, p_y into MaxPatcher
         self.patcher = MaxPatcher()
-        self.s_x, self.s_y = 30, 30 # insertion point
-        self.r_x, self.r_y = 30, 300 # insertion point
+        self.s_x, self.s_y = 30, 100 # insertion point
+        self.r_x, self.r_y = 30, 450 # insertion point
         self.patcher_ids = {}
-        self.patcher_ids['send_id'] = self.patcher.add_osc_send(self.osc.host, self.osc.port, self.s_x, 700, print_label="sent")
-        self.patcher_ids['receive_id'] = self.patcher.add_osc_receive(self.client_port, self.s_x+250, 700, print_label="received")
+        self.patcher_ids['send_id'] = self.patcher.add_osc_send(self.osc.host, self.osc.port, self.s_x, 30, print_label="sent")
+        self.patcher_ids['receive_id'] = self.patcher.add_osc_receive(self.client_port, self.s_x+150, 30, print_label="received")
         self.save_patcher()
     
     def save_patcher(self, filepath=None):
@@ -572,11 +622,19 @@ class OSCMap:
             self.add_receive_to_patcher(f)
     
     def add_send_to_patcher(self, f):
-        hints = typing.get_type_hints(f['f'])
+        hints = typing.get_type_hints(f['f'])['return'].__args__
         f_p = f['params']
         params = []
         if len(f_p) == 0:
             self.patcher.add_osc_receive_msg(self.r_x, self.r_y, f['address'])
+        else:
+            for i, p in enumerate(f_p):
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label":   p,     "data": hints[i].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
+                })
+            self.patcher.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
         self.r_x += max(len(params) * 52.0 + 25.0, len(f['address'])*6.0 + 25.0)
         self.save_patcher()
 
@@ -590,14 +648,10 @@ class OSCMap:
             for p in f_p:
                 p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
                 params.append({
-                    "label": p, 
-                    "data": hints[p].__name__, 
-                    "min_val": p_min, 
-                    "size": p_max-p_min
+                    "label":   p,     "data": hints[p].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
                 })
-            self.patcher.add_osc_send_with_controls(
-                self.s_x, self.s_y, 
-                f['address'], params, self.patcher_ids['send_id'])
+            self.patcher.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
         self.s_x += max(len(params) * 52.0 + 25.0, len(f['address'])*6.0 + 25.0)
         self.save_patcher()
     
@@ -608,7 +662,10 @@ class OSCMap:
                 self.add_func_to_patcher(func, kwargs['io'])
                 # TODO: type checking/scaling/clamping of params
                 # modified_kwargs = {key: decorator_kwargs.get(key, value) for key, value in kwargs.items()}
-                return func(*args)
+                if kwargs['io'] == "receive":
+                    return func(*args)
+                else:
+                    return func()
             # call wrapped function on declaration to add to map
             default_args = [kwargs[a][0] for a in kwargs \
                             if a != 'io' and a != 'count']
