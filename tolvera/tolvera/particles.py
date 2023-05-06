@@ -215,6 +215,13 @@ class Particles:
         for j in range(self.max_n):
             if self.field[j].species == i:
                 self.field[j].size = size
+    @ti.kernel
+    def osc_set_active(self, a: ti.i32):
+        for i in range(self.field.shape[0]):
+            if i > a:
+                self.field[i].active = 0
+            else:
+                self.field[i].active = 1
     def osc_set_pos(self, i, x, y):
         self.field[i].pos = [x, y]
     def osc_set_vel(self, i, x, y):
