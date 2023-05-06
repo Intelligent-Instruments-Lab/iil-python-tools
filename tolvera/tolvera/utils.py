@@ -225,14 +225,11 @@ class OSCUpdaters:
 class MaxPatcher:
     '''
     TODO: copy-paste using stdout
-    TODO: replace OSC wires with send/receive objects
     TODO: add scale objects before send and after receive
-    TODO: add parameter range text labels
     TODO: add default values via loadbangs
-    TODO: manage x,y insertion point
-    TODO: rows based on max width
     TODO: move udpsend/udpreceive to the top left
     TODO: dict of object ids
+    TODO: add abstraction i/o messages e.g. param names, state save/load/dumps
     '''
     def __init__(self, osc, client_name="client", filepath="osc_controls", x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
         self.patch = {
