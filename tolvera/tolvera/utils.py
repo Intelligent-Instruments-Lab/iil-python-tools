@@ -234,7 +234,7 @@ class MaxPatcher:
     TODO: move udpsend/udpreceive to the top left
     TODO: dict of object ids
     '''
-    def __init__(self, x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
+    def __init__(self, osc, client_name="client", filepath="osc_controls", x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
         self.patch = {
             "patcher": 	{
                 "fileversion": 1,
@@ -290,8 +290,25 @@ class MaxPatcher:
             "int": "number",
             "bang": "button",
         }
+        self.osc = osc
+        self.client_name = client_name
+        self.client_address, self.client_port = self.osc.client_names[self.client_name]
+        self.filepath = filepath
+        self.init()
+
+    def init(self):
         self.w = 5.5 # default width (scaling factor)
         self.h = 22.0 # default height (pixels)
+        self.s_x, self.s_y = 30, 125 # insertion point
+        self.r_x, self.r_y = 30, 575 # insertion point
+        self.patcher_ids = {}
+        self.patcher_ids['send_id'] = self.add_osc_send(self.osc.host, self.osc.port, self.s_x, 30, print_label="sent")
+        self.patcher_ids['receive_id'] = self.add_osc_receive(self.client_port, self.s_x+150, 30, print_label="received")
+        self.add_comment("Max → Python", self.s_x, self.s_y, 24)
+        self.add_comment("Python → Max", self.r_x, self.r_y, 24)
+        self.s_y+=50
+        self.r_y+=50
+        self.save(self.filepath)
 
     def add_box(self, box_type, inlets, outlets, x, y, w, h=None):
         if h is None: h = self.h
@@ -332,9 +349,10 @@ class MaxPatcher:
         self._add_box(box)
         return box_id
     
-    def add_comment(self, text, x, y):
+    def add_comment(self, text, x, y, fontsize=12):
         box_id, box = self.create_box("comment", 0, 0, x, y, len(text)*self.w)
         box["box"]["text"] = text
+        box["box"]["fontsize"] = fontsize
         self._add_box(box)
         return box_id
     
@@ -569,6 +587,40 @@ class MaxPatcher:
 
         return slider_ids, unpack_id
 
+    def add_send_func(self, f):
+        hints = typing.get_type_hints(f['f'])['return'].__args__
+        f_p = f['params']
+        params = []
+        if len(f_p) == 0:
+            self.add_osc_receive_msg(self.r_x, self.r_y, f['address'])
+        else:
+            for i, p in enumerate(f_p):
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label":   p,     "data": hints[i].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
+                })
+            self.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
+        self.r_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
+        self.save(self.filepath)
+
+    def add_receive_func(self, f):
+        hints = typing.get_type_hints(f['f'])
+        f_p = f['params']
+        params = []
+        if len(f_p) == 0:
+            self.add_osc_send_msg(self.s_x, self.s_y, f['address'])
+        else:
+            for p in f_p:
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label":   p,     "data": hints[p].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
+                })
+            self.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
+        self.s_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
+        self.save(self.filepath)
+
     def _msg_args(self, args):
         return " ".join(["$"+str(i+1) for i in range(len(args))])
 
@@ -589,29 +641,15 @@ class OSCMap:
     OSCMap maps OSC messages to functions
     It creates a Max/MSP patcher that can be used to control the OSCMap
     It uses OSCSendUpdater and OSCReceiveUpdater to decouple incoming messages
+    TODO: make max_patch optional
     '''
-    def __init__(self, osc, client_name="client", max_patch_filepath="tolvera_osc") -> None:
+    def __init__(self, osc, client_name="client", max_patch_filepath="osc_controls") -> None:
         self.osc = osc
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
         self.dict = {'send': {}, 'receive': {}}
         self.patcher_filepath = max_patch_filepath
-        self.init_patcher()
-    
-    def init_patcher(self):
-        # TODO: Refactor p_x, p_y into MaxPatcher
-        self.patcher = MaxPatcher()
-        self.s_x, self.s_y = 30, 125 # insertion point
-        self.r_x, self.r_y = 30, 575 # insertion point
-        self.patcher_ids = {}
-        self.patcher_ids['send_id'] = self.patcher.add_osc_send(self.osc.host, self.osc.port, self.s_x, 30, print_label="sent")
-        self.patcher_ids['receive_id'] = self.patcher.add_osc_receive(self.client_port, self.s_x+150, 30, print_label="received")
-        self.save_patcher()
-    
-    def save_patcher(self, filepath=None):
-        if filepath is None:
-            filepath = self.patcher_filepath
-        self.patcher.save(filepath)
+        self.patcher = MaxPatcher(osc, client_name, max_patch_filepath)
 
     def add_func_to_osc_map(self, func, kwargs):
         n = func.__name__
@@ -636,43 +674,9 @@ class OSCMap:
     def add_func_to_patcher(self, func, io):
         f = self.dict[io][func.__name__]
         if io == 'send':
-            self.add_send_to_patcher(f)
+            self.patcher.add_send_func(f)
         elif io == 'receive':
-            self.add_receive_to_patcher(f)
-    
-    def add_send_to_patcher(self, f):
-        hints = typing.get_type_hints(f['f'])['return'].__args__
-        f_p = f['params']
-        params = []
-        if len(f_p) == 0:
-            self.patcher.add_osc_receive_msg(self.r_x, self.r_y, f['address'])
-        else:
-            for i, p in enumerate(f_p):
-                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
-                params.append({
-                    "label":   p,     "data": hints[i].__name__, 
-                    "min_val": p_min, "size": p_max-p_min
-                })
-            self.patcher.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
-        self.r_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
-        self.save_patcher()
-
-    def add_receive_to_patcher(self, f):
-        hints = typing.get_type_hints(f['f'])
-        f_p = f['params']
-        params = []
-        if len(f_p) == 0:
-            self.patcher.add_osc_send_msg(self.s_x, self.s_y, f['address'])
-        else:
-            for p in f_p:
-                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
-                params.append({
-                    "label":   p,     "data": hints[p].__name__, 
-                    "min_val": p_min, "size": p_max-p_min
-                })
-            self.patcher.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
-        self.s_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
-        self.save_patcher()
+            self.patcher.add_receive_func(f)
     
     def add(self, **kwargs):
         def decorator(func):
