@@ -416,38 +416,57 @@ class MaxPatcher:
         sliders = [
           { 'label': 'x', data: 'float', min_val: 0.0, size: 0.0 },
         ]
-        [comment arg_name]
-        [comment type min-max]
+        
         [slider] ...
         |
         [number] ...
         '''
         slider_ids = []
         float_ids = []
-        comment_ids = []
         y_off = 0
         for i, s in enumerate(sliders):
             y_off = 0
             x_i = x+(i*52.0)
-            s_max = s["min_val"]+s["size"] if s["data"] == "float" else s["min_val"]+s["size"]-1
-            comment_id1 = self.add_comment(f'{s["label"]}', x_i, y)
-            y_off+=15
-            comment_id2 = self.add_comment(f'{s["data"][0]} {s["min_val"]}-{s_max}', x_i, y+y_off)
             y_off+=self.h
-            slider_id = self.add_slider(x_i, y+y_off,
-                s["min_val"], s["size"], float=s["data"]=="float")
+            slider_id = self.add_slider(x_i, y+y_off,s["min_val"], s["size"], float=s["data"]=="float")
             y_off+=150
             float_id = self.add_box("float", 1, 2, x_i, y+y_off, 50)
-            comment_ids.append(comment_id1)
-            comment_ids.append(comment_id2)
             slider_ids.append(slider_id)
             float_ids.append(float_id)
-        return slider_ids, float_ids, comment_ids, y_off
+        return slider_ids, float_ids, y_off
+
+    def add_param_comments(self, x, y, params):
+        comment_ids = []
+        y_off = 0
+        for i, p in enumerate(params):
+            y_off = 0
+            x_i = x+(i*52.0)
+            p_max = p["min_val"]+p["size"] if p["data"] == "float" else p["min_val"]+p["size"]-1
+            comment_id1 = self.add_comment(f'{p["label"]}', x_i, y)
+            y_off+=15
+            comment_id2 = self.add_comment(f'{p["data"][0]} {p["min_val"]}-{p_max}', x_i, y+y_off)
+            comment_ids.append(comment_id1)
+            comment_ids.append(comment_id2)
+        return comment_ids, y_off
+    
+    def add_osc_send_msg(self, x, y, path):
+        msg_id = self.add_message(path, x, y+225+self.h)
+        send_id = self.add_object("s send", 1, 0, x, y+250+self.h)
+        self.connect(msg_id, 0, send_id, 0)
+        return msg_id
+
+    def add_osc_receive_msg(self, x, y, path):
+        receive_id = self.add_object("r receive", 0, 1, x, y+225+self.h)
+        msg_id = self.add_message(path, x, y+250+self.h)
+        self.connect(receive_id, 0, msg_id, 0)
+        return msg_id
 
     def add_osc_send_with_controls(self, x, y, path, parameters):
         # TODO: add default param value and a loadbang
         '''
         [comment path]
+        [comment args]
+        [r path_arg_name]
         sliders
         |                   |
         [pack $1 $2 $3 ...] [bang]
@@ -456,11 +475,20 @@ class MaxPatcher:
         |
         [s send]
         '''
+        y_off = 0
         # [comment path]
-        path_comment_id = self.add_comment(path, x, y)
+        path_comment_id = self.add_comment(path, x, y+y_off)
+        y_off+=15
+        param_comment_ids, _y_off = self.add_param_comments(x, y+y_off, parameters)
+
+        # [r path_arg_name]
+        y_off+=35
+        receive_ids = [self.add_object("r "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 1, 0, x+i*52.0, y+y_off+(0 if i % 2 == 0 else 25)) for i, p in enumerate(parameters)]
+        y_off+=30
+
         # sliders
-        slider_ids, slider_float_ids, slider_comment_ids, y_off = self.add_sliders(x, y+self.h, parameters)
-        y_off+=50
+        slider_ids, slider_float_ids, _y_off = self.add_sliders(x, y+y_off, parameters)
+        y_off+=_y_off+50
         # [pack $1 $2 $3 ...] [bang]
         pack_id = self.add_object(
             "pack "+self._pack_args(parameters), len(parameters)+1, 1, x, y+y_off)
@@ -474,28 +502,14 @@ class MaxPatcher:
         y_off+=25
         send_id = self.add_object("s send", 1, 0, x, y+y_off)
         # connections
-        [self.connect(slider_ids[i], 0, slider_float_ids[i], 0)
-            for i in range(len(parameters))]
-        [self.connect(slider_ids[i+1], 0, bang_id, 0)
-            for i in range(len(parameters)-1)]
-        [self.connect(slider_float_ids[i], 0, pack_id, i)
-            for i in range(len(parameters))]
+        [self.connect(receive_ids[i], 0, slider_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(slider_ids[i], 0, slider_float_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(slider_ids[i+1], 0, bang_id, 0) for i in range(len(parameters)-1)]
+        [self.connect(slider_float_ids[i], 0, pack_id, i) for i in range(len(parameters))]
         self.connect(bang_id, 0, pack_id, 0)
         self.connect(pack_id, 0, msg_id, 0)
         self.connect(msg_id, 0, send_id, 0)
         return slider_ids, pack_id, msg_id
-    
-    def add_osc_send_msg(self, x, y, path):
-        msg_id = self.add_message(path, x, y+225+self.h)
-        send_id = self.add_object("s send", 1, 0, x, y+250+self.h)
-        self.connect(msg_id, 0, send_id, 0)
-        return msg_id
-
-    def add_osc_receive_msg(self, x, y, path):
-        receive_id = self.add_object("r receive", 0, 1, x, y+225+self.h)
-        msg_id = self.add_message(path, x, y+250+self.h)
-        self.connect(receive_id, 0, msg_id, 0)
-        return msg_id
     
     def add_osc_receive_with_controls(self, x, y, path, parameters):
         # TODO: add default param value and a loadbang
@@ -512,7 +526,7 @@ class MaxPatcher:
         [number] ...
         |
         [s arg_name]
-        [comment arg_name]
+        [comment path_arg_name]
         [comment type min-max]
         '''
         # [comment path]
@@ -534,11 +548,16 @@ class MaxPatcher:
         print_id = self.add_object("print "+path, 1, 0, x+unpack_width+10, y+y_off)
 
         # sliders
-        slider_ids, float_ids, comment_ids, _y_off = self.add_sliders(x, y+y_off+self.h, parameters)
+        y_off+=10
+        slider_ids, float_ids, _y_off = self.add_sliders(x, y+y_off, parameters)
 
         # [s arg_name]
-        y_off+=_y_off+50
-        send_ids = [self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'], 1, 0, x+i*52.0, y+y_off+i*25) for i, p in enumerate(parameters)]
+        y_off+=_y_off+25
+        send_ids = [self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 1, 0, x+i*52.0, y+y_off+(0 if i % 2 == 0 else 25)) for i, p in enumerate(parameters)]
+
+        # [comment params]
+        y_off+=50
+        param_comment_ids, _y_off = self.add_param_comments(x, y+y_off, parameters)
         
         # connections
         self.connect(receive_id, 0, route_id, 0)
@@ -582,8 +601,8 @@ class OSCMap:
     def init_patcher(self):
         # TODO: Refactor p_x, p_y into MaxPatcher
         self.patcher = MaxPatcher()
-        self.s_x, self.s_y = 30, 100 # insertion point
-        self.r_x, self.r_y = 30, 450 # insertion point
+        self.s_x, self.s_y = 30, 125 # insertion point
+        self.r_x, self.r_y = 30, 575 # insertion point
         self.patcher_ids = {}
         self.patcher_ids['send_id'] = self.patcher.add_osc_send(self.osc.host, self.osc.port, self.s_x, 30, print_label="sent")
         self.patcher_ids['receive_id'] = self.patcher.add_osc_receive(self.client_port, self.s_x+150, 30, print_label="received")
@@ -635,7 +654,7 @@ class OSCMap:
                     "min_val": p_min, "size": p_max-p_min
                 })
             self.patcher.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
-        self.r_x += max(len(params) * 52.0 + 25.0, len(f['address'])*6.0 + 25.0)
+        self.r_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
         self.save_patcher()
 
     def add_receive_to_patcher(self, f):
@@ -652,7 +671,7 @@ class OSCMap:
                     "min_val": p_min, "size": p_max-p_min
                 })
             self.patcher.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
-        self.s_x += max(len(params) * 52.0 + 25.0, len(f['address'])*6.0 + 25.0)
+        self.s_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
         self.save_patcher()
     
     def add(self, **kwargs):
