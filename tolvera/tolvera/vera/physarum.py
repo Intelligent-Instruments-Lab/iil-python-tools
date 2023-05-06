@@ -24,14 +24,17 @@ class Physarum():
                  trail_x: ti.i32,
                  trail_y: ti.i32,
                  species: ti.i32 = 3,
-                 diffuse_amount: ti.f32 = 0.95,
+                 evaporate: ti.f32 = 0.95,
                  substep: ti.i32 = 1) -> None:
         self.species_n = species
         self.rules = PhysarumParams.field(shape=(species))
+        # self.rules = BoidsParams.field(shape=(species,species))
         self.x = trail_x
         self.y = trail_y
         self.substep = substep
-        self.trail = Pixels(self.x, self.y, evaporate=diffuse_amount, render=False)
+        self.evaporate = ti.field(ti.f32, shape=())
+        self.evaporate[None] = evaporate
+        self.trail = Pixels(self.x, self.y, evaporate=evaporate, render=False)
         self.init()
     @ti.kernel
     def init(self):
@@ -87,6 +90,15 @@ class Physarum():
             self.step(particles.field)
     def reset(self):
         self.init()
+    def osc_set_evaporate(self, evaporate):
+        self.evaporate[None] = evaporate
+        self.trail.evaporate[None] = evaporate
+    def osc_set_rule(self, i, sense_angle, sense_dist, move_angle, move_dist):
+        sense_angle = sense_angle * 0.3 * ti.math.pi
+        move_angle  = move_angle * 0.3 * ti.math.pi
+        self.rules[i] = PhysarumParams(sense_angle, sense_dist, move_angle, move_dist)
+    def osc_get_rule(self, i, j):
+        return self.rules[i,j].to_numpy().tolist()
     def __call__(self, particles):
         self.process(particles)
         return self.trail.px.rgba

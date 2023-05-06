@@ -179,6 +179,26 @@ class Particles:
         #     x = ti.cast(p.pos[0], ti.i32)
         #     y = ti.cast(p.pos[1], ti.i32)
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
+    def seeks(self, targets):
+        [self.seek([t.x, t.y], t.dist, t.weight) for t in targets]
+    @ti.kernel
+    def seek(self, target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
+        for i in range(self.field.shape[0]):
+            if self.field[i].active > 0.0:
+                target_distance = (target-self.field[i].pos).norm()
+                if target_distance < distance:
+                    factor = (distance-target_distance)/distance
+                    self.field[i].vel += (target-self.field[i].pos).normalized() * weight * factor
+    def avoids(self, targets):
+        [self.avoid([t.x, t.y], t.dist, t.weight) for t in targets]
+    @ti.kernel
+    def avoid(self, target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
+        for i in range(self.field.shape[0]):
+            if self.field[i].active > 0.0:
+                target_distance = (target-self.field[i].pos).norm()
+                if target_distance < distance:
+                    factor = (target_distance-distance)/distance
+                    self.field[i].vel += (target-self.field[i].pos).normalized() * weight * factor
     @ti.kernel
     def osc_set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
         for j in range(self.max_n):

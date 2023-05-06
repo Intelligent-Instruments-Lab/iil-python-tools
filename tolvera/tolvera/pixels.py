@@ -52,7 +52,8 @@ class Pixels:
         self.fps = fps
         self.px = Pixel.field(shape=(x,y))
         self.mode = mode
-        self.evaporate = evaporate
+        self.evaporate = ti.field(ti.f32, shape=())
+        self.evaporate[None] = evaporate
         self.render = render
         self._polygon_mode = polygon_mode
         if render:
@@ -74,7 +75,7 @@ class Pixels:
                     dx = (i + di) % self.x
                     dy = (j + dj) % self.y
                     d += self.px.rgba[dx, dy]
-            d *= self.evaporate/9.0
+            d *= self.evaporate[None]/9.0
             self.px.rgba[i,j] = d
     @ti.func
     def background(self,r,g,b):

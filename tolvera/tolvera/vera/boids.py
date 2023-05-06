@@ -69,42 +69,22 @@ class Boids():
             align    = align/nearby            * r.align    * p1.active
             cohere   = (cohere/nearby-p1.pos)  * r.cohere   * p1.active
             field[i].vel += (cohere+align+separate).normalized()
-    @ti.kernel
-    def seek_target(self, field: ti.template(), target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
-        for i in range(field.shape[0]):
-            if field[i].active > 0.0:
-                target_distance = (target-field[i].pos).norm()
-                if target_distance < distance:
-                    factor = (distance-target_distance)/distance
-                    field[i].vel += (target-field[i].pos).normalized() * weight * factor
-    @ti.kernel
-    def avoid_target(self, field: ti.template(), target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
-        for i in range(field.shape[0]):
-            if field[i].active > 0.0:
-                target_distance = (target-field[i].pos).norm()
-                if target_distance < distance:
-                    factor = (target_distance-distance)/distance
-                    field[i].vel += (target-field[i].pos).normalized() * weight * factor
     def reset(self):
         self.init()
     def __call__(self, particles):
         self.step(particles.field)
-    def osc_target_seek(self, x, y, d, w):
-        self.seek_target(self.field, [x,y], d, w)
-    def osc_target_avoid(self, x, y, d, w):
-        self.avoid_target(self.field, [x,y], d, w)
     def osc_set_rule(self, i, j, separate, align, cohere, radius):
         self.rules[i,j] = BoidsParams(separate, align, cohere, radius)
     def osc_get_rule(self, i, j):
         return self.rules[i,j].to_numpy().tolist()
 
-def main(x=1920, y=1080, n=512, species=4, fps=120, host="127.0.0.1", receive_port=4000, send_port=5000):
+def main(x=1920, y=1080, n=8192, species=5, fps=120, host="127.0.0.1", receive_port=4000, send_port=5000):
     seed = int(time.time())
     ti.init(arch=ti.vulkan, random_seed=seed)
     # ti.init(random_seed=seed)
     osc = OSC(host, receive_port, verbose=False, concurrent=True)
     osc.create_client("boids", host, send_port)
-    particles = Particles(x, y, n, species)
+    particles = Particles(x, y, n, species, wall_margin=0)
     pixels = Pixels(x, y, evaporate=0.95, fps=fps)
     boids = Boids(x, y, species)
 
@@ -112,28 +92,10 @@ def main(x=1920, y=1080, n=512, species=4, fps=120, host="127.0.0.1", receive_po
         particles.reset()
         pixels.reset()
         boids.reset()
-    update = Updater(reset, fps*4)
-
-    osc_update = OSCUpdaters(osc, client="boids",
-        receives={
-            "/tolvera/reset": reset, # no args
-            "/tolvera/particles/set/pos":  particles.osc_set_pos, # iff i px py
-            "/tolvera/particles/set/vel":  particles.osc_set_vel, # iff i vx vy
-            "/tolvera/particles/set/species/speed": particles.osc_set_species_speed, # iff i speed max_speed
-            "/tolvera/particles/set/species/color": particles.osc_set_species_color, # ifff i r g b
-            "/tolvera/particles/set/species/size":  particles.osc_set_species_size, # if i size
-            "/tolvera/particles/set/wall_repel":    particles.osc_set_wall_repel, # iff wall_margin turn_factor
-            "/tolvera/boids/set/rule":     boids.osc_set_rule, # ifffff i j separate align cohere radius
-            "/tolvera/boids/target/seek":  boids.osc_target_seek, # iffff x y distance weight
-            "/tolvera/boids/target/avoid": boids.osc_target_avoid, # iffff x y distance weight
-        }, receive_count=10,
-        sends={
-            "/tolvera/particles/get/pos/all": particles.osc_get_pos_all # ff x y (n times)
-        }, send_count=60
-    )
+    update = Updater(reset, fps*8)
 
     def render():
-        osc_update()
+        update()
         pixels.diffuse()
         pixels.decay()
         # particles.activity_decay()
