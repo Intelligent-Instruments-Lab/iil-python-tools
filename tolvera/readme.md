@@ -69,23 +69,31 @@ Live coding can be achieved via:
 
 #### via Sardine
 
-- Create a `@swim` function to act as a `taichi.ui.Window` loop with a sufficiently high repeat rate, e.g.:
+Updated 7 May 2023
+
 ```py
-c.link()
-c.bpm=250
+import taichi as ti
+import tolvera as tol
+
+ti.init(arch=ti.vulkan)
+x,y,n,species,evaporate,fps=1920,1080,16384,20,0.9,120
+particles = tol.Particles(x,y,n,species)
+pixels = tol.Pixels(x,y, evaporate=evaporate, fps=fps)
+
 @swim
-def gui_loop(d=0.5, i=0):
-    boids.update()
-    canvas.set_image(boids.world.to_numpy().astype(np.uint8))
-    window.show()
-    a(gui_loop, d=1/16, i=i+1)
-```
-- Create other `@swim` functions at lower speeds to update the parameters, e.g.:
-```py
+def gui_loop(p=0.5, i=0):
+    pixels.diffuse()
+    particles(pixels)
+    pixels.render()
+    again(gui_loop, p=1/64, i=i+1)
+
 @swim
-def param_loop(d=16, i=0):
-    boids.max_speed[None] = P('2*sin($/2)')
-    a(param_loop, d=8, i=i+1)
+def control_loop(p=4, i=0):
+    pixels.evaporate[None] = P('0.99 0.1', i)
+    particles.wall_margin[None] = P('100 0', i)
+    again(control_loop, p=1/2, i=i+1)
+
+silence()
 ```
 
 #### via OSC 
