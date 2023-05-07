@@ -54,9 +54,9 @@ class Pixels:
         self.mode = mode
         self.evaporate = ti.field(ti.f32, shape=())
         self.evaporate[None] = evaporate
-        self.render = render
+        self.should_render = render
         self._polygon_mode = polygon_mode
-        if render:
+        if self.should_render:
             self.window = ti.ui.Window(name, (x,y), fps_limit=fps)
             self.canvas = self.window.get_canvas()
     def set(self, px):
@@ -199,13 +199,16 @@ class Pixels:
         pass
     def reset(self):
         self.clear()
-    def show(self, f):
-        if self.render:
+    def show(self, f=None):
+        if self.should_render:
             while self.window.running:
                 with self.lock:
-                    f()
-                    self.invert()
-                    self.canvas.set_image(self.px.rgba_inv)
-                    self.window.show()
+                    if f is not None: f()
+                    self.render()
+    def render(self):
+        self.invert()
+        self.canvas.set_image(self.px.rgba_inv)
+        self.window.show()
+
     def __call__(self):
         return self.get()

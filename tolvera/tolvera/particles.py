@@ -35,6 +35,10 @@ class Particle:
     species:   ti.i32
     decay:     ti.f32
     inertia:   ti.f32
+    nearby:    ti.i32 # boids/NN
+    left:      ti.f32 # physarum/sense
+    centre:    ti.f32 # physarum/sense
+    right:     ti.f32 # physarum/sense
     @ti.func
     def dist(self, other):
         # FIXME: wrap around walls
@@ -45,10 +49,6 @@ class Particle:
     @ti.func
     def dist_normalized(self, other):
         return self.dist(self.pos - other.pos).normalized()
-
-@ti.dataclass
-class Sprite:
-    pass
 
 @ti.data_oriented
 class Particles:
@@ -179,26 +179,30 @@ class Particles:
         #     x = ti.cast(p.pos[0], ti.i32)
         #     y = ti.cast(p.pos[1], ti.i32)
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
-    def seeks(self, targets):
-        [self.seek([t.x, t.y], t.dist, t.weight) for t in targets]
+    def seeks(self, attractors):
+        [self.seek(a) for a in attractors]
+    def seek(self, attractor): # attractor: Attractor
+        self._seek(attractor.p.pos, attractor.p.mass, attractor.radius)
     @ti.kernel
-    def seek(self, target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
+    def _seek(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
         for i in range(self.field.shape[0]):
             if self.field[i].active > 0.0:
-                target_distance = (target-self.field[i].pos).norm()
-                if target_distance < distance:
-                    factor = (distance-target_distance)/distance
-                    self.field[i].vel += (target-self.field[i].pos).normalized() * weight * factor
-    def avoids(self, targets):
-        [self.avoid([t.x, t.y], t.dist, t.weight) for t in targets]
+                target_distance = (pos-self.field[i].pos).norm()
+                if target_distance < radius:
+                    factor = (radius-target_distance)/radius
+                    self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
+    def avoids(self, attractors):
+        [self.avoid(a) for a in attractors]
+    def avoid(self, attractor):
+        self._avoid(attractor.p.pos, attractor.p.mass, attractor.radius)
     @ti.kernel
-    def avoid(self, target: ti.math.vec2, distance: ti.f32, weight: ti.f32):
+    def _avoid(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
         for i in range(self.field.shape[0]):
             if self.field[i].active > 0.0:
-                target_distance = (target-self.field[i].pos).norm()
-                if target_distance < distance:
-                    factor = (target_distance-distance)/distance
-                    self.field[i].vel += (target-self.field[i].pos).normalized() * weight * factor
+                target_distance = (pos-self.field[i].pos).norm()
+                if target_distance < radius:
+                    factor = (target_distance-radius)/radius
+                    self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
     @ti.kernel
     def osc_set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
         for j in range(self.max_n):

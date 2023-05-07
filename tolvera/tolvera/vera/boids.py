@@ -68,6 +68,7 @@ class Boids():
             separate = separate/nearby         * r.separate * p1.active
             align    = align/nearby            * r.align    * p1.active
             cohere   = (cohere/nearby-p1.pos)  * r.cohere   * p1.active
+            field[i].nearby = nearby
             field[i].vel += (cohere+align+separate).normalized()
     def reset(self):
         self.init()

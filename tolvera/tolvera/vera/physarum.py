@@ -64,6 +64,9 @@ class Physarum():
                     ang += rule.move_angle * (2 * (ti.random() < 0.5) - 1) # TODO: magic numbers
                 pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) \
                     * rule.move_dist * field[i].active
+                field[i].left = l
+                field[i].centre = c
+                field[i].right = r
                 field[i].pos = pos
                 field[i].ang = ang
     @ti.func
