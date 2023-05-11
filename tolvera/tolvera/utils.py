@@ -78,6 +78,18 @@ class OSCReceiveUpdater(ReceiveUpdater):
         '''
         self.set(args[1:])
 
+class OSCSend():
+    '''
+    Non rate-limited OSC send
+    '''
+    def __init__(self, osc, address: str, f, count=30, client=None):
+        self.osc = osc
+        self.address = address
+        self.f = f
+        self.client = client
+
+    def __call__(self, *args):
+        self.osc.send(self.address, *self.f(*args), client=self.client)
 
 class OSCSendUpdater():
     '''
@@ -636,6 +648,7 @@ class OSCMap:
     It creates a Max/MSP patcher that can be used to control the OSCMap
     It uses OSCSendUpdater and OSCReceiveUpdater to decouple incoming messages
     TODO: make max_patch optional
+    TODO: OSC sends should have broadcast vs event option?
     '''
     def __init__(self, osc, client_name="client", max_patch_filepath="osc_controls") -> None:
         self.osc = osc
@@ -649,14 +662,17 @@ class OSCMap:
         n = func.__name__
         address = '/'+n.replace('_', '/')
         params = {k: v for k, v in kwargs.items() \
-                    if k != 'io' and k != 'count'}
+                    if k != 'io' and k != 'count' and k != 'send_mode'}
         f = {'f': func, 'address': address, 'params': params}
         if 'io' not in kwargs:
             raise ValueError('io must be specified')
         if 'count' not in kwargs:
             raise ValueError('count must be specified')
         if kwargs['io'] == 'send':
-            f['updater'] = OSCSendUpdater(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
+            if kwargs['send_mode'] == 'broadcast':
+                f['updater'] = OSCSendUpdater(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
+            else:
+                f['sender'] = OSCSend(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
             self.dict['send'][n] = f
         elif kwargs['io'] == 'receive':
             f['updater'] = OSCReceiveUpdater(self.osc, address, f=func, count=kwargs['count'])
@@ -689,9 +705,14 @@ class OSCMap:
             wrapper(*default_args)
             return wrapper
         return decorator
+    
+    def send(self, f, *args):
+        self.dict['send'][f]['sender'](*args)
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         for k, v in self.dict['send'].items():
-            v['updater']()
+            if 'updater' in v:
+                v['updater']()
+            # v['updater']()
         for k, v in self.dict['receive'].items():
             v['updater']()
