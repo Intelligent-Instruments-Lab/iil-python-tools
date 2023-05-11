@@ -226,6 +226,14 @@ class Particles:
                 self.field[i].active = 0
             else:
                 self.field[i].active = 1
+    @ti.kernel
+    def osc_set_species_active(self, i: ti.i32, a: ti.i32):
+        for j in range(self.field.shape[0]):
+            if self.field[j].species == i:
+                if j > a:
+                    self.field[j].active = 0
+                else:
+                    self.field[j].active = 1
     def osc_set_pos(self, i, x, y):
         self.field[i].pos = [x, y]
     def osc_set_vel(self, i, x, y):
