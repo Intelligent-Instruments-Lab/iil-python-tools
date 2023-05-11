@@ -2,7 +2,9 @@ import taichi as ti
 from tolvera.particles import Particle
 
 # TODO: render()
-# TODO: more neighbour functions/statistics
+# TODO: more neighbour funcs/stats
+# TODO: move particles.seek|avoid here? (attract|repel)
+# TODO: rename to Target?
 
 @ti.dataclass
 class Attractor:
@@ -11,13 +13,21 @@ class Attractor:
 
 @ti.data_oriented
 class Attractors:
-    def __init__(self, n=1) -> None:
+    def __init__(self, x=1920, y=1080, n=1) -> None:
+        self.x = x
+        self.y = y
         self.n = n
         self.field = Attractor.field(shape=(n))
     def set(self, i, attractor: Attractor):
         self.field[i] = attractor
     def get(self, i):
         return self.field[i]
+    @ti.kernel
+    def randomise(self):
+        for i in range(self.n):
+            self.field[i].p.pos = ti.Vector([ti.random() * self.x, ti.random() * self.y])
+            self.field[i].p.mass = ti.random() * 1.0
+            self.field[i].radius = ti.random() * self.y
     @ti.kernel
     def nn(self, field: ti.template()):
         for i in range(self.n):
