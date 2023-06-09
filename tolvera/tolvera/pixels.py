@@ -151,7 +151,25 @@ class Pixels:
         for i, j in ti.ndrange(x_max-x_min, y_max-y_min):
             p = [x_min+i, y_min+j]
             if self._is_inside(p,x,y,l) != 0:
-                self.px.rgba[p[0],p[1]] = rgba
+                # TODO: abstract out, weight?
+                '''
+                x-1,y-1  x,y-1  x+1,y-1
+                x-1,y    x,y    x+1,y
+                x-1,y+1  x,y+1  x+1,y+1
+                '''
+                _x, _y = p[0], p[1]
+                self.px.rgba[_x-1,_y-1] = rgba
+                self.px.rgba[_x-1,_y]   = rgba
+                self.px.rgba[_x-1,_y+1] = rgba
+
+                self.px.rgba[_x,_y-1]   = rgba
+                self.px.rgba[_x,_y]     = rgba
+                self.px.rgba[_x,_y+1]   = rgba
+
+                self.px.rgba[_x+1,_y-1] = rgba
+                self.px.rgba[_x+1,_y]   = rgba
+                self.px.rgba[_x+1,_y+1] = rgba
+                
     @ti.func
     def _is_inside(self,p,x,y,l):
         is_inside = 0
@@ -193,7 +211,7 @@ class Pixels:
     @ti.kernel
     def decay(self):
         for i, j in ti.ndrange(self.x, self.y):
-            self.px.rgba[i,j] *= self.evaporate
+            self.px.rgba[i,j] *= self.evaporate[None]
     @ti.kernel
     def update(self):
         pass

@@ -46,7 +46,7 @@ class Physarum():
                 sense_angle = ti.random(ti.f32) * 0.3 * ti.math.pi,
                 sense_dist  = ti.random(ti.f32) * 100.0 + 0.1,
                 move_angle  = ti.random(ti.f32) * 0.3 * ti.math.pi,
-                move_dist   = ti.random(ti.f32) * 4.0 + 0.1)
+                move_dist   = ti.random(ti.f32) * 0.1 + 0.1)
     @ti.kernel
     def move(self, field: ti.template()):
         for i in range(field.shape[0]):
