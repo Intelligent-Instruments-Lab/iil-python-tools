@@ -250,16 +250,31 @@ class OSC():
         return decorator if f is None else decorator(f)
     
     def args(self, route=None, return_host=None, return_port=None):
-        """decorate a function as an args-style OSC handler."""
+        """decorate a function as an args-style OSC handler.
+
+        the decorated function should look like:
+        def f(route, my_arg, my_arg2, ...):
+            ...
+        the OSC message will be converted to python types and passed as positional
+        arguments.
+        """
         return self._decorate(False, route, return_host, return_port, None)
 
     def kwargs(self, route=None, return_host=None, return_port=None, json_keys=None):
-        """decorate a function as an kwargs-style OSC handler
+        """decorate a function as an kwargs-style OSC handler.
+
+        the decorated function should look like:
+        def f(route, my_key=my_value, ...):
+            ...
+        the incoming OSC message should alternate argument names with values:
+            /osc/route 'my_key' value 'my_key2' value ...
         
         Args:
             route: specify the OSC route. if None, use the function name
             json_keys: names of keyword arguments which should be decoded
-                from JSON, in the case that they arrive as strings
+                from JSON to python objects, 
+                in the case that they arrive as strings.
+                alternatively, if a string starts with '%JSON:' it will be decoded.
         """
         return self._decorate(True, route, return_host, return_port, json_keys)
 

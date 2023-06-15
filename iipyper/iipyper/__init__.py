@@ -29,15 +29,17 @@ def profile(label, print=print):
 
 
 class Lag:
-    def __init__(self, coef, val=None):
-        self.coef = coef
+    def __init__(self, coef_up, coef_down=None, val=None):
+        self.coef_up = coef_up
+        self.coef_down = coef_down or coef_up
         self.val = val
 
     def __call__(self, val):
         if self.val is None:
             self.val = val
         else:
-            self.val = self.val*self.coef + val*(1-self.coef)
+            coef = self.coef_up if val > self.val else self.coef_down
+            self.val = self.val*coef + val*(1-coef)
         return self.val
     
     def hpf(self, val):
@@ -164,6 +166,13 @@ def cleanup(f=None):
     else: #bare decorator case; return decorated function
         return decorator(f)
 
+# locking decorator
+def lock(f):
+    """wrap the decorated function with the global iipyper lock"""
+    def decorated(*a, **kw):
+        with _lock:
+            f(*a, **kw)
+    return decorated
 
 def run(main=None):
     try:

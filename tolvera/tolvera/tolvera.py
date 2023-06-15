@@ -3,6 +3,7 @@ from tolvera.vera import *
 import taichi as ti
 import numpy as np
 from tolvera.vera import *
+# from pysensel import TiSensel
 
 """
 OSC input protocol
@@ -153,30 +154,6 @@ class WorldMulti:
     
     def get_params(self):
         return self.params
-
-
-# def main():
-#     ti.init(arch=ti.vulkan)
-#     x = 1920
-#     y = 1080
-#     n = 8196
-#     world = World(x, y, n)
-#     world.reset()
-#     world.boids.radius[None] = 30
-#     world.boids.dt[None] = 1
-#     world.boids.speed[None] = 2
-#     world.boids.separate[None] = 0.1
-#     world.boids.align[None] = 0.7
-#     world.boids.cohere[None] = 0.5
-#     world.physarum.sense_angle[None] = 0.2 * np.pi
-#     world.physarum.sense_dist[None] = 40.0
-#     world.physarum.evaporation[None] = 0.7
-#     world.physarum.move_angle[None] = 0.2 * np.pi
-#     world.physarum.move_step[None] = 1
-#     world.physarum.substep[None] = 2
-#     while world.window.running:
-#         world.process()
-#         world.window.show()
 
 def main():
     ti.init(arch=ti.vulkan)

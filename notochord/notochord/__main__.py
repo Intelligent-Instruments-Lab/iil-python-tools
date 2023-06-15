@@ -2,9 +2,7 @@ import sys
 
 from iipyper import run
 
-from notochord.server import main as server
-from notochord.harmonizer import main as harmonizer
-from notochord.improviser import main as improviser
+from notochord.app import *
 
 def help():
     print("""

@@ -47,25 +47,33 @@ try:
         def print(self, *a, **kw):
             """redirects to the TUI's default std output log"""
             if self.is_running:
-                try:
-                    self.call_from_thread(self._print, *a, **kw)
-                except:
-                    self._print(*a, **kw)
+                self.call_from_anywhere(self._print, *a, **kw)
+                # try:
+                #     self.call_from_thread(self._print, *a, **kw)
+                # except:
+                #     self._print(*a, **kw)
             else:
                 print(*a, **kw)
 
+        def call_from_anywhere(self, f, *a, **kw):
+            try:
+                self.call_from_thread(f, *a, **kw)
+            except RuntimeError as e:
+                f(*a, **kw)
+
         def __call__(self, *a, **kw):
             if self.is_running:
-                try:
-                    self.call_from_thread(self.do_call, *a, **kw)
-                except:
-                    self.do_call(*a, **kw)
+                self.call_from_anywhere(self._call, *a, **kw)
+                # try:
+                #     self.call_from_thread(self._call, *a, **kw)
+                # except:
+                #     self.do_call(*a, **kw)
             else:
                 print(*a)
                 for k,v in kw.items():
                     print(k, '->', v)
 
-        def do_call(self, **kw):
+        def _call(self, **kw):
             """
             by default, expects your TUI to have child nodes
             with a reactive `value` attribute, which updates the node when set.

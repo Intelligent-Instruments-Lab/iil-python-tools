@@ -134,14 +134,20 @@ class Trainer:
             random_state=(random.getstate(), np.random.get_state(), torch.get_rng_state())
         ), fname)
 
-    def load_state(self, d):
+    def load_state(self, d, resume):
         d = d if hasattr(d, '__getitem__') else torch.load(d)
-        self.model.load_state_dict(d['model_state'])
-        # note that this loads optimizer lr, beta etc
-        # from stored, even if different values given to constructor
-        self.opt.load_state_dict(d['optimizer_state'])
-        self.exposure, self.iteration, self.epoch = d['step']
-        self.set_random_state(d['random_state'])
+        self.model.load_state_dict(d['model_state'], strict=resume)
+        if resume:
+            print('loading optimizer state, RNG state, step counts')
+            print("""
+            warning: optimizer lr, beta etc are restored with optimizer state,
+            even if different values given on the command line, when resume=True
+            """)
+            self.opt.load_state_dict(d['optimizer_state'])
+            self.exposure, self.iteration, self.epoch = d['step']
+            self.set_random_state(d['random_state'])
+        else:
+            print('fresh run transferring only model weights')
 
     def log(self, tag, d):
         # self.writer.add_scalars(tag, d, self.exposure)
@@ -303,7 +309,13 @@ class Trainer:
             self.save(self.model_dir / f'{self.epoch:04d}.ckpt')
 
 class Resumable:
-    def __init__(self, checkpoint=None, **kw):
+    def __init__(self, checkpoint=None, resume=True, **kw):
+        """
+        Args:
+            checkpoint: path to training checkpoint file
+            resume: if True, retore optimizer states etc
+                otherwise, restore only model weights (for transfer learning)
+        """
         if checkpoint is not None:
             d = torch.load(checkpoint, map_location=torch.device('cpu'))
             print(f'loaded checkpoint {checkpoint}')
@@ -315,7 +327,7 @@ class Resumable:
             # merges sub dicts, e.g. model hyperparameters
             deep_update(d['kw'], kw)
             self._trainer = Trainer(**d['kw'])
-            self._trainer.load_state(d)
+            self._trainer.load_state(d, resume=resume)
         else:
             self._trainer = Trainer(**kw)
 

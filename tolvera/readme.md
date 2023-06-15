@@ -1,6 +1,6 @@
 # Tölvera
 
-- Tölvu = computer, from tala (number) + völva (prophetess)
+- Tölva = computer, from tala (number) + völva (prophetess)
 - Vera = being
 - Tölvera = number being
 
