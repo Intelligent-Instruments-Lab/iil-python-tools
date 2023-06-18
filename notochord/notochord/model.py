@@ -1,4 +1,7 @@
 import math
+from typing import List, Tuple, Dict, Union, Any
+from numbers import Number
+from collections import namedtuple
 
 import numpy as np
 
@@ -8,8 +11,20 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from .rnn import GenericRNN
-from .distributions import CensoredMixtureLogistic, reweight_top_p, steer_categorical
+from .distributions import CensoredMixtureLogistic, categorical_sample
+
 from .util import arg_to_set
+
+class Query:
+    def __init__(self, modality, then=None, **kw):
+        self.modality = modality
+        self.then = then
+        self.kw = kw
+    def __repr__(self):
+        return f"{self.modality} \n{self.then}"# {self.kw}"
+
+Range = namedtuple('Range', ('lo', 'hi', 'weight'), defaults=(-np.inf, np.inf, 1))
+Subset = namedtuple('Subset', ('values', 'weight'), defaults=(None, 1))
 
 class SineEmbedding(nn.Module):
     def __init__(self, n, hidden, w0=1e-3, w1=10, scale='log'):
@@ -311,7 +326,7 @@ class Notochord(nn.Module):
         return inst > 128 and inst < 257 or inst > 288
 
     
-    def feed(self, inst, pitch, time, vel):
+    def feed(self, inst, pitch, time, vel, **kw):
         """consume an event and advance hidden state
         
         Args:
@@ -327,6 +342,7 @@ class Notochord(nn.Module):
             time: float. elapsed time in seconds since previous event.
             vel: float. (possibly dequantized) MIDI velocity from 0-127 inclusive.
                 0 indicates a note-off event
+            **kw: ignored (allows doing e.g. noto.feed(**noto.query(...)))
         """
         with torch.inference_mode():
             inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
@@ -348,15 +364,349 @@ class Notochord(nn.Module):
 
             self.h_query = None
 
+    # TODO: add end prediction to deep_query
+    def deep_query(self, query, predict_end=True):
+        """flexible querying with nested Query objects.
+        see query_vtip for an example.
+
+        Args:
+            query: Query object
+        """
+        if self.h_query is None:
+            with torch.inference_mode():
+                self.h_query = self.h_proj(self.h)
+        event = self._deep_query(
+            query, hidden=self.h_query[:,0], event={})
+        
+        if predict_end:
+            # print('END')
+            # print(f'{self.h}')
+            with torch.inference_mode():
+                end_params = self.end_proj(self.h)
+                event['end'] = end_params.softmax(-1)[...,1].item()
+                # event['end'] = D.Categorical(logits=end_params).sample().item()
+        else:
+            event['end'] = 0#torch.zeros(self.h.shape[:-1])
+
+        return event
+    
+    def _deep_query(self, query, hidden, event):
+        m = query.modality
+        sq = query.then
+        try:
+            idx = ('inst','pitch','time','vel').index(m)
+        except ValueError:
+            raise ValueError(f'unknown modality "{m}"')
+        
+        project = self.projections[idx]
+        embed = self.embeddings[idx]
+
+        if m=='time':
+            dist = self.time_dist
+            sample = dist.sample
+        elif m=='vel':
+            dist = self.vel_dist
+            sample = dist.sample
+        else:
+            sample = categorical_sample
+
+        # Query.then can be:
+
+        # None (no further sub-queries)
+        # or str (no further sub-queries, set the 'path' property of the event)
+
+        # Query describing what to do next
+
+        # pair of Number, Query
+        # setting a deterministic value for the current query,
+        # and the query to execute next
+
+        # list of Range, Query pairs
+        # or list of Subset, Query pairs
+        #    describing what to do next given where the sampled value falls
+        #    Range and Subset can also carry weights
+
+
+        with torch.inference_mode():
+            #
+            if sq is None or isinstance(sq, str) or isinstance(sq, Query):
+                # this is the final query (sq is None or a path tag)
+                # or there are no cases, just proceed to next subquery
+                action = sq
+                params = project(hidden.tanh())
+                result = sample(params, **query.kw)
+
+            elif len(sq)==0:
+                raise ValueError(f"subquery has no cases: {sq}")
+            
+            # deterministic single value cases
+            # elif len(sq)==1 and len(sq[0])==3 and isinstance(sq[0][0], Number):
+            #     # singleton list case
+            #     key, action = sq[0]
+            #     result = key
+            elif len(sq)==2 and isinstance(sq[0], Number):
+                # bare pair case
+                key, action = sq
+                result = key
+
+            elif m in ('inst', 'pitch'):
+                # weighted subsets case
+                try:
+                    assert all(isinstance(s, Subset) for s,_ in sq)
+                except Exception:
+                    raise ValueError(f"""
+                    subqueries should all be Subset, Query tuples here: {sq}
+                    """)
+
+                params = project(hidden.tanh())
+
+                 # sample subset
+                if len(sq) > 1:
+                    all_probs = params.softmax(-1)
+                    probs = [
+                        all_probs[...,s.values].sum(-1) * s.weight
+                        for s,_ in sq]
+                    # print(f'deep_query {m} {sq=} {probs=}')
+                    idx = categorical_sample(torch.tensor(probs).log())
+                else:
+                    idx = 0
+                s,action = sq[idx]
+                # sample from range
+                result = sample(params, whitelist=s.values, **query.kw)
+
+            elif m in ('time', 'vel'):
+                # weighted ranges case
+                assert all(isinstance(r, Range) for r,_ in sq)
+
+                params = project(hidden.tanh())
+                # sample range
+                if len(sq) > 1:
+                    probs = [
+                        (dist.cdf(params, r.hi) - dist.cdf(params, r.lo)
+                        ) * r.weight
+                        for r,_ in sq]
+                    # print(f'deep_query {m} {probs=}')
+                    idx = categorical_sample(torch.tensor(probs).log())
+                else:
+                    idx = 0
+                r,action = sq[idx]
+                # sample from range
+                result = sample(params, truncate=(r.lo, r.hi), **query.kw)
+
+            try:
+                event[m] = result.item()
+            except Exception:
+                event[m] = result
+
+            # embed, add to hidden, recurse into subquery
+            if isinstance(action, Query):
+                emb = embed(result)
+                hidden = hidden + emb
+                return self._deep_query(action, hidden, event)
+            else:
+                event['path'] = action
+                return event
+            
+    def query_tipv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'time',
+            truncate=(min_time or -np.inf, max_time or np.inf), 
+            truncate_quantile=truncate_quantile_time,
+            weight_top_p=rhythm_temp, component_temp=timing_temp,
+            then=Query(
+                'inst',
+                whitelist=include_inst,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
+    
+    def query_itpv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'inst',
+            whitelist=include_inst,
+            then=Query(
+                'time',
+                truncate=(min_time or -np.inf, max_time or np.inf), 
+                truncate_quantile=truncate_quantile_time,
+                weight_top_p=rhythm_temp, component_temp=timing_temp,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
+
+
+    def query_vtip(self,
+            note_on_map:Dict[int,List[int]], 
+            note_off_map:Dict[int,List[int]], 
+            min_time=None, max_time=None, 
+            truncate_quantile_time=None,
+            truncate_quantile_pitch=None,
+            steer_density=None, # truncate_quantile_type ? 
+            ):
+        """ Query in velocity-time-instrument-pitch order,
+            efficiently truncating the joint distribution to just allowable
+            (velocity>0)/instrument/pitch triples.
+
+            Args:
+                note_on_map: possible note-ons as {instrument: [pitch]} 
+                note_off_map: possible note-offs as {instrument: [pitch]} 
+        """
+ 
+        no_on = all(len(ps)==0 for ps in note_on_map.values())
+        no_off = all(len(ps)==0 for ps in note_off_map.values())
+        if no_on and no_off:
+            raise ValueError(f"""
+                no possible notes {note_on_map=} {note_off_map=}""")
+        
+        def get_subquery(ipm, path):
+            return Query(
+                'time',
+                Query(
+                    'inst', [(
+                        Subset([i]), 
+                        Query('pitch', path, 
+                            whitelist=list(ps), 
+                            truncate_quantile=truncate_quantile_pitch)
+                    ) for i,ps in ipm.items() if len(ps)]
+                ),
+                truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+            )
+        w = 1 if steer_density is None else 2**(steer_density*2-1)
+        
+        w_on = 0 if no_on else w
+        w_off = 0 if no_off else 1/w
+        
+        return self.deep_query(Query('vel', [
+            (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+        ]))
+    
+    def query_vipt(self,
+        note_on_map, note_off_map,
+        min_time=None, max_time=None, 
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        steer_density=None,
+        ):
+        """
+        Query in velocity-instrument-pitch-time order,
+            efficiently truncating the joint distribution to just allowable
+            (velocity>0)/instrument/pitch triples.
+
+            Args:
+                note_on_map: possible note-ons as {instrument: [pitch]} 
+                note_off_map: possible note-offs as {instrument: [pitch]} 
+        """
+
+        no_on = all(len(ps)==0 for ps in note_on_map.values())
+        no_off = all(len(ps)==0 for ps in note_off_map.values())
+        if no_on and no_off:
+            raise ValueError(f"""
+                no possible notes {note_on_map=} {note_off_map=}""")
+        
+        def get_subquery(note_map, path):
+            return Query(
+                'inst', 
+                then=[(Subset([i]), Query(
+                    'pitch', 
+                    whitelist=list(ps), 
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'time', path,         
+                        truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+                    )
+                )) for i,ps in note_map.items() if len(ps)]
+            )
+        
+        w = 1 if steer_density is None else 2**(steer_density*2-1)
+        
+        w_on = 0 if no_on else w
+        w_off = 0 if no_off else 1/w
+        
+        return self.deep_query(Query('vel', [
+            (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+        ]))
+    
+    # def query_ipvt(self,
+    #     note_map, 
+    #     min_time=-np.inf, max_time=np.inf, 
+    #     min_vel=-np.inf, max_vel=np.inf,
+    #     truncate_quantile_time=None,
+    #     truncate_quantile_pitch=None,
+    #     ):
+    #     """
+    #     """
+      
+    #     return self.deep_query(Query(
+    #         'inst', then=[(
+    #             Subset([i]), Query(
+    #                 'pitch', 
+    #                 whitelist=list(ps), 
+    #                 truncate_quantile=truncate_quantile_pitch,
+    #                 then=Query(
+    #                     'vel',
+    #                     truncate=(min_vel or -np.inf, max_vel or np.inf),
+    #                     then=Query(
+    #                         'time',         
+    #                         truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+    #                     )
+    #                 )
+    #             )
+    #         ) for i,ps in note_map.items() if len(ps)]
+    #     ))
+
     # TODO: remove pitch_topk and sweep_time?
+    # TODO: rewrite this to build queries and dispatch to deep_query
     def query(self,
             next_inst=None, next_pitch=None, next_time=None, next_vel=None,
-            steer_pitch=None, steer_time=None, steer_vel=None,
             pitch_topk=None, index_pitch=None,
             allow_end=False,
-            sweep_time=False, min_time=None, max_time=None,
+            sweep_time=False, 
+            min_time=None, max_time=None,
+            truncate_quantile_time=None,
             include_inst=None, exclude_inst=None,
             include_pitch=None, exclude_pitch=None,
+            truncate_quantile_pitch=None,
             allow_anon=True, include_drum=None,
             instrument_temp=None, pitch_temp=None, velocity_temp=None,
             rhythm_temp=None, timing_temp=None,
@@ -389,6 +739,8 @@ class Notochord(nn.Module):
             min_vel, max_vel: if not None, truncate the velocity distribution
 
             # sampling strategies
+            truncate_quantile_pitch: applied after include_pitch, exclude_pitch
+            truncate_quantile_time: applied after min_time, max_time
             instrument_temp: if not None, apply top_p sampling to instrument. 0 is
                 deterministic, 1 is 'natural' according to the model
             pitch_temp: if not None, apply top_p sampling to pitch. 0 is
@@ -403,10 +755,6 @@ class Notochord(nn.Module):
                 precise, 1 is 'natural' according to the model.
             index_pitch: Optional[int]. if not None, deterministically take the
                 nth most likely pitch instead of sampling.
-            steer_*: Optional[float]. number between 0 and 1.
-                deterministic sampling method,
-                which is monotonically related to the sampled value,
-                and recovers the model distribution when uniformly distributed.
 
             # multiple predictions
             pitch_topk: Optional[int]. if not None, instead of sampling pitch, 
@@ -429,8 +777,8 @@ class Notochord(nn.Module):
             'inst': int. id of predicted instrument.
                 1-128 are General MIDI standard melodic instruments
                 129-256 are drumkits for MIDI programs 1-128
-                257-264 are 'anonymous' melodic instruments
-                265-272 are 'anonymous' drums
+                257-288 are 'anonymous' melodic instruments
+                289-320 are 'anonymous' drumkits
             'pitch': int. predicted MIDI number of next note, 0-128.
             'time': float. predicted time to next note in seconds.
             'vel': float. unquantized predicted velocity of next note.
@@ -512,14 +860,18 @@ class Notochord(nn.Module):
                     constrain_inst = [
                         i for i in constrain_inst if not self.is_drum(i)]
 
-            if constrain_inst is not None:
-                preserve_x = x[...,constrain_inst]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_inst] = preserve_x
-            probs = x.softmax(-1)
-            if instrument_temp is not None:
-                probs = reweight_top_p(probs, instrument_temp)
-            return D.Categorical(probs).sample()
+            # if constrain_inst is not None:
+            #     preserve_x = x[...,constrain_inst]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_inst] = preserve_x
+            # probs = x.softmax(-1)
+            # if instrument_temp is not None:
+            #     probs = reweight_top_p(probs, instrument_temp)
+            # return D.Categorical(probs).sample()
+
+            return categorical_sample(x, 
+                whitelist=constrain_inst,
+                top_p=instrument_temp)
 
         def sample_pitch(x):
             # conditional constraint
@@ -532,25 +884,34 @@ class Notochord(nn.Module):
                     nonlocal constrain_pitch
                     constrain_pitch = include_drum
 
-            if constrain_pitch is not None:
-                preserve_x = x[...,constrain_pitch]
-                x = torch.full_like(x, -np.inf)
-                x[...,constrain_pitch] = preserve_x
-            # x is modified logits
+            if pitch_topk is not None:
+                raise NotImplementedError
 
-            if index_pitch is not None:
-                return x.argsort(-1, True)[...,index_pitch]
-            elif pitch_topk is not None:
-                return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
+            return categorical_sample(x,
+                whitelist=constrain_pitch, 
+                index=index_pitch,
+                top_p=pitch_temp,
+                truncate_quantile=truncate_quantile_pitch
+                )
+            # if constrain_pitch is not None:
+            #     preserve_x = x[...,constrain_pitch]
+            #     x = torch.full_like(x, -np.inf)
+            #     x[...,constrain_pitch] = preserve_x
+            # # x is modified logits
+
+            # if index_pitch is not None:
+            #     return x.argsort(-1, True)[...,index_pitch]
+            # elif pitch_topk is not None:
+            #     return x.argsort(-1, True)[...,:pitch_topk].transpose(0,-1)
             
-            probs = x.softmax(-1)
-            if pitch_temp is not None:
-                probs = reweight_top_p(probs, pitch_temp)
+            # probs = x.softmax(-1)
+            # if pitch_temp is not None:
+            #     probs = reweight_top_p(probs, pitch_temp)
 
-            if steer_pitch is not None:
-                return steer_categorical(probs, steer_pitch)
-            else:
-                return D.Categorical(probs).sample()
+            # if steer_pitch is not None:
+            #     return steer_categorical(probs, steer_pitch)
+            # else:
+            #     return D.Categorical(probs).sample()
 
         def sample_time(x):
             # TODO: respect trunc_time when sweep_time is True
@@ -575,14 +936,17 @@ class Notochord(nn.Module):
                 truncate=trunc,
                 component_temp=timing_temp, 
                 weight_top_p=rhythm_temp,
-                steer=steer_time)
+                truncate_quantile=truncate_quantile_time
+                )
 
         def sample_velocity(x):
             trunc = (
                 -np.inf if min_vel is None else min_vel,
                 np.inf if max_vel is None else max_vel)
             return self.vel_dist.sample(
-                x, component_temp=velocity_temp, truncate=trunc, steer=steer_vel)
+                x, component_temp=velocity_temp, truncate=trunc,
+                # truncate_quantile=truncate_quantile_vel
+                )
 
         with torch.inference_mode():
             if self.h_query is None:

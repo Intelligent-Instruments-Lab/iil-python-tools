@@ -59,7 +59,7 @@ def num2text(x, n=10, c='[red]'):
 
 def main(
         channels=1,
-        device='Macbook Pro Mic',
+        device=0,
         block_size=2048,
         sample_rate=48000,
         midi_in=None, # MIDI port for player input
@@ -72,7 +72,7 @@ def main(
         midi_out: MIDI port for Notochord output
         checkpoint: path to RAVE exported model
     """
-    # midi = MIDI(midi_in, midi_out)
+    midi = MIDI(midi_in, midi_out)
 
     ### Textual UI
     # tui = RaveTUI()
@@ -81,11 +81,11 @@ def main(
     ###
 
     model = torch.jit.load(model)
-    print(model)
+    # print(model)
        
     z_mu = torch.zeros(model.cropped_latent_size)
     # z_var = torch.zeros(16)
-    def callback(indata, frames, time, status):
+    def callback(indata, outdata, frames, time, status):
         if status:
             print(f'sounddevice error {status=}')
         x = torch.tensor(indata, dtype=torch.float32)[None].permute(0,2,1)
@@ -121,7 +121,7 @@ def main(
     Audio(callback=callback,
         channels=channels, device=device, 
         blocksize=block_size, samplerate=sample_rate)
-
+    
     # tui.run()
 
 if __name__=='__main__':

@@ -15,7 +15,9 @@ import sounddevice as sd
 class Audio:
     instances = [] # 
     def __init__(self, *a, **kw):
-        self.stream = sd.InputStream(*a, **kw) # TODO
+        print(sd.query_devices())
+        # self.stream = sd.InputStream(*a, **kw) # TODO
+        self.stream = sd.Stream(*a, **kw) # TODO
         Audio.instances.append(self)
 
 @contextmanager
@@ -27,16 +29,21 @@ def profile(label, print=print):
 
 
 class Lag:
-    def __init__(self, coef, val=None):
-        self.coef = coef
+    def __init__(self, coef_up, coef_down=None, val=None):
+        self.coef_up = coef_up
+        self.coef_down = coef_down or coef_up
         self.val = val
 
     def __call__(self, val):
         if self.val is None:
             self.val = val
         else:
-            self.val = self.val*self.coef + val*(1-self.coef)
+            coef = self.coef_up if val > self.val else self.coef_down
+            self.val = self.val*coef + val*(1-coef)
         return self.val
+    
+    def hpf(self, val):
+        return val - self(val)
 
 class Clock:
     def __init__(self, tick=5e-4):
@@ -73,12 +80,18 @@ class Stopwatch:
         if punch:
             self.punch()
 
-    def punch(self):
-        """return elapsed time since last punch, then punch"""
-        t = time.perf_counter_ns()
+    def punch(self, latency=0):
+        """return elapsed time since last punch, then punch
+        
+        Args:
+            latency: punch `latency` seconds in the past, 
+                unless it would be before the previous punch
+        """
+        t = time.perf_counter_ns() - latency
         if self.t is None:
             dt_ns = 0
         else:
+            t = max(self.t, t)
             dt_ns = t - self.t
         self.t = t
         return dt_ns * 1e-9
@@ -159,14 +172,26 @@ def cleanup(f=None):
     else: #bare decorator case; return decorated function
         return decorator(f)
 
+# locking decorator
+def lock(f):
+    """wrap the decorated function with the global iipyper lock"""
+    def decorated(*a, **kw):
+        with _lock:
+            f(*a, **kw)
+    return decorated
+
+def start_audio():
+    for a in Audio.instances:
+        if not a.stream.active:
+            a.stream.start()
 
 def run(main=None):
     try:
         if main is not None:
             fire.Fire(main)
 
-        for a in Audio.instances:
-            a.stream.start()
+        # non-blocking main case:
+        start_audio()
 
         # enter a loop if there is not one in main
         while True:

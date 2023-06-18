@@ -25,11 +25,15 @@ class MIDI:
 
     ports_printed = False
 
-    def __init__(self, in_ports=None, out_ports=None, verbose=1, sleep_time=5e-4):
+    def __init__(self, in_ports=None, out_ports=None, 
+                 virtual_in_ports=1, virtual_out_ports=1, 
+                 verbose=1, sleep_time=5e-4):
         """
         Args:
-            in_ports: list of input devices (uses all by default)
-            out_ports: list of output devices (uses all by default)
+            in_ports: list of input devices to open (uses all by default)
+            out_ports: list of output devices to open (uses none by default)
+            virtual_in_ports: number of 'To iipyper X' ports to create
+            virtual_out_ports: number of 'From iipyper X' ports to create
         """
         if not MIDI.ports_printed and verbose:
             MIDI.print_ports()
@@ -42,28 +46,47 @@ class MIDI:
         self.handlers = []
 
         if isinstance(in_ports, str):
-            in_ports = [in_ports]
+            in_ports = in_ports.split(',')
         if isinstance(out_ports, str):
-            out_ports = [out_ports]
+            out_ports = out_ports.split(',')
 
         # TODO: fuzzy match port names
 
         if in_ports is None or len(in_ports)==0:
-            in_ports = set(mido.get_input_names())  
-        self.in_ports = {# mido.ports.MultiPort([
-            port: mido.open_input(port, callback=self.get_callback(port))
-            for port in in_ports
-        }
+            in_ports = set(mido.get_input_names())
+
+        self.in_ports = {}  
+        for i in range(virtual_in_ports):
+            virtual_in = f'To iipyper {i+1}'
+            self.in_ports[virtual_in] = mido.open_input(
+                virtual_in, virtual=True)
+        for port in in_ports:
+            try:
+                self.in_ports[port] = mido.open_input(
+                    port, callback=self.get_callback(port))
+            except Exception:
+                print(f"""WARNING: MIDI input {port} not found""")
 
         if self.verbose:
             print(f"""opened MIDI input ports: {list(self.in_ports)}""")
 
-        if out_ports is None or len(out_ports)==0:
-            out_ports = set(mido.get_output_names())  
-        self.out_ports = {# mido.ports.MultiPort([
-            port: mido.open_output(port)
-            for port in out_ports
-        }
+        ##### WIP
+        self.out_ports = {}
+        for i in range(virtual_out_ports):
+            virtual_out = f'From iipyper {i+1}'
+            self.out_ports[virtual_out] = mido.open_output(
+                virtual_out, virtual=True)
+
+        if out_ports is None:
+            out_ports = []
+        # if out_ports is None or len(out_ports)==0:
+            # out_ports = set(mido.get_output_names())  
+        # self.out_ports = {}
+        for port in out_ports:
+            try:
+                self.out_ports[port] = mido.open_output(port)
+            except Exception:
+                print(f"""WARNING: MIDI output {port} not found""")
 
         if self.verbose:
             print(f"""opened MIDI output ports: {list(self.out_ports)}""")
