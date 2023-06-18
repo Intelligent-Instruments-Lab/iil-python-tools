@@ -104,7 +104,7 @@ OSCdef(\from_tidal, {
     }{
         // note-on events should arrive from tidal in the order they happen
         // but note-offs do not, since they are implicit in duration of notes.
-        // the only guarantee about not-offs is they won't be scheduled sooner than tidal's
+        // the only guarantee about note-offs is they won't be scheduled sooner than tidal's
         // oLatency parameter, since that's the soonest a new note-on could occur.
         // so we can schedule all note-on and note-offs as soon as they arrive
         // (without all sub-events filled in, possibly)
