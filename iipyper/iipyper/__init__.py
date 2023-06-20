@@ -7,18 +7,9 @@ import fire
 
 from .midi import *
 from .osc import *
+from .audio import *
 from .tui import *
 from .state import _lock
-
-# Audio WIP
-import sounddevice as sd
-class Audio:
-    instances = [] # 
-    def __init__(self, *a, **kw):
-        print(sd.query_devices())
-        # self.stream = sd.InputStream(*a, **kw) # TODO
-        self.stream = sd.Stream(*a, **kw) # TODO
-        Audio.instances.append(self)
 
 @contextmanager
 def profile(label, print=print):
