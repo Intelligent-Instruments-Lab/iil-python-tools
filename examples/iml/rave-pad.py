@@ -105,7 +105,12 @@ def main(
     rave = torch.jit.load(rave_path)
 
     d_src = 2
-    d_tgt = rave.cropped_latent_size
+    d_tgt = rave.encode_params[2]
+
+    try:
+        sr = rave.sr
+    except Exception:
+        sr = rave.sampling_rate
 
     tui = IMLTUI()
     # sys.stdout = tui
@@ -134,7 +139,7 @@ def main(
         
     audio = Audio(
         device=device, dtype=np.float32,
-        samplerate=rave.sampling_rate, blocksize=rave.encode_params[-1], 
+        samplerate=sr, blocksize=rave.encode_params[-1], 
         callback=rave_callback)
     
     iml = IML(d_src)

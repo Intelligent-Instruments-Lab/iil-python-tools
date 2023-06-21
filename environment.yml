@@ -11,7 +11,7 @@ dependencies:
   - seaborn
   - tqdm
   - fire
-  - textual
+  - textual>=0.27
   - pip
   - pip:
     - mido
