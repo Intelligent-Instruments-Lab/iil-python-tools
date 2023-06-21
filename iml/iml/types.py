@@ -7,7 +7,7 @@ Target = Any
 Feature = ArrayLike
 Scores = ArrayLike
 TargetID = int
-TargetIDs = ArrayLike[TargetID]
+TargetIDs = ArrayLike
 
 def _np_coerce(x):
     if hasattr(x, 'numpy'):
