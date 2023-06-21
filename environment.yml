@@ -11,9 +11,9 @@ dependencies:
   - seaborn
   - tqdm
   - fire
-  - textual
   - pip
   - pip:
+    - textual
     - mido
     - python-rtmidi
     - python-osc
