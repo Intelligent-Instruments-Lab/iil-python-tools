@@ -9,6 +9,15 @@ class NNSearch:
         self.index = index(feature_size)
 
     def __call__(self, feature: Feature, k: int = 5) -> Tuple[TargetIDs, Scores]:
+        """
+        find the k-nearest neighbors of `feature`
+        Args:
+            feature: query feature vector
+            k: maximum number of neighbors to return
+        Returns:
+            target_ids: ids of neighbors
+            scores: similarity scores of neighbors (higher is more similar)
+        """
         feature = feature[None].astype(np.float32) # add batch dim, enforce type
         scores, target_ids = self.index.search(feature, k)
         scores = scores #** 0.5 # hardcoded for L2
