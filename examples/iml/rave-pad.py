@@ -151,6 +151,7 @@ def main(
 
     # TODO: button to fix current neighbors
     # or record a gesture and fix those neighbors
+    # draw locations of current sources
 
     @tui.set_action
     def randomize():
