@@ -6,6 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - pytorch=1.13
+  - faiss
   - ipykernel
   - seaborn
   - tqdm
