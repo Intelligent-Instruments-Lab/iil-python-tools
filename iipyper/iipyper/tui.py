@@ -1,3 +1,4 @@
+import sys
 try:
     from rich.panel import Panel
     from rich.pretty import Pretty
@@ -35,31 +36,47 @@ try:
             the name of the decorated function should match the id of a child Button node and/or a key binding in the TUI.
             """
             setattr(self, f'action_{f.__name__}', f)
+            return f
+        
+        def set_mouse_move(self, f):
+            self.on_mouse_move = f
+            return f
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             getattr(self, f'action_{event.button.id}')()
 
-        def _print(self, k, *v):
-            for s in (k, *v):
-                self.std_log.write(s)
-            # self.std_log.write(' '.join(str(s) for s in (k, *v)))
+        # def _print(self, k, *v):
+        #     for s in (k, *v):
+        #         self.std_log.write(s)
+        #    # self.std_log.write(' '.join(str(s) for s in (k, *v)))
+
+        def flush(self): pass
+        def write(self, s):
+            """for redirecting stdout to a file-like"""
+            if self.is_running:
+                return self.call_from_anywhere(self.std_log.write, s)
+            else:
+                # TODO: buffer and write after start
+                return sys.__stdout__.write(s)
 
         def print(self, *a, **kw):
-            """redirects to the TUI's default std output log"""
-            if self.is_running:
-                self.call_from_anywhere(self._print, *a, **kw)
-                # try:
-                #     self.call_from_thread(self._print, *a, **kw)
-                # except:
-                #     self._print(*a, **kw)
-            else:
-                print(*a, **kw)
+            """redirects to the UI's default std output log"""
+            kw['file'] = self
+            print(*a, **kw)
+            # if self.is_running:
+            #     self.call_from_anywhere(self._print, *a, **kw)
+            #     # try:
+            #     #     self.call_from_thread(self._print, *a, **kw)
+            #     # except:
+            #     #     self._print(*a, **kw)
+            # else:
+            #     print(*a, **kw)
 
         def call_from_anywhere(self, f, *a, **kw):
             try:
-                self.call_from_thread(f, *a, **kw)
+                return self.call_from_thread(f, *a, **kw)
             except RuntimeError as e:
-                f(*a, **kw)
+                return f(*a, **kw)
 
         def __call__(self, *a, **kw):
             if self.is_running:
@@ -88,7 +105,7 @@ try:
                 except (NoMatches, TooManyMatches):
                     self.print(f'TUI: node "{k}" not found')
                 except AttributeError:
-                    self.print(f'TUI: node "{k}" lacks `value` reactive')
+                    self.print(f'TUI: node "{k}" lacks value "reactive"')
 
 
 except ImportError as e:

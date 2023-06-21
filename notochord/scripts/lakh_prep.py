@@ -249,7 +249,7 @@ def process(fnames):
     ), g.with_suffix('.pkl'))
 
 
-def main(data_path, dest_path, n_jobs=4):
+def main(data_path, dest_path, n_jobs=4, n_files=None):
     data_dir = Path(data_path)
     files = list(data_dir.glob('**/*.mid'))
     files_out = [
@@ -259,7 +259,8 @@ def main(data_path, dest_path, n_jobs=4):
     for parent in list(parents):
         parent.mkdir(parents=True, exist_ok=True)
 
-    # files = files[:1000]
+    if n_files is not None:
+        files = files[:n_files]
 
     with Pool(n_jobs) as pool:
         for _ in tqdm(pool.imap_unordered(process, zip(files, files_out), 32)):
