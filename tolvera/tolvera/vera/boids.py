@@ -2,7 +2,7 @@ import time
 import taichi as ti
 
 # from tolvera.particles import Particle, Particles
-from tolvera.particles_refactor import Particle, Particles
+from tolvera.particles import Particle, Particles
 from tolvera.pixels import Pixels
 from tolvera.utils import OSCUpdaters, Updater
 
