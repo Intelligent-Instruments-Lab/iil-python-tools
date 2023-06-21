@@ -169,7 +169,6 @@ def main(
             max_score = 0
             skip = 0
 
-        # TODO: don't add any closer than k-nearest
         for _ in range(32 - skip):
             src = torch.randn(d_src)#/(ctrl.abs()/2+1)
             if iml.neighbors.distance(ctrl, src) < max_score:
