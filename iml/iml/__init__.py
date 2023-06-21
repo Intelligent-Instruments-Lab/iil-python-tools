@@ -22,33 +22,43 @@ class IML:
     def reset(self):
         """delete all data"""
         print('reset')
-        self.targets: Dict[TargetID, Target] = {}
-        self.sources: Dict[TargetID, Source] = {}
+        self.pairs: Dict[TargetID, Tuple[Source, Target]] = {}
         # NNSearch converts feature to target IDs and scores
         self.neighbors = NNSearch(self.embed.size)
 
-    def add(self, source: Source, target: Target) -> None:
-        """add a data point"""
+    def add(self, source: Source, target: Target) -> TargetID:
+        """add a data point
+        Args:
+            source: input item
+            target: output item
+        Returns:
+            target_id: id of the new data point (you may not need this)
+        """
         print(f'add {source=}, {target=}')
         feature = self.embed(source)
         target_id = self.neighbors.add(feature)
         # track the mapping from target IDs back to targets
-        self.targets[target_id] = target
-        self.sources[target_id] = source
+        self.pairs[target_id] = (source, target)
+        return target_id
 
     def search(self, source: Source, k: int = 5):# -> Tuple[List[Source], List[Target]]:
+        """find k-nearest neighbors
+        Args:
+            source: input item
+            k: max number of neighbors
+        Returns:
+            sources: neighboring inputs
+            targets: corresponding outputs
+            scores: dissimilarity scores
+        """
         feature = self.embed(source)
         target_ids, scores = self.neighbors(feature, k=k)
         # handle case where there are fewer than k neighbors
-        b = [i>=0 for i in target_ids] 
-        tid = target_ids[b]
-        sources = [self.sources[i] for i in tid]
-        targets = [self.targets[i] for i in tid]
-        scores = scores[b]
+        sources, targets = zip(*(self.pairs[i] for i in target_ids))
         return sources, targets, scores
 
     def map(self, source: Source, k: int = 5) -> Target:
-        """convert a source to a target using embed, neighbors, interpolate"""
+        """convert a source to a target using search + interpolate"""
         # # print(f'map {source=}')
         # feature = self.embed(source)
         # # print(f'{feature=}')
