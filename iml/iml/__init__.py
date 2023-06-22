@@ -34,9 +34,13 @@ class IML:
             k: number of neighbors for above
         """
         print('reset')
-        if keep_near is not None:
-            print('searching neighbors for keep_near')
-            srcs, tgts, _ = self.search(keep_near, k=k)
+        if keep_near is not None and len(self.pairs)>0:
+            if len(keep_near)!=len(self.pairs[0][0]):
+                print('ERROR: iml: keep_near should be an input vector')
+                keep_near = None
+            else:
+                print('searching neighbors for keep_near')
+                srcs, tgts, _ = self.search(keep_near, k=k)
 
         self.pairs: Dict[TargetID, Tuple[Source, Target]] = {}
         # NNSearch converts feature to target IDs and scores
