@@ -38,14 +38,22 @@ def main(
         osc_host: leave this as empty string to get all traffic on the port
 
     OSC Routes:
+    
         /iml/config/interp "softmax"
             set interpolator to Softmax
         /iml/config/interp "ripple"
             set interpolator to Ripple
+
         /iml/add "source" ... "target"... 
             add a point to the mapping
+
         /iml/map "source" ...
+        /iml/map "source" ... "ripple" t
+        /iml/map "source" ... "temp" t
             map an input to an output
+            "temp" 1 > t > 0 when using softmax interpolator
+            "ripple" r > 0 when using Ripple interpolator
+
         /iml/reset
             remove all points
         /iml/reset "keep_near" ... "k" k
