@@ -75,6 +75,9 @@ def main(
     @osc.args('/iml/map', return_port=osc_return_port)
     def _(address, *a):
         kw = vector_args(a)
+        for k in ['k', 'temp']:
+            if k in kw:
+                kw[k] = kw[k][0]
 
         if 'source' not in kw:
             print('ERROR: iml: no source vector supplied')
