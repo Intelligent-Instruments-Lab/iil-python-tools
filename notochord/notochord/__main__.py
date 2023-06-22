@@ -8,6 +8,8 @@ def help():
     print("""
     available subcommands:
         server: run the Notochord OSC server
+        harminonizer: run the Notochord harmonizer TUI
+        improviser: run the Notochord improviser TUI
     """)
 
 if __name__=='__main__':
