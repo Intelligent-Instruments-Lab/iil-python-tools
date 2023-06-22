@@ -86,6 +86,11 @@ def main(
         result = iml.map(**kw)
 
         return '/iml/return', *result
+    
+    @osc.kwargs('/iml/reset')
+    def _(address, **kw):
+        if iml is not None:
+            iml.reset()
 
 if __name__=='__main__':
     run(main)
