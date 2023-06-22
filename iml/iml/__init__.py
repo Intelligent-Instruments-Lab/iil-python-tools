@@ -8,23 +8,44 @@ class IML:
     def __init__(self, feature_size:Optional[int]=None, 
             embed=None, interp=None):
         
+        # Feature converts sources to feature vectors
         if embed is None:
             embed = feature.Identity(feature_size)
-        if interp is None:
-            interp = interpolate.Softmax()
-        # Feature converts sources to feature vectors
+        else:
+            embed = getattr(feature, embed.capitalize())(feature_size)
         self.embed = embed
+
          # Interpolate combines a set of targets and scores
-        self.interpolate = interp
+        if interp is None:
+            self.interpolate = interpolate.Softmax()
+        else:
+            self.set_interp(interp)
+
 
         self.reset()
 
-    def reset(self):
-        """delete all data"""
+    def set_interp(self, name):
+        self.interpolate = getattr(interpolate, name.capitalize())()
+
+    def reset(self, keep_near:Optional[Source]=None, k:int=5):
+        """delete all data
+        Args:
+            keep_near: don't remove the neighbors of this source
+            k: number of neighbors for above
+        """
         print('reset')
+        if keep_near is not None:
+            print('searching neighbors for keep_near')
+            srcs, tgts, _ = self.search(keep_near, k=k)
+
         self.pairs: Dict[TargetID, Tuple[Source, Target]] = {}
         # NNSearch converts feature to target IDs and scores
         self.neighbors = NNSearch(self.embed.size)
+
+        if keep_near is not None:
+            print(f'restoring {len(srcs)} neighbors')
+            for s,t in zip(srcs,tgts):
+                self.add(s,t)
 
     def add(self, source: Source, target: Target) -> TargetID:
         """add a data point
@@ -55,6 +76,11 @@ class IML:
         target_ids, scores = self.neighbors(feature, k=k)
         # handle case where there are fewer than k neighbors
         sources, targets = zip(*(self.pairs[i] for i in target_ids))
+
+        # TODO: text-mode visualize scores
+        s = ' '*len(self.pairs)
+
+
         return sources, targets, scores
 
     def map(self, source: Source, k: int = 5, **kw) -> Target:
@@ -68,19 +94,9 @@ class IML:
             output instance
         """
         print(f'map {source=}')
-        # feature = self.embed(source)
-        # # print(f'{feature=}')
-        # target_ids, scores = self.neighbors(feature, k=k)
-        # # print(f'{target_ids=}')
-        # b = [i>=0 for i in target_ids] # case where there are fewer than k neighbors
-        # # print(f'{b=}')
-        # targets = [self.targets[i] for i in target_ids[b]]
-        # # print(f'{targets=}')
-        # scores = scores[b]
         _, targets, scores = self.search(source, k)
-        # print(f'{scores=}')
         result = self.interpolate(targets, scores, **kw)
-        # print(f'{result=}')
+
         return result
 
     def save(self, path):

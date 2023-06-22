@@ -36,6 +36,20 @@ def main(
         osc_port: listen for OSC controls on this port
         osc_return_port: if supplied, reply on a different port than osc_port
         osc_host: leave this as empty string to get all traffic on the port
+
+    OSC Routes:
+        /iml/config/interp "softmax"
+            set interpolator to Softmax
+        /iml/config/interp "ripple"
+            set interpolator to Ripple
+        /iml/add "source" ... "target"... 
+            add a point to the mapping
+        /iml/map "source" ...
+            map an input to an output
+        /iml/reset
+            remove all points
+        /iml/reset "keep_near" ... "k" k
+            remove all points except the neighbors of "keep_near"
     """
     osc = OSC(osc_host, osc_port)
 
@@ -48,9 +62,14 @@ def main(
         nonlocal iml
         # TODO: validate input
         config.update(kw)
-        print(config)
-        iml = IML(**config)
- 
+        print(config) 
+
+    @osc.args('/iml/config/interp')
+    def _(address, name):
+        if iml is None:
+            config['interp'] = name
+        else:
+            iml.set_interp(name)
 
     @osc.args('/iml/add')
     def _(address, *a):
@@ -65,12 +84,13 @@ def main(
             return
 
         d = len(kw['source'])
+        config['feature_size'] = d
         if iml is None:
             print(f'new IML object with source dimension {d}')
-            iml = IML(d)
+            iml = IML(**config)
 
-        iml.add(**kw)
-
+        return '/iml/return/add', iml.add(**kw)
+    
 
     @osc.args('/iml/map', return_port=osc_return_port)
     def _(address, *a):
@@ -89,12 +109,17 @@ def main(
         
         result = iml.map(**kw).tolist()
 
-        return '/iml/return', *result
+        return '/iml/return/map', *result
     
-    @osc.kwargs('/iml/reset')
-    def _(address, **kw):
+    @osc.args('/iml/reset')
+    def _(address, *a):
         if iml is not None:
-            iml.reset()
+            kw = vector_args(a)
+            for k in ['k']:
+                if k in kw:
+                    kw[k] = kw[k][0]
+
+            iml.reset(**kw)
 
 if __name__=='__main__':
     run(main)
