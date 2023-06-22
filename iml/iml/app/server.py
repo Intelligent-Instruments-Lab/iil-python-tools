@@ -51,7 +51,7 @@ def main(
         print(config)
         iml = IML(**config)
  
- 
+
     @osc.args('/iml/add')
     def _(address, *a):
         nonlocal iml
@@ -84,7 +84,7 @@ def main(
             print('ERROR: iml: call /iml/add at least once before /map')
             return
         
-        result = iml.map(**kw)
+        result = iml.map(**kw).tolist()
 
         return '/iml/return', *result
     

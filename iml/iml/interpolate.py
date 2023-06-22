@@ -20,28 +20,22 @@ class Softmax(Interpolate):
     def __call__(self, targets, scores, temp=1):
         targets, scores = np_coerce(targets, scores)
         # print(targets.shape, scores.shape)
-        # target_t = type(targets[0])
 
-        # if temp==0:
-            # i = np.argmax(scores)
-            # result = targets[i]
-        # else:
-        centered = scores - np.mean(scores) # for numerical precision
-        logits = np.maximum(-centered/temp, -20)
-        print(f'{logits=}')
-        if np.max(np.abs(logits)) > 80:
-            i = np.argmax(scores)
-            print(f'{i=}')
-            result = targets[i]
+        if temp==0:
+            result = targets[np.argmax(scores)]
         else:
-            weights = np.exp(logits)
-            print(f'{weights=}')
-            weights /= weights.sum()
-            print(f'{weights=}')
-            result = (np.moveaxis(targets,0,-1)*weights).sum(-1)
-        print(f'{result=}')
-        # assumes the target type can be constructed from numpy array
-        # return target_t(result)
+            centered = scores - np.mean(scores) # for numerical precision
+            logits = np.maximum(-centered/temp, -20)
+            # print(f'{logits=}')
+            if np.max(np.abs(logits)) > 80:
+                result = targets[np.argmax(scores)]
+            else:
+                weights = np.exp(logits)
+                # print(f'{weights=}')
+                weights /= weights.sum()
+                # print(f'{weights=}')
+                result = (np.moveaxis(targets,0,-1)*weights).sum(-1)
+        # print(f'{result=}')
         return result
 
 class Smooth(Interpolate):
