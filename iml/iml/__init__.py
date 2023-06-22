@@ -9,7 +9,7 @@ class IML:
             embed=None, interp=None):
         
         if embed is None:
-            embed=feature.Identity(feature_size)
+            embed = feature.Identity(feature_size)
         if interp is None:
             interp = interpolate.Softmax()
         # Feature converts sources to feature vectors
@@ -57,9 +57,17 @@ class IML:
         sources, targets = zip(*(self.pairs[i] for i in target_ids))
         return sources, targets, scores
 
-    def map(self, source: Source, k: int = 5) -> Target:
-        """convert a source to a target using search + interpolate"""
-        # # print(f'map {source=}')
+    def map(self, source: Source, k: int = 5, **kw) -> Target:
+        """convert a source to a target using search + interpolate
+
+        Args:
+            source: input
+            k: max neighbors
+            **kw: additional arguments are passed to interpolate
+        Returns:
+            output instance
+        """
+        print(f'map {source=}')
         # feature = self.embed(source)
         # # print(f'{feature=}')
         # target_ids, scores = self.neighbors(feature, k=k)
@@ -71,7 +79,7 @@ class IML:
         # scores = scores[b]
         _, targets, scores = self.search(source, k)
         # print(f'{scores=}')
-        result = self.interpolate(targets, scores)
+        result = self.interpolate(targets, scores, **kw)
         # print(f'{result=}')
         return result
 
