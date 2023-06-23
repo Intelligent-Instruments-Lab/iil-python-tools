@@ -7,23 +7,9 @@ Authors:
   Intelligent Instruments Lab 2023
 """
 
-# TODO: make key bindings visibly click corresponding buttons
-# TODO: make Mute a toggle but Reset a momentary
-
-# TODO: color note by pitch class + register
-# TODO: color instrument 1-128, MEL, DRUM, ANON, ANONDRUM
-# TODO: color time
-# TODO: id prediction as player / noto
-# TODO: unify note log / prediction format
-# TODO: grey out predictions when player or muted notochord
-
-# TODO: controls display panel
-# TODO: MIDI learn
-
-# TODO: held notes display panel
-
 from typing import Optional, Dict
 from numbers import Number
+import random
 
 from notochord import Notochord, MIDIConfig, NotoPerformance
 from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lock
@@ -31,7 +17,7 @@ from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lo
 from rich.panel import Panel
 from rich.pretty import Pretty
 from textual.reactive import reactive
-from textual.widgets import Header, Footer, Static, Button, TextLog, Switch, Checkbox
+from textual.widgets import Header, Footer, Static, Button, TextLog
 
 ### def TUI components ###
 class NotoLog(TextLog):
@@ -46,20 +32,12 @@ class NotoPrediction(Static):
         if evt is None:
             s = ''
         else:
-            s = f"\tinstrument: {evt['inst']:3d}    pitch: {evt['pitch']:3d}    time: {int(evt['time']*1000):4d} ms    velocity:{int(evt['vel']):3d}"
+            s = f"\tinstrument: {evt['inst']:3d}    pitch: {evt['pitch']:3d}    time: {int(evt['time']*1000):4d} ms    velocity:{int(evt['vel']):3d}     end: {evt['end']:4f}"
         self.update(Panel(s, title='prediction'))
-
-# class NotoToggle(Static):
-#     def compose(self):
-#         yield Button("Mute", id="mute", variant="error")
-#         yield Switch()
 
 class NotoControl(Static):
     def compose(self):
-        # yield NotoToggle()
-        # yield Checkbox("Mute", id="mute")
         yield Button("Mute", id="mute", variant="error")
-        yield Button("Sustain", id="sustain", variant="primary")
         yield Button("Query", id="query")
         yield Button("Reset", id="reset", variant='warning')
 
@@ -68,7 +46,6 @@ class NotoTUI(TUI):
 
     BINDINGS = [
         ("m", "mute", "Mute Notochord"),
-        ("s", "sustain", "Mute without ending notes"),
         ("q", "query", "Re-query Notochord"),
         ("r", "reset", "Reset Notochord")]
 
@@ -83,9 +60,10 @@ class NotoTUI(TUI):
 ### end def TUI components###
 
 def main(
-    checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
+    checkpoint="artifacts/noto-txala-011-0020.ckpt", # Notochord checkpoint
     player_config:Dict[int,int]=None, # map MIDI channel : GM instrument
     noto_config:Dict[int,int]=None, # map MIDI channel : GM instrument
+    pitch_set=(41,43,45), # MIDI pitches used
 
     initial_mute=False, # start with Notochord muted
     initial_query=False, # let Notochord start playing immediately
@@ -96,13 +74,22 @@ def main(
     send_pc=False, # send program change messages
     dump_midi=False, # print all incoming MIDI
 
-    balance_sample=False, # choose instruments which have played less recently
-    n_recent=64, # number of recent note-on events to consider for above
-    n_margin=8, # amount of 'slack' in the balance_sample calculation
+    input_latency=0.02,
+    rhythm_temp=0.9,
+    timing_temp=0.2,
+    steer_rate=None,
+
+    auto_reset=True,
+
+    start_after=2, # don't sample notochord until this many total events
+    max_run=5,
+    # balance_sample=True, # choose instruments which have played less recently
+    n_recent=16, # number of recent note-on events to consider for above
+    n_margin=5, # amount of 'slack' in the balance_sample calculation
     
-    max_note_len=5, # in seconds, to auto-release stuck Notochord notes
     max_time=None, # max time between events
     nominal_time=False, #feed Notochord with nominal dt instead of actual
+    backoff_time=1e-3, #time to wait when a predicted player event doesn't happen
 
     osc_port=None, # if supplied, listen for OSC to set controls on this port
     osc_host='', # leave this as empty string to get all traffic on the port
@@ -123,6 +110,8 @@ def main(
             instruments should be different from the player instruments.
             channels should be different unless different ports are used.
             MIDI channels and General MIDI instruments are indexed from 1.
+
+        pitch_set: collection of MIDI pitches for the txalaparta boards
 
         initial_mute: start Notochord muted so it won't play with input.
         initial_query: query Notochord immediately so it plays even without input.
@@ -145,8 +134,6 @@ def main(
         n_recent: number of recent note-on events to consider for above
         n_margin: amount of 'slack' in the balance_sample calculation
 
-        max_note_len: time in seconds after which to force-release sustained
-            notochord notes.
         max_time: maximum time in seconds between predicted events.
             default is the Notochord model's maximum (usually 10 seconds).
         nominal_time: if True, feed Notochord with its own predicted times
@@ -159,9 +146,9 @@ def main(
 
         use_tui: run textual UI.
         predict_player: forecasted next events can be for player.
-            generally should be true, use balance_sample to force Notochord to
-            play.
-        auto_query=True, # query notochord whenever it is unmuted and there is no pending event. generally should be True unless debugging.
+            generally should be True;
+            instead use balance_sample to force Notochord to play.
+        auto_query: query notochord whenever it is unmuted and there is no pending event. generally should be True unless debugging.
     """
     if osc_port is not None:
         osc = OSC(osc_host, osc_port)
@@ -174,9 +161,16 @@ def main(
 
     # default channel:instrument mappings
     if player_config is None:
-        player_config = {1:1} # channel 1: grand piano
+        # player_config = {1:265,2:266}
+        player_config = {1:290,2:291}
     if noto_config is None:
-        noto_config = {2:257} # channel 2: anon
+        # noto_config = {3:267,4:268}
+        noto_config = {3:292,4:293}
+
+    state = {
+        'run_length': 0,
+        'last_side': None
+    }
 
     # convert 1-indexed MIDI channels to 0-indexed here
     player_map = MIDIConfig({k-1:v for k,v in player_config.items()})
@@ -203,10 +197,6 @@ def main(
             warn_inst(i)
             midi.program_change(channel=c, program=(i-1)%128)
     
-    # TODO: add arguments for this,
-    # and sensible defaults for drums etc
-    inst_pitch_map = {i: range(128) for i in noto_map.insts | player_map.insts}
-
     # load notochord model
     try:
         noto = Notochord.from_checkpoint(checkpoint)
@@ -228,6 +218,8 @@ def main(
 
     # query parameters controlled via MIDI / OSC
     controls = {}
+    if steer_rate is not None:
+        controls['steer_rate'] = steer_rate
 
     # tracks held notes, recently played instruments, etc
     history = NotoPerformance()
@@ -245,9 +237,22 @@ def main(
         """realize an event as MIDI, terminal display, and Notochord update"""
         # normalize values
         vel = event['vel'] = round(event['vel'])
-        dt = stopwatch.punch()
+        dt = stopwatch.punch(latency=input_latency if tag=='PLAYER' else 0)
+        # dt = stopwatch.punch()
+        # if tag=='PLAYER':
+            # dt = max(0.001, dt - input_latency)
+            # print(f'latency corrected: {dt}')
         if 'time' not in event or not nominal_time:
             event['time'] = dt
+
+        side = int(event['inst']//2)
+        if side==state['last_side']:
+            state['run_length'] += 1
+        else:
+            state['run_length'] = 1
+
+        state['last_side'] = side
+        print(f'{state["run_length"]=}')
 
         # send out as MIDI
         if send:
@@ -267,7 +272,7 @@ def main(
             noto.feed(**event)
 
     # @lock
-    def noto_reset():
+    def noto_reset(query=True):
         """reset Notochord and end all of its held notes"""
         print('RESET')
 
@@ -275,14 +280,6 @@ def main(
         pending.event = None
         tui(prediction=pending.event)
         
-        # end Notochord held notes
-        for (chan,inst,pitch) in history.note_triples:
-            if inst in noto_map.insts:
-                play_event(
-                    dict(inst=inst, pitch=pitch, vel=0),
-                    channel=chan, 
-                    feed=False, # skip feeding Notochord since we are resetting it
-                    tag='NOTO', memo='reset')
         # reset stopwatch
         stopwatch.punch()
         # reset notochord state
@@ -290,120 +287,92 @@ def main(
         # reset history
         history.push()
         # query the fresh notochord for a new prediction
-        if pending.gate:
+        if pending.gate and query:
             noto_query()
 
     # @lock
-    def noto_mute(sustain=False):
-        tui.query_one('#mute').label = 'UNMUTE' if pending.gate else 'MUTE'
-        # if sustain:
-        tui.query_one('#sustain').label = 'END SUSTAIN' if pending.gate else 'SUSTAIN'
-
+    def noto_mute():
         pending.gate = not pending.gate
-
-        if sustain:
-            print('END SUSTAIN' if pending.gate else 'SUSTAIN')
-        else:
-            print('UNMUTE' if pending.gate else 'MUTE')
+        print('UNMUTE' if pending.gate else 'MUTE')
         # if unmuting, we're done
         if pending.gate:
-            if sustain:
-                noto_query()
             return
         # cancel pending predictions
         pending.event = None
         tui(prediction=pending.event)
 
-        if sustain:
-            return
-        
-        # end+feed all held notes
-        for (chan,inst,pitch) in history.note_triples:
-            if chan in noto_map:
-                play_event(
-                    dict(inst=inst, pitch=pitch, vel=0), 
-                    channel=chan, tag='NOTO', memo='mute')
-
     # query Notochord for a new next event
     # @lock
-    def noto_query():
-        # check for stuck notes
-        # and prioritize ending those
-        for (_, inst, pitch), sw in history.note_data.items():
-            if (
-                inst in noto_map.insts 
-                and sw.read() > max_note_len*(.1+controls.get('steer_duration', 1))
-                ):
-                # query for the end of a note with flexible timing
-                # with profile('query', print=print):
-                t = stopwatch.read()
-                pending.event = noto.query(
-                    next_inst=inst, next_pitch=pitch,
-                    next_vel=0, min_time=t, max_time=t+0.5)
-                print(f'END STUCK NOTE {inst=},{pitch=}')
-                return
-
+    def noto_query(delay=0):
         counts = history.inst_counts(
             n=n_recent, insts=noto_map.insts | player_map.insts)
-        print(counts)
+        # print(counts)
+        player_count = sum(counts[i] for i in player_map.insts)
+        noto_count = sum(counts[i] for i in noto_map.insts)
+        print(f'player: {player_count}')
+        print(f'noto: {noto_count}')
+        total_count = player_count + noto_count
 
         all_insts = noto_map.insts 
         if predict_player:
             all_insts = all_insts | player_map.insts
 
-        held_notes = history.held_inst_pitch_map(all_insts)
-
         steer_time = 1-controls.get('steer_rate', 0.5)
-        steer_pitch = controls.get('steer_pitch', 0.5)
-        steer_density = controls.get('steer_density', 0.5)
-        
         tqt = (max(0,steer_time-0.5), min(1, steer_time+0.5))
-        tqp = (max(0,steer_pitch-0.5), min(1, steer_pitch+0.5))
+
+        print(tqt)
 
         # if using nominal time,
         # *subtract* estimated feed latency to min_time; (TODO: really should
         #   set no min time when querying, use stopwatch when re-querying...)
         # if using actual time, *add* estimated query latency
         time_offset = -5e-3 if nominal_time else 10e-3
-        min_time = stopwatch.read()+time_offset
+        min_time = stopwatch.read()+time_offset+delay
 
-        # balance_sample: note-ons only from instruments which have played less
-        bal_insts = set(counts.index[counts <= counts.min()+n_margin])
-        if balance_sample and len(bal_insts)>0:
-            insts = bal_insts
+        if total_count < start_after:
+            insts = player_map.insts
         else:
             insts = all_insts
+            if state['run_length'] >= max_run:
+                s = int(state['last_side']*2)
+                insts = insts - {s, s+1}
+            # balance_sample: note-ons only from entity which has played less
+            # if balance_sample:                
+            #     if player_count <= noto_count - n_margin:
+            #         insts = player_map.insts
+            #     elif noto_count <= player_count - n_margin:
+            #         insts = noto_map.insts
 
-        # VTIP is better for time interventions,
-        # VIPT is better for instrument interventions
-        # could decide probabilistically based on value of controls + insts...
-        if insts==all_insts:
-            query_method = noto.query_vtip
+        if len(insts)==0:
+            insts = all_insts
+
+        print(f'{insts=}')
+
+        # bal_insts = set(counts.index[counts <= counts.min()+n_margin])
+        # if balance_sample and len(bal_insts)>0:
+        #     insts = bal_insts
+        # else:
+        #     insts = all_insts
+
+        # query_method = noto.query_tipv_onsets
+        if len(insts) > 2:
+            query_method = noto.query_tipv_onsets
         else:
-            query_method = noto.query_vipt
-
-        # print(f'considering {insts} for note_on')
-        # use only currently selected instruments
-        note_on_map = {
-            i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
-            for i in insts
-        }
-        # use any instruments which are currently holding notes
-        note_off_map = {
-            i: set(ps)&set(held_notes[i]) # only held notes
-            for i,ps in inst_pitch_map.items()
-        }
+            query_method = noto.query_itpv_onsets
 
         max_t = None if max_time is None else max(max_time, min_time+0.2)
 
+        print(min_time, max_t)
+
         pending.event = query_method(
-            note_on_map, note_off_map,
+            include_pitch=pitch_set,
+            include_inst=list(insts),
             min_time=min_time, max_time=max_t,
             truncate_quantile_time=tqt,
-            truncate_quantile_pitch=tqp,
-            steer_density=steer_density,
+            min_vel=80, max_vel=120,
+            rhythm_temp=rhythm_temp,
+            timing_temp=timing_temp,
         )
-
         # display the predicted event
         tui(prediction=pending.event)
 
@@ -433,12 +402,12 @@ def main(
     def _(msg):
         """CC messages on any channel"""
 
-        if msg.control==1:
-            controls['steer_pitch'] = msg.value/127
-            print(f"{controls['steer_pitch']=}")
-        if msg.control==2:
-            controls['steer_density'] = msg.value/127
-            print(f"{controls['steer_density']=}")
+        # if msg.control==1:
+        #     controls['steer_pitch'] = msg.value/127
+        #     print(f"{controls['steer_pitch']=}")
+        # if msg.control==2:
+        #     controls['steer_density'] = msg.value/127
+        #     print(f"{controls['steer_density']=}")
         if msg.control==3:
             controls['steer_rate'] = msg.value/127
             print(f"{controls['steer_rate']=}")
@@ -475,6 +444,7 @@ def main(
         # if thru and msg.channel not in noto_map.channels:
             # midi.send(msg)
 
+
         if msg.channel not in player_map.channels:
             return
         
@@ -500,10 +470,10 @@ def main(
         inst, pitch, vel = event['inst'], event['pitch'], round(event['vel'])
 
         # note on which is already playing or note off which is not
-        if (vel>0) == ((inst, pitch) in history.note_pairs): 
-            print(f're-query for invalid {vel=}, {inst=}, {pitch=}')
-            noto_query()
-            return
+        # if (vel>0) == ((inst, pitch) in history.note_pairs): 
+        #     print(f're-query for invalid {vel=}, {inst=}, {pitch=}')
+        #     noto_query()
+        #     return
         
         chan = noto_map.inv(inst)
         play_event(event, channel=chan, tag='NOTO')
@@ -518,30 +488,40 @@ def main(
             pending.event is not None and
             stopwatch.read() > pending.event['time']
             ):
+            e = pending.event
+            if e['time'] >= noto.time_dist.hi.item():
+                if auto_reset:
+                    noto_reset(query=False)
             # if so, check if it is a notochord-controlled instrument
-            if pending.event['inst'] in noto_map.insts:
+            if e['inst'] in noto_map.insts:
                 # prediction happens
                 noto_event()
+                delay = 0
+            else:
+                delay = backoff_time
             # query for new prediction
-            if auto_query:
-                noto_query()
+            # print(pending.event)
+            pending.event = None
+            if ('end' in e and random.random() < e['end']):
+                print('END')
+                if auto_reset:
+                    noto_reset(query=False)
+            elif auto_query:
+                noto_query(delay=delay)
 
     @cleanup
     def _():
-        """end any remaining notes"""
+        """"""
+        pass
         # print(f'cleanup: {notes=}')
-        for (chan,inst,pitch) in history.note_triples:
-        # for (inst,pitch) in notes:
-            if inst in noto_map.insts:
-                midi.note_on(note=pitch, velocity=0, channel=chan)
+        # for (chan,inst,pitch) in history.note_triples:
+        # # for (inst,pitch) in notes:
+        #     if inst in noto_map.insts:
+        #         midi.note_on(note=pitch, velocity=0, channel=chan)
 
     @tui.set_action
     def mute():
         noto_mute()
-
-    @tui.set_action
-    def sustain():
-        noto_mute(sustain=True)
     
     @tui.set_action
     def reset():

@@ -44,7 +44,7 @@ NotoMappingOutput : NotoOutput {
 	send { | inst, pitch, vel |
 		var channel;
 		channel = instrumentMap.at(inst);
-		(isDrum(inst) && drumMap.includesKey(pitch)).if{
+		(this.isDrum(inst) && drumMap.includesKey(pitch)).if{
 			pitch = drumMap.at(pitch)};
 		channel.isNil.if{
 			"WARNING: unmapped instrument in NotoDAWOutput.send".postln; ^nil};

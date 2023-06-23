@@ -184,7 +184,7 @@ class CensoredMixtureLogistic(nn.Module):
     # e.g. nucleus sampling on the categorical distribution?
     def sample(self, h, truncate=None, shape=None, 
         weight_top_p=None, component_temp=None, bias=None, 
-        truncate_quantile=None, quantile_k=1024,
+        truncate_quantile=None, quantile_k=1024, eps=1e-9
         ):
         """
         Args:
@@ -236,7 +236,7 @@ class CensoredMixtureLogistic(nn.Module):
         probs = log_pi.exp() * trunc_probs # reweighted mixture component probs
         if weight_top_p is not None:
             # reweight with top_p
-            probs = reweight_top_p(probs, weight_top_p)
+            probs = reweight_top_p(probs+eps, weight_top_p)
 
         ## DEBUG
         # print(loc)
@@ -244,7 +244,7 @@ class CensoredMixtureLogistic(nn.Module):
         # print(trunc_probs)
         # print(probs)
         #, log_pi.exp(), trunc_probs)
-
+        # print(probs+eps)
         c = D.Categorical(probs).sample((shape,))
         # move sample dimension first
         loc = loc.movedim(-1, 0).gather(0, c)

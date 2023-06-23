@@ -16,10 +16,10 @@ import numpy as np
 import scipy.stats
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.tensorboard import SummaryWriter
 
-from notochord import Notochord, MIDIDataset
+from notochord import Notochord, MIDIDataset, TxalaDataset
 from notochord.util import deep_update, get_class_defaults, gen_masks
 
 class Trainer:
@@ -43,6 +43,11 @@ class Trainer:
         n_jobs = 1, # for dataloaders
         device = 'cpu', # 'cuda:0'
         epoch_size = None, # in iterations, None for whole dataset
+        txala = False,
+        txala_remap = False,
+        txala_permute = False,
+        min_valid = 8,
+        min_test = 8
         ):
         """TODO: Trainer __init__ docstring"""
         kw = locals(); kw.pop('self')
@@ -90,10 +95,14 @@ class Trainer:
         tqdm.write(repr(self.model))
 
         # dataset
-        self.dataset = MIDIDataset(
-            self.data_dir, self.batch_len)#, clamp_time=clamp_time)
-        valid_len = max(8, int(len(self.dataset)*0.03))
-        test_len = max(8, int(len(self.dataset)*0.02))
+        if txala:
+            self.dataset = TxalaDataset(data_dir, self.batch_len, 
+                remap=txala_remap, permute=txala_permute)
+        else:
+            self.dataset = MIDIDataset(data_dir, self.batch_len)
+            
+        valid_len = max(min_valid, int(len(self.dataset)*0.03))
+        test_len = max(min_test, int(len(self.dataset)*0.02))
         train_len = len(self.dataset) - valid_len - test_len
         self.train_dataset, self.valid_dataset, self.test_dataset = torch.utils.data.random_split(
             self.dataset, [train_len, valid_len, test_len], 
@@ -242,8 +251,11 @@ class Trainer:
             shuffle=True, num_workers=self.n_jobs, pin_memory=self.gpu)
 
         valid_loader = DataLoader(
-            self.valid_dataset, self.batch_size//4,
-            shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu)
+            self.valid_dataset, self.batch_size,#//4,
+            shuffle=False, num_workers=self.n_jobs, pin_memory=self.gpu,
+            sampler=RandomSampler(
+                self.valid_dataset, 
+                num_samples=self.batch_size, replacement=True))
 
         ##### validation loop
         def run_validation():

@@ -6,11 +6,12 @@ channels:
 dependencies:
   - python=3.10
   - pytorch=1.13
+  - faiss
   - ipykernel
   - seaborn
   - tqdm
   - fire
-  - textual
+  - textual>=0.27
   - pip
   - pip:
     - mido

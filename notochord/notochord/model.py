@@ -365,7 +365,7 @@ class Notochord(nn.Module):
             self.h_query = None
 
     # TODO: add end prediction to deep_query
-    def deep_query(self, query):
+    def deep_query(self, query, predict_end=True):
         """flexible querying with nested Query objects.
         see query_vtip for an example.
 
@@ -375,8 +375,21 @@ class Notochord(nn.Module):
         if self.h_query is None:
             with torch.inference_mode():
                 self.h_query = self.h_proj(self.h)
-        return self._deep_query(query, hidden=self.h_query[:,0], event={})
+        event = self._deep_query(
+            query, hidden=self.h_query[:,0], event={})
         
+        if predict_end:
+            # print('END')
+            # print(f'{self.h}')
+            with torch.inference_mode():
+                end_params = self.end_proj(self.h)
+                event['end'] = end_params.softmax(-1)[...,1].item()
+                # event['end'] = D.Categorical(logits=end_params).sample().item()
+        else:
+            event['end'] = 0#torch.zeros(self.h.shape[:-1])
+
+        return event
+    
     def _deep_query(self, query, hidden, event):
         m = query.modality
         sq = query.then
@@ -398,11 +411,24 @@ class Notochord(nn.Module):
             sample = categorical_sample
 
         # Query.then can be:
+
         # None (no further sub-queries)
-        # str (no firther sub-queries, but set the 'path' property of the event)
-        # 
+        # or str (no further sub-queries, set the 'path' property of the event)
+
+        # Query describing what to do next
+
+        # pair of Number, Query
+        # setting a deterministic value for the current query,
+        # and the query to execute next
+
+        # list of Range, Query pairs
+        # or list of Subset, Query pairs
+        #    describing what to do next given where the sampled value falls
+        #    Range and Subset can also carry weights
+
 
         with torch.inference_mode():
+            #
             if sq is None or isinstance(sq, str) or isinstance(sq, Query):
                 # this is the final query (sq is None or a path tag)
                 # or there are no cases, just proceed to next subquery
@@ -413,8 +439,13 @@ class Notochord(nn.Module):
             elif len(sq)==0:
                 raise ValueError(f"subquery has no cases: {sq}")
             
-            elif len(sq)==1 and isinstance(sq[0], Number):
-                # deterministic single value case
+            # deterministic single value cases
+            # elif len(sq)==1 and len(sq[0])==3 and isinstance(sq[0][0], Number):
+            #     # singleton list case
+            #     key, action = sq[0]
+            #     result = key
+            elif len(sq)==2 and isinstance(sq[0], Number):
+                # bare pair case
                 key, action = sq
                 result = key
 
@@ -435,7 +466,7 @@ class Notochord(nn.Module):
                     probs = [
                         all_probs[...,s.values].sum(-1) * s.weight
                         for s,_ in sq]
-                    # print(f'power_query {m} {sq=} {probs=}')
+                    # print(f'deep_query {m} {sq=} {probs=}')
                     idx = categorical_sample(torch.tensor(probs).log())
                 else:
                     idx = 0
@@ -454,7 +485,7 @@ class Notochord(nn.Module):
                         (dist.cdf(params, r.hi) - dist.cdf(params, r.lo)
                         ) * r.weight
                         for r,_ in sq]
-                    print(f'power_query {m} {probs=}')
+                    # print(f'deep_query {m} {probs=}')
                     idx = categorical_sample(torch.tensor(probs).log())
                 else:
                     idx = 0
@@ -470,10 +501,78 @@ class Notochord(nn.Module):
             # embed, add to hidden, recurse into subquery
             if isinstance(action, Query):
                 emb = embed(result)
-                return self._deep_query(action, hidden+emb, event)
+                hidden = hidden + emb
+                return self._deep_query(action, hidden, event)
             else:
                 event['path'] = action
                 return event
+            
+    def query_tipv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'time',
+            truncate=(min_time or -np.inf, max_time or np.inf), 
+            truncate_quantile=truncate_quantile_time,
+            weight_top_p=rhythm_temp, component_temp=timing_temp,
+            then=Query(
+                'inst',
+                whitelist=include_inst,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
+    
+    def query_itpv_onsets(self,
+        min_time=None, max_time=None, 
+        include_inst=None,
+        include_pitch=None,
+        truncate_quantile_time=None,
+        truncate_quantile_pitch=None,
+        rhythm_temp=None, timing_temp=None,
+        min_vel=None, max_vel=None
+        ):
+        """
+        for onset-only_models
+        """
+        q = Query(
+            'inst',
+            whitelist=include_inst,
+            then=Query(
+                'time',
+                truncate=(min_time or -np.inf, max_time or np.inf), 
+                truncate_quantile=truncate_quantile_time,
+                weight_top_p=rhythm_temp, component_temp=timing_temp,
+                then=Query(
+                    'pitch',
+                    whitelist=include_pitch,
+                    truncate_quantile=truncate_quantile_pitch,
+                    then=Query(
+                        'vel',
+                        truncate=(min_vel or 0.5, max_vel or np.inf),
+                    )
+                )
+            )
+        )
+        return self.deep_query(q)
+
 
     def query_vtip(self,
             note_on_map:Dict[int,List[int]], 
@@ -678,8 +777,8 @@ class Notochord(nn.Module):
             'inst': int. id of predicted instrument.
                 1-128 are General MIDI standard melodic instruments
                 129-256 are drumkits for MIDI programs 1-128
-                257-264 are 'anonymous' melodic instruments
-                265-272 are 'anonymous' drums
+                257-288 are 'anonymous' melodic instruments
+                289-320 are 'anonymous' drumkits
             'pitch': int. predicted MIDI number of next note, 0-128.
             'time': float. predicted time to next note in seconds.
             'vel': float. unquantized predicted velocity of next note.

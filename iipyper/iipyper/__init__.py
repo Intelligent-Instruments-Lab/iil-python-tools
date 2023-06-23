@@ -7,18 +7,9 @@ import fire
 
 from .midi import *
 from .osc import *
+from .audio import *
 from .tui import *
 from .state import _lock
-
-# Audio WIP
-import sounddevice as sd
-class Audio:
-    instances = [] # 
-    def __init__(self, *a, **kw):
-        print(sd.query_devices())
-        # self.stream = sd.InputStream(*a, **kw) # TODO
-        self.stream = sd.Stream(*a, **kw) # TODO
-        Audio.instances.append(self)
 
 @contextmanager
 def profile(label, print=print):
@@ -80,12 +71,18 @@ class Stopwatch:
         if punch:
             self.punch()
 
-    def punch(self):
-        """return elapsed time since last punch, then punch"""
-        t = time.perf_counter_ns()
+    def punch(self, latency=0):
+        """return elapsed time since last punch, then punch
+        
+        Args:
+            latency: punch `latency` seconds in the past, 
+                unless it would be before the previous punch
+        """
+        t = time.perf_counter_ns() - latency
         if self.t is None:
             dt_ns = 0
         else:
+            t = max(self.t, t)
             dt_ns = t - self.t
         self.t = t
         return dt_ns * 1e-9
@@ -174,13 +171,18 @@ def lock(f):
             f(*a, **kw)
     return decorated
 
+def start_audio():
+    for a in Audio.instances:
+        if not a.stream.active:
+            a.stream.start()
+
 def run(main=None):
     try:
         if main is not None:
             fire.Fire(main)
 
-        for a in Audio.instances:
-            a.stream.start()
+        # non-blocking main case:
+        start_audio()
 
         # enter a loop if there is not one in main
         while True:
