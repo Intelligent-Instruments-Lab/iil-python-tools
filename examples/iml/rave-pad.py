@@ -128,7 +128,7 @@ def main(
             # outdata[:,:] = rave(indata)[:,0].T
             # ctrl.mul_(0.99)
             # ctrl.add_(torch.randn(d_src)*0.05)
-            z[:] = torch.from_numpy(iml.map(ctrl, k=5))#.float()
+            # z[:] = torch.from_numpy(iml.map(ctrl, k=5))#.float()
             tui(state=(
                 ' '.join(f'{x.item():+0.2f}' for x in ctrl),
                 ' '.join(f'{x.item():+0.2f}' for x in z)))
@@ -152,6 +152,7 @@ def main(
     def mm(event):
         ctrl[0] = (event.x - 64) / 30
         ctrl[1] = (event.y - 15) / 5
+        z[:] = torch.from_numpy(iml.map(ctrl, k=5))#.float()
     tui.ctrl_pad.mouse_move = mm
 
     # TODO: button to fix current neighbors
@@ -163,7 +164,7 @@ def main(
         # keep the current nearest neighbors and rerandomize the rest
         print('randomize:')
         k = 5
-        if len(iml.targets):
+        if len(iml.pairs):
             srcs, tgts, scores = iml.search(ctrl, k=k)
             max_score = max(scores)
             iml.reset()
@@ -172,7 +173,7 @@ def main(
         else:
             max_score = 0
 
-        while(len(iml.targets) < 32):
+        while(len(iml.pairs) < 32):
             src = torch.randn(d_src)#/(ctrl.abs()/2+1)
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue

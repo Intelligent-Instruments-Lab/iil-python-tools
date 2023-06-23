@@ -20,8 +20,12 @@ class NNSearch:
         """
         feature = feature[None].astype(np.float32) # add batch dim, enforce type
         scores, target_ids = self.index.search(feature, k)
-        scores = scores #** 0.5 # hardcoded for L2
-        return target_ids[0], scores[0] # remove batch dim
+        scores = scores[0] #** 0.5 # hardcoded for L2
+        target_ids = target_ids[0] # remove batch dim
+        b = [i>=0 for i in target_ids] # remove -1 ids
+        target_ids = target_ids[b]
+        scores = scores[b]
+        return target_ids, scores
     
     def distance(self, a, b):
         # should match the index
