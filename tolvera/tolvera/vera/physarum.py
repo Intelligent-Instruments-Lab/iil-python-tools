@@ -142,4 +142,4 @@ def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=400
     pixels.show(render)
 
 if __name__ == '__main__':
-    run(main())
+    run(main)
