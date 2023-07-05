@@ -1,48 +1,38 @@
 import iml as iml_module
 from iml import IML
-from iipyper import TUI, Audio, OSC, run, _lock
+from iipyper import OSC, run, _lock, repeat
 import tolvera as tol
 import taichi as ti
 import numpy as np
 import torch
+import time
 
-import sounddevice as sd
-import sys
-
-def main(x=1920, y=1080, n=64, species=5, fps=120, host="127.0.0.1", receive_port=4000, send_port=5000,
-        device=None,
-        rave_path=None, checkpoint=None):
+def main(x=1920, y=1080, n=64, species=5, fps=120, 
+        host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000,
+        headless=False, tgt_size=8, gpu=True):
     
-    # osc = OSC(osc_host, osc_port)
+    seed = int(time.time())
+    if gpu:
+        ti.init(arch=ti.vulkan, random_seed=seed)
+    else:
+        ti.init(random_seed=seed)
+    osc = OSC(host, receive_port, verbose=True, concurrent=True)
+    client_name = "ferroneural"
+    osc.create_client(client_name, client, send_port)
 
     ti.init(arch=ti.vulkan)
     # ti.init(random_seed=seed)
     particles = tol.Particles(x, y, n, species, wall_margin=0)
     pixels = tol.Pixels(x, y, evaporate=0.95, fps=fps)
     boids = tol.vera.Boids(x, y, species)
-    
-    rave = torch.jit.load(rave_path)
 
     d_src = n*2
-    d_tgt = rave.encode_params[2]
+    d_tgt = torch.zeros(tgt_size)
 
-    try:
-        sr = rave.sr
-    except Exception:
-        sr = rave.sampling_rate
+    print(d_tgt, type(d_tgt))
 
     ctrl = torch.zeros(d_src)
     z = torch.zeros(d_tgt)
-    def rave_callback(
-            indata: np.ndarray, outdata: np.ndarray, #[frames x channels]
-            frames: int, time, status):
-        with torch.inference_mode():
-            outdata[:,:] = rave.decode(z[None,:,None])[:,0].T
-        
-    audio = Audio(
-        device=device, dtype=np.float32,
-        samplerate=sr, blocksize=rave.encode_params[-1], 
-        callback=rave_callback)
     
     iml = IML(d_src)
 
@@ -60,18 +50,23 @@ def main(x=1920, y=1080, n=64, species=5, fps=120, host="127.0.0.1", receive_por
         print('update_pos')
     update = tol.utils.Updater(update_pos, 24)
 
-    audio.stream.start()
-    
+    def send_tgt():
+        return d_tgt.toList()
+    osc_send_tgt = tol.utils.OSCSendUpdater(osc, "/tolvera/tgt", send_tgt, fps)
+ 
     def render():
         update()
+        osc_send_tgt()
         pixels.diffuse()
         pixels.decay()
-        # particles.activity_decay()
-        # pixels.clear()
         boids(particles)
         particles(pixels)
 
-    pixels.show(render)
+    @repeat(0.016)
+    def loop():
+        render()
+
+    # pixels.show(render)
 
 if __name__=='__main__':
     run(main)
