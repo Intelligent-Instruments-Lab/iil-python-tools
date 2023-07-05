@@ -69,10 +69,10 @@ class PdPatcher:
         y += self.h
         packOSC_id = self.add_object("packOSC", x+100, y)
         y += self.h
-        netsend_id = self.add_object("netsend -u -b", x, y)
+        netsend_id = self.add_object("netsend -u", x, y)
         y += self.h
         status_id = self.add_number(x, y)
-        print_id = self.add_object("print send.to.iipyper", x+40, y)
+        print_id = self.add_object("print reply.from.netreceive", x+40, y)
         self.connect(loadbang_id, 0, connect_id, 0)
         self.connect(connect_id, 0, netsend_id, 0)
         self.connect(disconnect_id, 0, netsend_id, 0)
@@ -83,7 +83,7 @@ class PdPatcher:
         return netsend_id
 
     def add_osc_receive(self, port, x, y):
-        netreceive_id = self.add_object(f"netreceive -u -b {port}", x, y)
+        netreceive_id = self.add_object(f"netreceive -u {port}", x, y)
         y += self.h
         unpackOSC_id = self.add_object("unpackOSC", x, y)
         y += self.h
@@ -133,8 +133,8 @@ class PdPatcher:
         '''
         does this even make sense?
         '''
-        receive_id = self.add_msg(x, y, "r receive")
-        msg_id = self.add_comment(x, y, path)
+        receive_id = self.add_msg("r receive", x, y)
+        msg_id = self.add_comment(path, x, y)
         self.connect(receive_id, 0, msg_id, 0)
         return msg_id
 
@@ -189,7 +189,6 @@ class PdPatcher:
         self.connect(route_id, 0, unpack_id, 0)
         self.connect(route_id, 0, print_id, 0)
         [self.connect(unpack_id, i, slider_ids[i], 0) for i in range(len(parameters))]
-        [self.connect(slider_ids[i] if int_ids[i] == -1 else int_ids[i], 0, float_ids[i], 0) for i in range(len(parameters))]
         [self.connect(float_ids[i], 0, send_ids[i], 0) for i in range(len(parameters))]
 
         return slider_ids, unpack_id
@@ -214,16 +213,20 @@ class PdPatcher:
         slider_ids, slider_float_ids, int_ids, tbf_ids, _y_off = self.add_sliders(x, y+y_off, parameters, "send")
         y_off+=_y_off+25
         y_off+=180
-        # [pak $1 $2 $3 ...]
-        pack_id = self.add_object(
-            "pack "+self._pack_args(parameters), x, y+y_off)
-        # pack_width = len(parameters)*7+60
+
+        pack_id = -1
+        out_id = -1
+        # [pack $1 $2 $3 ...]
+        if len(parameters) > 1:
+            pack_id = self.add_object("pack "+self._pack_args(parameters), x, y+y_off)
+            out_id = pack_id
 
         # [msg /path $1 $2 $3 ...]
         y_off+=25
         msg_args = self._msg_args(parameters)
         msg_id = self.add_msg(
             path+" "+msg_args, x, y+y_off)
+        out_id = msg_id if len(parameters) == 1 else out_id
         # [s send]
         y_off+=25
         send_id = self.add_object("s send.to.iipyper", x, y+y_off)
@@ -238,25 +241,17 @@ class PdPatcher:
 
             self.connect(rcv, 0, slider, 0)
             if   int_id == -1 and tbf_id == -1: # if no int or tbf
-                self.connect(slider,       0, slider_float, 0)
-                self.connect(slider_float, 0, pack_id,      0)
+                self.connect(slider_float, 0, out_id,       0)
             elif int_id != -1 and tbf_id == -1: # if int but no tbf
-                self.connect(slider,       0, int_id, 0)
-                self.connect(int_id,       0, slider_float, 0)
-                self.connect(slider_float, 0, pack_id,      0)
+                self.connect(slider_float, 0, out_id,       0)
             elif int_id == -1 and tbf_id != -1: # if tbf but no int
-                self.connect(slider,       0, slider_float, 0)
-                self.connect(slider_float, 0, tbf_id,       0)
-                self.connect(tbf_id,       0, pack_id,      0)
-                self.connect(tbf_id,       1, pack_id,      i)
+                self.connect(tbf_id,       0, out_id,       0)
+                self.connect(tbf_id,       1, pack_id,      i) if pack_id != -1 else None
             elif int_id != -1 and tbf_id != -1: # if both int and tbf
-                self.connect(slider,       0, int_id, 0)
-                self.connect(int_id,       0, slider_float, 0)
-                self.connect(slider_float, 0, tbf_id,       0)
-                self.connect(tbf_id,       0, pack_id,      0)
-                self.connect(tbf_id,       1, pack_id,      i)
+                self.connect(tbf_id,       0, out_id,       0)
+                self.connect(tbf_id,       1, pack_id,      i) if pack_id != -1 else None
 
-        self.connect(pack_id, 0, msg_id, 0)
+        self.connect(pack_id, 0, msg_id, 0) if pack_id != -1 else None
         self.connect(msg_id, 0, send_id, 0)
         return slider_ids, pack_id, msg_id
     
@@ -295,7 +290,7 @@ class PdPatcher:
         int_id = -1
         tbf_id = -1
         float_id = -1
-        if float is False and io is "send": # if int and send
+        if float == False and io == "send": # if int and send
             # int -> number -> t b f
             int_id = self.add_object("int", x, y)
             y+=self.h
@@ -305,21 +300,21 @@ class PdPatcher:
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
             self.connect(float_id, 0, tbf_id, 0)
-        elif float is False and io is not "send": # if int and not send
+        elif float == False and io != "send": # if int and not send
             # int -> number
             int_id = self.add_object("int", x, y)
             y+=self.h
             float_id = self.add_number(x, y)
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
-        elif float is True and io is "send": # if float and send
+        elif float == True and io == "send": # if float and send
             # number -> t b f
             float_id = self.add_number(x, y)
             y+=self.h
             tbf_id = self.add_object("t b f", x, y)
             self.connect(slider_id, 0, float_id, 0)
             self.connect(float_id, 0, tbf_id, 0)
-        elif float is True and io is not "send": # if float and not send
+        elif float == True and io != "send": # if float and not send
             # number
             float_id = self.add_number(x, y)
             self.connect(slider_id, 0, float_id, 0)
