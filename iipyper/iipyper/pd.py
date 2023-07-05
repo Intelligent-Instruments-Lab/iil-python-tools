@@ -1,0 +1,369 @@
+import typing
+
+class PdPatcher:
+    def __init__(self, osc, client_name="client", filepath="osc_controls", x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
+        self.patch_objects = [f"#N canvas {x} {y} {w} {h} 12;\n"]
+        self.patch_connections = []
+        self.types = {
+            "object": "obj",
+            "message": "msg",
+            "number": "floatatom",
+            "symbol": "symbolatom",
+            "toggle": "toggle",
+            "slider": "vslider",
+            "bang": "bng",
+            "comment": "text",
+        }
+        self.patch_ids = {}
+        self.osc = osc
+        self.client_name = client_name
+        self.client_address, self.client_port = self.osc.client_names[self.client_name]
+        self.filepath = filepath
+        self.init()
+    
+    def init(self):
+        self.w = 5.5 # default width (scaling factor)
+        self.h = 27.0 # default height (pixels)
+        self.param_width = 70
+        self.s_x, self.s_y = 30, 30 # sends insertion point
+        self.r_x, self.r_y = 30, 530 # receives insertion point
+        self.add_comment("Pd → Python", self.s_x, self.s_y)
+        self.add_comment("===========", self.s_x, self.s_y+self.h/2)
+        self.patch_ids['send'] = self.add_osc_send(self.osc.host, self.osc.port, self.s_x, self.s_y+self.h*2)
+        self.add_comment("Python → Pd", self.r_x, self.r_y)
+        self.add_comment("===========", self.r_x, self.r_y+self.h/2)
+        self.patch_ids['receive'] = self.add_osc_receive(self.client_port, self.r_x, self.r_y+self.h*2)
+        self.s_x+=300
+        self.r_x+=300
+        self.save(self.filepath)
+
+    def get_last_id(self):
+        return len(self.patch_objects)-2
+
+    def add_box(self, box_type, x, y, box_text):
+        self.patch_objects.append(f"#X {box_type} {x} {y} {box_text};\n")
+        return self.get_last_id()
+
+    def add_object(self, obj, x, y):
+        return self.add_box("obj", x, y, obj)
+    
+    def add_msg(self, msg, x, y):
+        return self.add_box("msg", x, y, msg)
+
+    def add_comment(self, text, x, y):
+        return self.add_box("text", x, y, text)
+    
+    def add_number(self, x, y):
+        return self.add_box("floatatom", x, y, f"5 0 0 0 - - - 0")
+
+    def connect(self, a_id, a_outlet, b_id, b_inlet):
+        self.patch_connections.append(f"#X connect {a_id} {a_outlet} {b_id} {b_inlet};\n")
+    
+    def add_osc_send(self, host, port, x, y):
+        loadbang_id = self.add_object("loadbang", x, y)
+        y += self.h
+        connect_id = self.add_msg(f"connect {host} {port}", x, y)
+        y += self.h
+        disconnect_id = self.add_msg("disconnect", x+10, y)
+        send_id = self.add_object("r send.to.iipyper", x+100, y)
+        y += self.h
+        packOSC_id = self.add_object("packOSC", x+100, y)
+        y += self.h
+        netsend_id = self.add_object("netsend -u -b", x, y)
+        y += self.h
+        status_id = self.add_number(x, y)
+        print_id = self.add_object("print send.to.iipyper", x+40, y)
+        self.connect(loadbang_id, 0, connect_id, 0)
+        self.connect(connect_id, 0, netsend_id, 0)
+        self.connect(disconnect_id, 0, netsend_id, 0)
+        self.connect(send_id, 0, packOSC_id, 0)
+        self.connect(packOSC_id, 0, netsend_id, 0)
+        self.connect(netsend_id, 0, status_id, 0)
+        self.connect(netsend_id, 1, print_id, 0)
+        return netsend_id
+
+    def add_osc_receive(self, port, x, y):
+        netreceive_id = self.add_object(f"netreceive -u -b {port}", x, y)
+        y += self.h
+        unpackOSC_id = self.add_object("unpackOSC", x, y)
+        y += self.h
+        print_id = self.add_object("print receive.from.iipyper", x+20, y)
+        y += self.h
+        receive_id = self.add_object("s receive.from.iipyper", x, y)
+        self.connect(netreceive_id, 0, unpackOSC_id, 0)
+        self.connect(unpackOSC_id, 0, receive_id, 0)
+        self.connect(unpackOSC_id, 0, print_id, 0)
+        return self.get_last_id()
+
+    def add_send_func(self, f):
+        hints = typing.get_type_hints(f['f'])['return'].__args__
+        f_p = f['params']
+        params = []
+        if len(f_p) == 0:
+            self.add_osc_receive_msg(self.r_x, self.r_y, f['address'])
+        else:
+            for i, p in enumerate(f_p):
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label":   p,     "data": hints[i].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
+                })
+            self.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
+        self.r_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
+        self.save(self.filepath)
+    
+    def add_receive_func(self, f):
+        hints = typing.get_type_hints(f['f'])
+        f_p = f['params']
+        params = []
+        if len(f_p) == 0:
+            self.add_osc_send_msg(self.s_x, self.s_y, f['address'])
+        else:
+            for p in f_p:
+                p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
+                params.append({
+                    "label":   p,     "data": hints[p].__name__, 
+                    "min_val": p_min, "size": p_max-p_min
+                })
+            self.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
+        self.s_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
+        self.save(self.filepath)
+
+    def add_osc_receive_msg(self, x, y, path):
+        '''
+        does this even make sense?
+        '''
+        receive_id = self.add_msg(x, y, "r receive")
+        msg_id = self.add_comment(x, y, path)
+        self.connect(receive_id, 0, msg_id, 0)
+        return msg_id
+
+    def add_osc_send_msg(self, x, y, path):
+        msg_id = self.add_msg(path, x, y+225+self.h)
+        send_id = self.add_object("s send", x, y+250+self.h)
+        self.connect(msg_id, 0, send_id, 0)
+        return msg_id
+
+    def add_osc_receive_with_controls(self, x, y, path, parameters):
+        '''
+        TODO: Does [route] need to be broken down into individual subpaths?
+        '''
+
+        # [comment path]
+        y_off = 0
+        path_comment_id = self.add_comment(path, x, y+y_off)
+        
+        # [r receive]
+        y_off+=self.h
+        receive_id = self.add_object("r receive.from.iipyper", x, y+y_off)
+
+        # [route /path]
+        y_off+=self.h
+        route_id = self.add_object("routeOSC "+path, x, y+y_off)
+
+        # [unpack f f f ...] [print /path]
+        y_off+=self.h
+        unpack_id = self.add_object("unpack "+self._pack_args(parameters), x, y+y_off)
+        unpack_width = len(parameters)*7+60
+        print_id = self.add_object("print "+path, x+unpack_width+10, y+y_off)
+
+        # sliders
+        y_off+=10
+        slider_ids, float_ids, int_ids, tbf_ids, _y_off = self.add_sliders(x, y+y_off, parameters, "receive")
+        y_off+=160
+
+        # [s arg_name]
+        y_off+=_y_off+25
+        send_ids = [
+            self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+                            x+i*self.param_width, 
+                            y+y_off+(0 if i % 2 == 0 else 25)) 
+            for i, p in enumerate(parameters)]
+
+        # [comment params]
+        y_off+=50
+        param_comment_ids, _y_off = self.add_param_comments(x, y+y_off, parameters)
+        
+        # # connections
+        self.connect(receive_id, 0, route_id, 0)
+        self.connect(route_id, 0, unpack_id, 0)
+        self.connect(route_id, 0, print_id, 0)
+        [self.connect(unpack_id, i, slider_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(slider_ids[i] if int_ids[i] == -1 else int_ids[i], 0, float_ids[i], 0) for i in range(len(parameters))]
+        [self.connect(float_ids[i], 0, send_ids[i], 0) for i in range(len(parameters))]
+
+        return slider_ids, unpack_id
+
+    def add_osc_send_with_controls(self, x, y, path, parameters):
+        y_off = 0
+        # [comment path]
+        path_comment_id = self.add_comment(path, x, y+y_off)
+        y_off+=15
+        param_comment_ids, _y_off = self.add_param_comments(x, y+y_off, parameters)
+
+        # [r path_arg_name]
+        y_off+=35
+        receive_ids = [
+            self.add_object("r "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+                            x+i*self.param_width, 
+                            y+y_off+(0 if i % 2 == 0 else 25)) 
+            for i, p in enumerate(parameters)]
+        y_off+=30
+
+        # sliders
+        slider_ids, slider_float_ids, int_ids, tbf_ids, _y_off = self.add_sliders(x, y+y_off, parameters, "send")
+        y_off+=_y_off+25
+        y_off+=180
+        # [pak $1 $2 $3 ...]
+        pack_id = self.add_object(
+            "pack "+self._pack_args(parameters), x, y+y_off)
+        # pack_width = len(parameters)*7+60
+
+        # [msg /path $1 $2 $3 ...]
+        y_off+=25
+        msg_args = self._msg_args(parameters)
+        msg_id = self.add_msg(
+            path+" "+msg_args, x, y+y_off)
+        # [s send]
+        y_off+=25
+        send_id = self.add_object("s send.to.iipyper", x, y+y_off)
+
+        # connections
+        for i in range(len(parameters)):
+            rcv = receive_ids[i]
+            slider = slider_ids[i]
+            slider_float = slider_float_ids[i]
+            int_id = int_ids[i]
+            tbf_id = tbf_ids[i]
+
+            self.connect(rcv, 0, slider, 0)
+            if   int_id == -1 and tbf_id == -1: # if no int or tbf
+                self.connect(slider,       0, slider_float, 0)
+                self.connect(slider_float, 0, pack_id,      0)
+            elif int_id != -1 and tbf_id == -1: # if int but no tbf
+                self.connect(slider,       0, int_id, 0)
+                self.connect(int_id,       0, slider_float, 0)
+                self.connect(slider_float, 0, pack_id,      0)
+            elif int_id == -1 and tbf_id != -1: # if tbf but no int
+                self.connect(slider,       0, slider_float, 0)
+                self.connect(slider_float, 0, tbf_id,       0)
+                self.connect(tbf_id,       0, pack_id,      0)
+                self.connect(tbf_id,       1, pack_id,      i)
+            elif int_id != -1 and tbf_id != -1: # if both int and tbf
+                self.connect(slider,       0, int_id, 0)
+                self.connect(int_id,       0, slider_float, 0)
+                self.connect(slider_float, 0, tbf_id,       0)
+                self.connect(tbf_id,       0, pack_id,      0)
+                self.connect(tbf_id,       1, pack_id,      i)
+
+        self.connect(pack_id, 0, msg_id, 0)
+        self.connect(msg_id, 0, send_id, 0)
+        return slider_ids, pack_id, msg_id
+    
+    def add_sliders(self, x, y, sliders, io=None):
+        assert io is not None, "io must be \"send\" or \"receive\""
+        '''
+        sliders = [
+          { 'label': 'x', data: 'float', min_val: 0.0, size: 0.0 },
+        ]
+        '''
+        slider_ids = []
+        float_ids = []
+        int_ids = []
+        tbf_ids = []
+        y_off = 0
+        for i, s in enumerate(sliders):
+            y_off = 0
+            x_i = x+(i*self.param_width)
+            y_off+=self.h
+            slider_id, int_id, float_id, tbf_id = self.add_slider(
+                x_i, 
+                y+y_off,s["min_val"], 
+                s["size"], 
+                float=s["data"]=="float", 
+                io=io if i > 0 else "skip")
+            slider_ids.append(slider_id)
+            float_ids.append(float_id)
+            int_ids.append(int_id)
+            tbf_ids.append(tbf_id)
+        return slider_ids, float_ids, int_ids, tbf_ids, y_off
+
+    def add_slider(self, x, y, min_val, size, float=False, io=None):
+        assert io is not None, "io must be \"send\" or \"receive\""
+        slider_id = self.add_box("obj", x, y, f"vsl 20 120 {min_val} {min_val+size} 0 0 empty empty empty 0 -9 0 12 #fcfcfc #000000 #000000 0 1")
+        y += 120+8
+        int_id = -1
+        tbf_id = -1
+        float_id = -1
+        if float is False and io is "send": # if int and send
+            # int -> number -> t b f
+            int_id = self.add_object("int", x, y)
+            y+=self.h
+            float_id = self.add_number(x, y)
+            y+=self.h
+            tbf_id = self.add_object("t b f", x, y)
+            self.connect(slider_id, 0, int_id, 0)
+            self.connect(int_id, 0, float_id, 0)
+            self.connect(float_id, 0, tbf_id, 0)
+        elif float is False and io is not "send": # if int and not send
+            # int -> number
+            int_id = self.add_object("int", x, y)
+            y+=self.h
+            float_id = self.add_number(x, y)
+            self.connect(slider_id, 0, int_id, 0)
+            self.connect(int_id, 0, float_id, 0)
+        elif float is True and io is "send": # if float and send
+            # number -> t b f
+            float_id = self.add_number(x, y)
+            y+=self.h
+            tbf_id = self.add_object("t b f", x, y)
+            self.connect(slider_id, 0, float_id, 0)
+            self.connect(float_id, 0, tbf_id, 0)
+        elif float is True and io is not "send": # if float and not send
+            # number
+            float_id = self.add_number(x, y)
+            self.connect(slider_id, 0, float_id, 0)
+        return slider_id, int_id, float_id, tbf_id
+
+    def add_param_comments(self, x, y, params):
+        comment_ids = []
+        y_off = 0
+        for i, p in enumerate(params):
+            y_off = 0
+            x_i = x+(i*self.param_width)
+            p_max = p["min_val"]+p["size"] if p["data"] == "float" else p["min_val"]+p["size"]-1
+            comment_id1 = self.add_comment(f'{p["label"]}', x_i, y)
+            y_off+=15
+            comment_id2 = self.add_comment(f'{p["data"][0]} {p["min_val"]} {p_max}', x_i, y+y_off)
+            comment_ids.append(comment_id1)
+            comment_ids.append(comment_id2)
+        return comment_ids, y_off
+    
+    def _pack_args(self, args):
+        arg_types = []
+        for a in args:
+            match a["data"]:
+                case "int":
+                    arg_types.append("f")
+                case "float":
+                    arg_types.append("f")
+                case "string":
+                    arg_types.append("s")
+        return " ".join(arg_types)
+
+    def _msg_args(self, args):
+        return " ".join(["\$"+str(i+1) for i in range(len(args))])
+
+    def save(self, name):
+        with open(name+".pd", 'w') as f:
+            [f.write(o) for o in self.patch_objects]
+            [f.write(c) for c in self.patch_connections]
+    
+    def load(self, name):
+        with open(name+".pd", 'r') as f:
+            for line in f:
+                if f.startswith("#X connect"):
+                    self.patch_connections.append(f)
+                else:
+                    self.patch_objects.append(f)
+

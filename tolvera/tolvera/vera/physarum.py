@@ -4,9 +4,7 @@ import taichi as ti
 
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import Updater, OSCUpdaters
-
-from iipyper import OSC, run
+from iipyper import OSC, run, Updater, OSCUpdaters
 
 # TODO: multi-species sensing
 # TODO: rendering brightness

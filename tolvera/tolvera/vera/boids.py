@@ -1,12 +1,10 @@
 import time
 import taichi as ti
 
-# from tolvera.particles import Particle, Particles
-from tolvera.particles import Particle, Particles
+from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import OSCUpdaters, Updater
 
-from iipyper import OSC, run
+from iipyper import OSC, run, Updater
 
 @ti.dataclass
 class BoidsParams:
