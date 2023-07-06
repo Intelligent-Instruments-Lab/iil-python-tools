@@ -19,7 +19,9 @@ class OSCMap:
     def __init__(self, osc, client_name="client", 
                  patch_type="Max", # | "Pd"
                  patch_filepath="osc_controls",
-                 create_patch=True) -> None:
+                 create_patch=True,
+                 pd_net_or_udp="udp",
+                 pd_bela=False) -> None:
         self.osc = osc
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
@@ -30,7 +32,10 @@ class OSCMap:
             if patch_type == "Max":
                 self.patcher = MaxPatcher(osc, client_name, self.patch_filepath)
             elif patch_type == "Pd":
-                self.patcher = PdPatcher(osc, client_name, self.patch_filepath)
+                if pd_bela is True:
+                    self.patcher = PdPatcher(osc, client_name, self.patch_filepath, net_or_udp=pd_net_or_udp, bela=True)
+                else:
+                    self.patcher = PdPatcher(osc, client_name, self.patch_filepath, net_or_udp=pd_net_or_udp)
             else:
                 assert False, "`patch_type` must be 'Max' or 'Pd'"
 

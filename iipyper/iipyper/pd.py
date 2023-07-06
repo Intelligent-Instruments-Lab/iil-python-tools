@@ -1,7 +1,11 @@
 import typing
 
 class PdPatcher:
-    def __init__(self, osc, client_name="client", filepath="osc_controls", x=0.0, y=0.0, w=1600.0, h=900.0, v='8.5.4') -> None:
+    def __init__(self, osc, client_name="client", filepath="osc_controls", 
+                 x=0.0, y=0.0, w=1600.0, h=900.0,
+                 net_or_udp="udp",
+                 bela=False) -> None:
+        self.x, self.y, self.w, self.h = x, y, w, h
         self.patch_objects = [f"#N canvas {x} {y} {w} {h} 12;\n"]
         self.patch_connections = []
         self.types = {
@@ -19,6 +23,8 @@ class PdPatcher:
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
         self.filepath = filepath
+        self.net_or_udp = net_or_udp
+        self.bela = bela
         self.init()
     
     def init(self):
@@ -35,7 +41,14 @@ class PdPatcher:
         self.patch_ids['receive'] = self.add_osc_receive(self.client_port, self.r_x, self.r_y+self.h*2)
         self.s_x+=300
         self.r_x+=300
+        if self.bela: self.create_bela_main()
         self.save(self.filepath)
+
+    def create_bela_main(self):
+        if self.filepath.startswith("pd/"): abstraction = self.filepath[3:]
+        with open("pd/_main.pd", 'w') as f:
+            f.write(f"#N canvas {self.x} {self.y} {self.w} {self.h} 12;\n")
+            f.write(f"#X obj {30} {30} {abstraction};\n")
 
     def get_last_id(self):
         return len(self.patch_objects)-2
@@ -59,7 +72,7 @@ class PdPatcher:
     def connect(self, a_id, a_outlet, b_id, b_inlet):
         self.patch_connections.append(f"#X connect {a_id} {a_outlet} {b_id} {b_inlet};\n")
     
-    def add_osc_send(self, host, port, x, y, netsend=False):
+    def add_osc_send(self, host, port, x, y):
         loadbang_id = self.add_object("loadbang", x, y)
         y += self.h
         connect_id = self.add_msg(f"connect {host} {port}", x, y)
@@ -69,7 +82,7 @@ class PdPatcher:
         y += self.h
         packOSC_id = self.add_object("packOSC", x+100, y)
         y += self.h
-        send_type = "netsend -u" if netsend else "udpsend"
+        send_type = "netsend -u" if self.net_or_udp == "net" else "udpsend"
         send_id = self.add_object(send_type, x, y)
         y += self.h
         status_id = self.add_number(x, y)
@@ -83,8 +96,8 @@ class PdPatcher:
         self.connect(send_id, 1, print_id, 0)
         return send_id
 
-    def add_osc_receive(self, port, x, y, netreceive=False):
-        receive_type = f"netreceive -u {port}" if netreceive else f"udpreceive {port}"
+    def add_osc_receive(self, port, x, y):
+        receive_type = f"netreceive -u {port}" if self.net_or_udp == "net" else f"udpreceive {port}"
         receive_id = self.add_object(receive_type, x, y)
         y += self.h
         unpackOSC_id = self.add_object("unpackOSC", x, y)
