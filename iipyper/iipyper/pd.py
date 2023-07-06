@@ -59,39 +59,41 @@ class PdPatcher:
     def connect(self, a_id, a_outlet, b_id, b_inlet):
         self.patch_connections.append(f"#X connect {a_id} {a_outlet} {b_id} {b_inlet};\n")
     
-    def add_osc_send(self, host, port, x, y):
+    def add_osc_send(self, host, port, x, y, netsend=False):
         loadbang_id = self.add_object("loadbang", x, y)
         y += self.h
         connect_id = self.add_msg(f"connect {host} {port}", x, y)
         y += self.h
         disconnect_id = self.add_msg("disconnect", x+10, y)
-        send_id = self.add_object("r send.to.iipyper", x+100, y)
+        receive_id = self.add_object("r send.to.iipyper", x+100, y)
         y += self.h
         packOSC_id = self.add_object("packOSC", x+100, y)
         y += self.h
-        netsend_id = self.add_object("netsend -u", x, y)
+        send_type = "netsend -u" if netsend else "udpsend"
+        send_id = self.add_object(send_type, x, y)
         y += self.h
         status_id = self.add_number(x, y)
         print_id = self.add_object("print reply.from.netreceive", x+40, y)
         self.connect(loadbang_id, 0, connect_id, 0)
-        self.connect(connect_id, 0, netsend_id, 0)
-        self.connect(disconnect_id, 0, netsend_id, 0)
-        self.connect(send_id, 0, packOSC_id, 0)
-        self.connect(packOSC_id, 0, netsend_id, 0)
-        self.connect(netsend_id, 0, status_id, 0)
-        self.connect(netsend_id, 1, print_id, 0)
-        return netsend_id
+        self.connect(connect_id, 0, send_id, 0)
+        self.connect(disconnect_id, 0, send_id, 0)
+        self.connect(receive_id, 0, packOSC_id, 0)
+        self.connect(packOSC_id, 0, send_id, 0)
+        self.connect(send_id, 0, status_id, 0)
+        self.connect(send_id, 1, print_id, 0)
+        return send_id
 
-    def add_osc_receive(self, port, x, y):
-        netreceive_id = self.add_object(f"netreceive -u {port}", x, y)
+    def add_osc_receive(self, port, x, y, netreceive=False):
+        receive_type = f"netreceive -u {port}" if netreceive else f"udpreceive {port}"
+        receive_id = self.add_object(receive_type, x, y)
         y += self.h
         unpackOSC_id = self.add_object("unpackOSC", x, y)
         y += self.h
         print_id = self.add_object("print receive.from.iipyper", x+20, y)
         y += self.h
-        receive_id = self.add_object("s receive.from.iipyper", x, y)
-        self.connect(netreceive_id, 0, unpackOSC_id, 0)
-        self.connect(unpackOSC_id, 0, receive_id, 0)
+        s_receive_id = self.add_object("s receive.from.iipyper", x, y)
+        self.connect(receive_id, 0, unpackOSC_id, 0)
+        self.connect(unpackOSC_id, 0, s_receive_id, 0)
         self.connect(unpackOSC_id, 0, print_id, 0)
         return self.get_last_id()
 
@@ -133,14 +135,14 @@ class PdPatcher:
         '''
         does this even make sense?
         '''
-        receive_id = self.add_msg("r receive", x, y)
+        receive_id = self.add_msg("r receive.from.iipyper", x, y)
         msg_id = self.add_comment(path, x, y)
         self.connect(receive_id, 0, msg_id, 0)
         return msg_id
 
     def add_osc_send_msg(self, x, y, path):
         msg_id = self.add_msg(path, x, y+225+self.h)
-        send_id = self.add_object("s send", x, y+250+self.h)
+        send_id = self.add_object("s send.to.iipyper", x, y+250+self.h)
         self.connect(msg_id, 0, send_id, 0)
         return msg_id
 
