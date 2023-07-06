@@ -17,8 +17,9 @@ class OSCMap:
     TODO: OSC sends should have broadcast vs event option?
     '''
     def __init__(self, osc, client_name="client", 
-                 create_patch=True, patch_type="Max", # | "Pd"
-                 patch_filepath="osc_controls") -> None:
+                 patch_type="Max", # | "Pd"
+                 patch_filepath="osc_controls",
+                 create_patch=True) -> None:
         self.osc = osc
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
@@ -29,10 +30,9 @@ class OSCMap:
             if patch_type == "Max":
                 self.patcher = MaxPatcher(osc, client_name, self.patch_filepath)
             elif patch_type == "Pd":
-                pass
                 self.patcher = PdPatcher(osc, client_name, self.patch_filepath)
             else:
-                assert False, "patch_type must be 'Max' or 'Pd'"
+                assert False, "`patch_type` must be 'Max' or 'Pd'"
 
     def add_func_to_osc_map(self, func, kwargs):
         n = func.__name__

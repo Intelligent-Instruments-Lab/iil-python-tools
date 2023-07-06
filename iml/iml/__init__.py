@@ -6,8 +6,11 @@ from . import interpolate
 class IML:
 
     def __init__(self, feature_size:Optional[int]=None, 
-            embed=None, interp=None):
+            embed=None, interp=None, verbose=False):
         
+        # debug printing
+        self.verbose = verbose
+
         # Feature converts sources to feature vectors
         if embed is None:
             embed = feature.Identity(feature_size)
@@ -59,7 +62,7 @@ class IML:
         Returns:
             target_id: id of the new data point (you may not need this)
         """
-        print(f'add {source=}, {target=}')
+        if self.verbose: print(f'add {source=}, {target=}')
         feature = self.embed(source)
         target_id = self.neighbors.add(feature)
         # track the mapping from target IDs back to targets

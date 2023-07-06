@@ -3,10 +3,9 @@ import taichi as ti
 
 from iipyper import OSC, run
 
-# from tolvera.particles import Particles
-from tolvera.particles_refactor import Particles
+from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import OSCUpdaters
+from iipyper.osc import OSCUpdaters
 
 def main(x=1920, y=1080, n=512, species=3, fps=120, 
          host="127.0.0.1", receive_port=4000, send_port=5000):
