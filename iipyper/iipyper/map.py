@@ -7,6 +7,8 @@ from .max import MaxPatcher
 from .pd import PdPatcher
 
 from typing import Any
+import os
+import sys
 
 class OSCMap:
     '''
@@ -26,18 +28,27 @@ class OSCMap:
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
         self.dict = {'send': {}, 'receive': {}}
-        self.create_patch = create_patch
-        if self.create_patch is True:
-            self.patch_filepath = patch_filepath
-            if patch_type == "Max":
-                self.patcher = MaxPatcher(osc, client_name, self.patch_filepath)
-            elif patch_type == "Pd":
-                if pd_bela is True:
-                    self.patcher = PdPatcher(osc, client_name, self.patch_filepath, net_or_udp=pd_net_or_udp, bela=True)
-                else:
-                    self.patcher = PdPatcher(osc, client_name, self.patch_filepath, net_or_udp=pd_net_or_udp)
+        if create_patch is True:
+            self.init_patcher(patch_type, patch_filepath, pd_net_or_udp, pd_bela)
+
+    def init_patcher(self, patch_type, patch_filepath, pd_net_or_udp, pd_bela):
+        # create self.patch_dir if it doesn't exist
+        self.patch_dir = "pd" if patch_type=="Pd" else "max"
+        if not os.path.exists(self.patch_dir):
+            print(f"Creating {self.patch_dir} directory...")
+            os.makedirs(self.patch_dir)
+        self.patch_appendix = "_local" if self.osc.host=="127.0.0.1" else "_remote"
+        self.patch_filepath = self.patch_dir+'/'+patch_filepath+self.patch_appendix
+        if patch_type == "Max":
+            self.patcher = MaxPatcher(self.osc, self.client_name, self.patch_filepath)
+        elif patch_type == "Pd":
+            if pd_bela is True:
+                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp, bela=True)
             else:
-                assert False, "`patch_type` must be 'Max' or 'Pd'"
+                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp)
+        else:
+            assert False, "`patch_type` must be 'Max' or 'Pd'"
+
 
     def add_func_to_osc_map(self, func, kwargs):
         n = func.__name__
