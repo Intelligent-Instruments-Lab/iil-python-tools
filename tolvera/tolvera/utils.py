@@ -1,10 +1,9 @@
-from iipyper import _lock
+from iipyper import repeat
 
-def headless(r):
+def headless(r, rate=1/60):
     '''
-    Run a render function in a loop, with a lock, forever.
+    Repeat the render function 
     '''
-    while True:
-        with _lock:
-            r()
-
+    @repeat(rate)
+    def _():
+        r()
