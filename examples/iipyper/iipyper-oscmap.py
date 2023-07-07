@@ -10,6 +10,7 @@ from iipyper import OSC, OSCMap, run, repeat
 
 def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000, # osc
          patch_type="Pd", patch_name="iipyper-oscmap", # osc mapping
+         pd_bela=False # True will also create a `_main.pd` patch for Bela
         ):
     
     '''''''''''''''''''''''''''''''''''''''''''''
@@ -25,14 +26,19 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     OSC Mapping
 
     Then, we create an OSCMap instance.
-    Next, we add functions to the OSCMap instance using the `add` method.
-    In the `add` method we specify OSC parameters like this: `name=(default, min, max)`.
-    The example OSCMap shows one send function and one receive function.
+    This simple example OSCMap shows one send function and one receive function.
+    We add functions to the OSCMap instance using the `add` method.
+    In the `@osc_map.add()` decorator we specify OSC parameters as `name=(default, min, max)`.
+    The additional variables `io`, `count`, and `send_mode` describe differnet behaviours:
+    - `io` can be `send` or `receive`
+    - `count` is the number of times the function is called before sending or receiving
+    - `send_mode` can be `broadcast` or `event`, describing whether the message is sent continuously, or only when called manually.
+    We also use type hints in the method signature for sends and receives, and also return type hints for receives, which should always be a tuple.
     '''''''''''''''''''''''''''''''''''''''''''''
     patch_dir = "examples/iipyper/" if patch_type=="Pd" else "max"
     appendix = "_local" if host=="127.0.0.1" else "_remote"
     patch_filepath = patch_dir+'/'+patch_name+appendix
-    osc_map = OSCMap(osc, client_name, patch_type, patch_filepath)
+    osc_map = OSCMap(osc, client_name, patch_type, patch_filepath, pd_bela=pd_bela)
 
     '''
     Patcher → Python
