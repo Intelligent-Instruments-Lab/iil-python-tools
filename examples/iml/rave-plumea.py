@@ -1,8 +1,3 @@
-# RAVE explorer idea:
-#  []: generate random constellation
-#  []: recenter at current position
-#  []: store z -> []: store control
-
 """
 Authors:
   Victor Shepardson
@@ -25,46 +20,6 @@ from textual.widgets import Header, Footer, Static, Button, TextLog, Sparkline
 from textual.containers import Container
 from textual.reactive import reactive
 
-# class IMLState(Static):
-#     value = reactive(([0],[0]))
-#     def __init__(self, **kw):
-#         super().__init__(**kw)
-#         self.src = Sparkline()
-#         self.tgt = Sparkline()
-
-#     def compose(self):
-#         yield self.src
-#         yield self.tgt
-
-#     def watch_value(self, time: float) -> None:
-#         src, tgt = self.value
-#         self.src.data = src
-#         self.tgt.data = tgt
-
-class CtrlPad(Container):
-    # value = reactive((16,16))
-    # def watch_value(self, time: float) -> None:
-    #     x, y = self.value
-    #     s = ''
-    #     for r in range(32):
-    #         for c in range(32):
-    #             if r==x and c==y:
-    #                 s += '*'
-    #             else:
-    #                 s += ' '
-    #         s += '\n'
-    #     self.update(Panel(s))
-    def mouse_move(self, event):
-        pass
-
-    def on_mount(self) -> None:
-        self.capture_mouse()
-
-    def on_mouse_move(self, event):
-        self.mouse_move(event)
-        self.screen.query_one('#std_log').write(event)
-        self.query_one(Pointer).offset = event.offset - (1, 1)
-
 class Pointer(Static):
     pass
 
@@ -85,13 +40,11 @@ class IMLTUI(TUI):
 
     def __init__(self):
         super().__init__()
-        self.ctrl_pad = CtrlPad(Pointer("O"))
 
     def compose(self):
         """Create child widgets for the app."""
         yield Header()
         yield self.std_log
-        yield self.ctrl_pad
         yield IMLState(id='state')
         yield Footer()
 
@@ -113,8 +66,6 @@ def main(
         sr = rave.sampling_rate
 
     tui = IMLTUI()
-    # sys.stdout = tui
-    # sys.stderr = tui
     print = iml_module.print = tui.print
 
     ctrl = torch.zeros(d_src)
@@ -123,17 +74,9 @@ def main(
             indata: np.ndarray, outdata: np.ndarray, #[frames x channels]
             frames: int, time, status):
         with torch.inference_mode():
-            # indata = torch.from_numpy(indata).float()
-            # indata = indata.mean(-1)[None,None]
-            # outdata[:,:] = rave(indata)[:,0].T
-            # ctrl.mul_(0.99)
-            # ctrl.add_(torch.randn(d_src)*0.05)
-            # z[:] = torch.from_numpy(iml.map(ctrl, k=5))#.float()
             tui(state=(
                 ' '.join(f'{x.item():+0.2f}' for x in ctrl),
                 ' '.join(f'{x.item():+0.2f}' for x in z)))
-            # z = torch.from_numpy(z).float()[None,:,None]
-            # outdata[:,:] = rave.decode(z)[:,0].T
             outdata[:,:] = rave.decode(z[None,:,None])[:,0].T
             # print(outdata)
         
@@ -168,23 +111,8 @@ def main(
         if k in controls:
             ctrl[controls[k]] = v**0.5
         z[1:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
-        # print(k, v)
-        # controls[k] = v
+        print(k, v)
         # print(controls)
-
-
-    # @osc.kwargs('/plumea/control', return_port=osc_return)
-    # def _(
-    #     mood=0, 
-    #     oriCircleSmall01=0, oriCircleSmall02=0,
-    #     oriCircleMid01=0, oriCircleMid02=0, 
-    #     oriCircleLarge01=0, oriCircleLarge02=0):
-    #     print(f'{mood=}')
-
-
-    # TODO: button to fix current neighbors
-    # or record a gesture and fix those neighbors
-    # draw locations of current sources
 
     @tui.set_action
     def randomize():
@@ -209,9 +137,6 @@ def main(
 
     ###
     randomize()
-    # print('add')
-    # for _ in range(32):
-    #     iml.add(torch.randn(d_src), torch.randn(rave.cropped_latent_size)*2)
 
     audio.stream.start()
 
