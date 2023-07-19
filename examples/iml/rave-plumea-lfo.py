@@ -95,7 +95,7 @@ def main(
         samplerate=sr, blocksize=block_size,
         callback=rave_callback)
 
-    iml = IML(d_src, interp='ripple')
+    iml = IML(d_src, interp='softmax')
 
     # @tui.set_mouse_move
     # def on_mouse_move(self, event):
@@ -123,14 +123,14 @@ def main(
         else:
             max_score = 0
 
-        while(len(iml.pairs) < 128):
+        while(len(iml.pairs) < 256):
             src = torch.rand(d_src)/2 #/(ctrl.abs()/2+1)
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue
             # tgt = z[1:] + torch.randn(d_tgt)*2#/(z.abs()/2+1)
             tgt = torch.cat((
                 z_mean + torch.randn_like(z_mean)*2,
-                z_freq + (torch.randn_like(z_mean)/2).exp()
+                z_freq + (torch.randn_like(z_mean)+1).exp()
                 ))
             iml.add(src, tgt)
 
@@ -152,10 +152,10 @@ def main(
     def _(k, v):
         k = k.split('/')[1]
         if k=='value00':
-            z[0] = max(-2, 2 - 8*v)
+            z[0] = max(-3, 3 - 10*v)
         if k in controls:
             ctrl[controls[k]] = v**0.5
-        tgt = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
+        tgt = torch.from_numpy(iml.map(ctrl, k=5))
         z_mean[:], z_freq[:] = tgt.chunk(2)
         # print(k, v)
         # print(controls)
