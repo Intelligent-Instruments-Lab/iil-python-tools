@@ -21,9 +21,8 @@ class IML:
         else:
             self.set_interp(interp)
 
-
         self.reset()
-
+    
     def set_interp(self, name):
         self.interpolate = getattr(interpolate, name.capitalize())()
 
@@ -97,7 +96,7 @@ class IML:
         Returns:
             output instance
         """
-        print(f'map {source=}')
+        # print(f'map {source=}')
         _, targets, scores = self.search(source, k)
         result = self.interpolate(targets, scores, **kw)
 
