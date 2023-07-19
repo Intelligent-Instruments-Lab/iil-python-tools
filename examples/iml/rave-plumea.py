@@ -51,7 +51,8 @@ class IMLTUI(TUI):
 def main(
         osc_host='', osc_port=7562, osc_return=8888,
         device=None,
-        rave_path=None, checkpoint=None):
+        rave_path=None, checkpoint=None,
+        block_size=None):
     
     osc = OSC(osc_host, osc_port)
     
@@ -82,7 +83,7 @@ def main(
         
     audio = Audio(
         device=device, dtype=np.float32,
-        samplerate=sr, blocksize=rave.encode_params[-1], 
+        samplerate=sr, blocksize=block_size or rave.encode_params[-1], 
         callback=rave_callback)
     
     iml = IML(d_src, interp='ripple')
@@ -138,7 +139,7 @@ def main(
         z[1:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
         # print(k, v)
         # print(controls)
-        
+
     audio.stream.start()
 
     tui.run()
