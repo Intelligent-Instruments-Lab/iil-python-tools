@@ -152,7 +152,7 @@ def main(
     def _(k, v):
         k = k.split('/')[1]
         if k=='value00':
-            z[0] = max(-2, 3 - 10*v)
+            z[0] = max(-2, 2 - 8*v)
         if k in controls:
             ctrl[controls[k]] = v**0.5
         tgt = torch.from_numpy(iml.map(ctrl, k=5))
