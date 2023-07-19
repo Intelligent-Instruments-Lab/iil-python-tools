@@ -82,7 +82,7 @@ def main(
 
     audio = Audio(
         device=device, dtype=np.float32,
-        samplerate=sr, blocksize=rave.encode_params[-1],
+        samplerate=sr, blocksize=block_size or rave.encode_params[-1],
         callback=rave_callback)
 
     iml = IML(d_src, interp='ripple')
