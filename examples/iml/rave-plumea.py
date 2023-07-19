@@ -51,6 +51,7 @@ class IMLTUI(TUI):
 def main(
         osc_host='', osc_port=7562, osc_return=8888,
         device=None, gain=1,
+        block_size=None, # disabled
         rave_path=None, checkpoint=None):
 
     osc = OSC(osc_host, osc_port)
