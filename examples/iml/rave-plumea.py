@@ -50,11 +50,11 @@ class IMLTUI(TUI):
 
 def main(
         osc_host='', osc_port=7562, osc_return=8888,
-        device=None,
+        device=None, gain=1,
         rave_path=None, checkpoint=None):
-    
+
     osc = OSC(osc_host, osc_port)
-    
+
     rave = torch.jit.load(rave_path)
 
     d_src = 6
@@ -77,14 +77,14 @@ def main(
             tui(state=(
                 ' '.join(f'{x.item():+0.2f}' for x in ctrl),
                 ' '.join(f'{x.item():+0.2f}' for x in z)))
-            outdata[:,:] = rave.decode(z[None,:,None])[:,0].T
+            outdata[:,:] = gain*rave.decode(z[None,:,None])[:,0].T
             # print(outdata)
-        
+
     audio = Audio(
         device=device, dtype=np.float32,
-        samplerate=sr, blocksize=rave.encode_params[-1], 
+        samplerate=sr, blocksize=rave.encode_params[-1],
         callback=rave_callback)
-    
+
     iml = IML(d_src, interp='ripple')
 
     # @tui.set_mouse_move
@@ -113,7 +113,7 @@ def main(
         else:
             max_score = 0
 
-        while(len(iml.pairs) < 16):
+        while(len(iml.pairs) < 128):
             src = torch.rand(d_src)/2 #/(ctrl.abs()/2+1)
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue
@@ -124,21 +124,27 @@ def main(
     randomize()
 
     controls = dict(
-        oriCircleSmall01=0, oriCircleSmall02=1,
-        oriCircleMid01=2, oriCircleMid02=3, 
-        oriCircleLarge01=4, oriCircleLarge02=5
+        value01=0, value02=1,
+        value03=2, value04=3,
+        value05=4, value06=5,
+        #value07=6, value08=7,
+        #value09=8, value10=9,
+        #value11=10, value12=11,
+        #value13=12, value14=13,
+        #value15=14
+
     )
     @osc.args('/*')
     def _(k, v):
         k = k.split('/')[1]
-        if k=='mood':
+        if k=='value00':
             z[0] = max(-2, 2 - 8*v)
         if k in controls:
             ctrl[controls[k]] = v**0.5
         z[1:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
         # print(k, v)
         # print(controls)
-        
+
     audio.stream.start()
 
     tui.run()
