@@ -124,7 +124,7 @@ def main(
             max_score = 0
 
         while(len(iml.pairs) < 256):
-            src = torch.rand(d_src)/2 #/(ctrl.abs()/2+1)
+            src = torch.rand(d_src) #/(ctrl.abs()/2+1)
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue
             # tgt = z[1:] + torch.randn(d_tgt)*2#/(z.abs()/2+1)
