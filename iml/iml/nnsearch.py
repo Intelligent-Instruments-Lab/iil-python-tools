@@ -12,10 +12,10 @@ except ImportError:
             self.d = d
             
         def add(self, x):
-            pass
+            raise NotImplementedError("install faiss")
 
         def search(self, x, k):
-            pass
+            raise NotImplementedError("install faiss")
 
 class NNSearch:
     def __init__(self, feature_size, index=IndexFlatL2):
