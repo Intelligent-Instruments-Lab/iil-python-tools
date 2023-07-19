@@ -1,10 +1,24 @@
 import numpy as np
-import faiss
-
 from .types import *
 
+try:
+    import faiss
+    from faiss import IndexFlatL2
+
+except ImportError:
+
+    class IndexFlatL2:
+        def __init__(self, d):
+            self.d = d
+            
+        def add(self, x):
+            pass
+
+        def search(self, x, k):
+            pass
+
 class NNSearch:
-    def __init__(self, feature_size, index=faiss.IndexFlatL2):
+    def __init__(self, feature_size, index=IndexFlatL2):
         self.count = 0
         self.index = index(feature_size)
 
@@ -38,3 +52,4 @@ class NNSearch:
         target_id = self.count
         self.count = self.count+1
         return target_id
+

@@ -98,21 +98,6 @@ def main(
         # z[:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))#.float()
     # tui.ctrl_pad.mouse_move = mm
 
-    controls = dict(
-        oriCircleSmall01=0, oriCircleSmall02=1,
-        oriCircleMid01=2, oriCircleMid02=3, 
-        oriCircleLarge01=4, oriCircleLarge02=5
-    )
-    @osc.args('/*')
-    def _(k, v):
-        k = k.split('/')[1]
-        if k=='mood':
-            z[0] = max(-2, 2 - 8*v)
-        if k in controls:
-            ctrl[controls[k]] = v**0.5
-        z[1:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
-        print(k, v)
-        # print(controls)
 
     @tui.set_action
     def randomize():
@@ -138,6 +123,22 @@ def main(
     ###
     randomize()
 
+    controls = dict(
+        oriCircleSmall01=0, oriCircleSmall02=1,
+        oriCircleMid01=2, oriCircleMid02=3, 
+        oriCircleLarge01=4, oriCircleLarge02=5
+    )
+    @osc.args('/*')
+    def _(k, v):
+        k = k.split('/')[1]
+        if k=='mood':
+            z[0] = max(-2, 2 - 8*v)
+        if k in controls:
+            ctrl[controls[k]] = v**0.5
+        z[1:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))
+        # print(k, v)
+        # print(controls)
+        
     audio.stream.start()
 
     tui.run()
