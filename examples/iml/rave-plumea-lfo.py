@@ -116,8 +116,6 @@ def main(
             srcs, tgts, scores = iml.search(ctrl, k=k)
             max_score = max(scores)
             iml.reset(keep_near=ctrl, k=k)
-            # for s,t in zip(srcs,tgts):
-                # iml.add(s,t)
         else:
             max_score = 0
 
@@ -125,10 +123,6 @@ def main(
             src = rand_src()
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue
-            # tgt = torch.cat((
-            #     z_mean + torch.randn_like(z_mean)*2,
-            #     z_freq + (torch.randn_like(z_mean)+1).exp()
-            #     ))
             tgt = torch.cat((z_mean, z_freq)) + rand_tgt()
             iml.add(src, tgt)
 
