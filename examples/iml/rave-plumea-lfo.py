@@ -52,7 +52,7 @@ def main(
         device=None, gain=1,
         block_size=None, # disabled
         rave_path=None, checkpoint=None,
-        k = 5, # number of neighbors in mapping
+        n_neighbors = 5, # number of neighbors in mapping
         n_points = 256, # total points in mapping
         d_src = 6, # number of last control (e.g., value06) being sent by OSC
         ):
@@ -113,9 +113,9 @@ def main(
         # keep the current nearest neighbors and rerandomize the rest
         print('randomize nonlocal points:')
         if len(iml.pairs):
-            srcs, tgts, scores = iml.search(ctrl, k=k)
+            srcs, tgts, scores = iml.search(ctrl, k=n_neighbors)
             max_score = max(scores)
-            iml.reset(keep_near=ctrl, k=k)
+            iml.reset(keep_near=ctrl, k=n_neighbors)
         else:
             max_score = 0
 
@@ -128,7 +128,7 @@ def main(
 
     @tui.set_action
     def randomize_all():
-        # keep the current nearest neighbors and rerandomize the rest
+        # randomize all points in mapping
         print('randomize all points:')
         iml.reset()
        
@@ -140,7 +140,8 @@ def main(
     ###
     randomize_all()
 
-    controls = dict(
+    # maps OSC addresses to vector indices
+    control_names = dict(
         value01=0, value02=1,
         value03=2, value04=3,
         value05=4, value06=5,
@@ -148,20 +149,32 @@ def main(
         value09=8, value10=9,
         value11=10, value12=11,
         value13=12, value14=13,
-        value15=14
-
+        value15=14, value16=15
     )
     @osc.args('/*')
     def _(k, v):
+        # shave '/' off of OSC address
         k = k.split('/')[1]
+
+        # special handling for addresses not in control_names:
         if k=='value00':
+            # directly control first latent dimension
             z[0] = max(-2, 2 - 8*v)
-        if k in controls:
-            ctrl[controls[k]] = v**0.5
-        tgt = torch.from_numpy(iml.map(ctrl, k=k))
+
+        # pack the rest into a vector which will go into the IML mapping
+        if k in control_names:
+            idx = control_names[k]
+            if idx > d_src:
+                raise ValueError("""
+                pluma: ERROR: unexpected OSC control.
+                increase --d-src argument when running script?
+                """)
+            ctrl[idx] = v**0.5
+
+        # run through the mapping
+        tgt = torch.from_numpy(iml.map(ctrl, k=n_neighbors))
         z_mean[:], z_freq[:] = tgt.chunk(2)
         # print(k, v)
-        # print(controls)
 
     audio.stream.start()
 
