@@ -33,9 +33,8 @@ class IMLTUI(TUI):
     CSS_PATH = 'tui.css'
 
     BINDINGS = [
-        ("r", "randomize", "randomize around current mapping"),
-        ("z", "zero", "reset to zero vector"),
-        ("s", "store", "store a source / target"),
+        ("r", "randomize_all", "randomize full mapping"),
+        ("n", "randomize_nonlocal", "randomize nonlocal mapping"),
     ]
 
     def __init__(self):
@@ -52,7 +51,11 @@ def main(
         osc_host='', osc_port=7562, osc_return=8888,
         device=None, gain=1,
         block_size=None, # disabled
-        rave_path=None, checkpoint=None):
+        rave_path=None, checkpoint=None,
+        k = 5, # number of neighbors in mapping
+        n_points = 256, # total points in mapping
+        d_src = 6, # number of last control (e.g., value06) being sent by OSC
+        ):
 
     osc = OSC(osc_host, osc_port)
 
@@ -61,7 +64,6 @@ def main(
     block_size = rave.encode_params[-1]
 
     d_out = rave.encode_params[2]
-    d_src = 6
     d_tgt = (d_out - 1) * 2
 
     try:
@@ -97,23 +99,19 @@ def main(
 
     iml = IML(d_src, interp='softmax')
 
-    # @tui.set_mouse_move
-    # def on_mouse_move(self, event):
-    #     print(event)
-    #     tui.query_one(Pointer).offset = event.offset - (1, 1)
-
-    # def mm(event):
-        # ctrl[0] = (event.x - 64) / 30
-        # ctrl[1] = (event.y - 15) / 5
-        # z[:] = torch.from_numpy(iml.map(ctrl, k=5, ripple=7))#.float()
-    # tui.ctrl_pad.mouse_move = mm
-
+    def rand_src():
+        return torch.rand(d_src)
+    
+    def rand_tgt():
+        return torch.cat((
+            torch.randn_like(z_mean)*2,
+            (torch.randn_like(z_mean)+1).exp()
+            ))
 
     @tui.set_action
-    def randomize():
+    def randomize_nonlocal():
         # keep the current nearest neighbors and rerandomize the rest
-        print('randomize:')
-        k = 5
+        print('randomize nonlocal points:')
         if len(iml.pairs):
             srcs, tgts, scores = iml.search(ctrl, k=k)
             max_score = max(scores)
@@ -123,29 +121,40 @@ def main(
         else:
             max_score = 0
 
-        while(len(iml.pairs) < 256):
-            src = torch.rand(d_src) #/(ctrl.abs()/2+1)
+        while(len(iml.pairs) < n_points):
+            src = rand_src()
             if iml.neighbors.distance(ctrl, src) < max_score:
                 continue
-            # tgt = z[1:] + torch.randn(d_tgt)*2#/(z.abs()/2+1)
-            tgt = torch.cat((
-                z_mean + torch.randn_like(z_mean)*2,
-                z_freq + (torch.randn_like(z_mean)+1).exp()
-                ))
+            # tgt = torch.cat((
+            #     z_mean + torch.randn_like(z_mean)*2,
+            #     z_freq + (torch.randn_like(z_mean)+1).exp()
+            #     ))
+            tgt = torch.cat((z_mean, z_freq)) + rand_tgt()
+            iml.add(src, tgt)
+
+    @tui.set_action
+    def randomize_all():
+        # keep the current nearest neighbors and rerandomize the rest
+        print('randomize all points:')
+        iml.reset()
+       
+        while(len(iml.pairs) < n_points):
+            src = rand_src()
+            tgt = rand_tgt()
             iml.add(src, tgt)
 
     ###
-    randomize()
+    randomize_all()
 
     controls = dict(
         value01=0, value02=1,
         value03=2, value04=3,
         value05=4, value06=5,
-        #value07=6, value08=7,
-        #value09=8, value10=9,
-        #value11=10, value12=11,
-        #value13=12, value14=13,
-        #value15=14
+        value07=6, value08=7,
+        value09=8, value10=9,
+        value11=10, value12=11,
+        value13=12, value14=13,
+        value15=14
 
     )
     @osc.args('/*')
@@ -155,7 +164,7 @@ def main(
             z[0] = max(-2, 2 - 8*v)
         if k in controls:
             ctrl[controls[k]] = v**0.5
-        tgt = torch.from_numpy(iml.map(ctrl, k=5))
+        tgt = torch.from_numpy(iml.map(ctrl, k=k))
         z_mean[:], z_freq[:] = tgt.chunk(2)
         # print(k, v)
         # print(controls)
