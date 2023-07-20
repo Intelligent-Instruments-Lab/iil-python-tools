@@ -74,7 +74,7 @@ def main(
     tui = IMLTUI()
     print = iml_module.print = tui.print
 
-    ctrl = torch.zeros(d_src)
+    src = torch.zeros(d_src)
     z = torch.zeros(d_out)
     z_freq = torch.zeros(d_tgt//2)
     z_phase = torch.zeros(d_tgt//2)
@@ -84,11 +84,11 @@ def main(
             frames: int, time, status):
         with torch.inference_mode():
             z_phase[:] = z_phase + z_freq * (block_size / sr * 2 * np.pi)
-            z[1:] = z_mean + z_phase.sin()
+            z[1:] = z_mean #+ z_phase.sin()
             outdata[:,:] = gain*rave.decode(z[None,:,None])[:,0].T
 
             tui(state=(
-                ' '.join(f'{x.item():+0.2f}' for x in ctrl),
+                ' '.join(f'{x.item():+0.2f}' for x in src),
                 ' '.join(f'{x.item():+0.2f}' for x in z)))
             # print(outdata)
 
@@ -113,18 +113,18 @@ def main(
         # keep the current nearest neighbors and rerandomize the rest
         print('randomize nonlocal points:')
         if len(iml.pairs):
-            srcs, tgts, scores = iml.search(ctrl, k=n_neighbors)
-            max_score = max(scores)
-            iml.reset(keep_near=ctrl, k=n_neighbors)
+            _, _, scores = iml.search(src, k=n_neighbors)
+            max_score = max(scores) # furthest neighbor of current src
+            iml.reset(keep_near=src, k=n_neighbors)
         else:
             max_score = 0
 
         while(len(iml.pairs) < n_points):
-            src = rand_src()
-            if iml.neighbors.distance(ctrl, src) < max_score:
+            new_src = rand_src()
+            if iml.neighbors.distance(src, new_src) < max_score:
                 continue
             tgt = torch.cat((z_mean, z_freq)) + rand_tgt()
-            iml.add(src, tgt)
+            iml.add(new_src, tgt)
 
     @tui.set_action
     def randomize_all():
@@ -133,9 +133,7 @@ def main(
         iml.reset()
        
         while(len(iml.pairs) < n_points):
-            src = rand_src()
-            tgt = rand_tgt()
-            iml.add(src, tgt)
+            iml.add(rand_src(), rand_tgt())
 
     ###
     randomize_all()
@@ -169,10 +167,10 @@ def main(
                 pluma: ERROR: unexpected OSC control.
                 increase --d-src argument when running script?
                 """)
-            ctrl[idx] = v**0.5
+            src[idx] = v**0.5
 
         # run through the mapping
-        tgt = torch.from_numpy(iml.map(ctrl, k=n_neighbors))
+        tgt = torch.from_numpy(iml.map(src, k=n_neighbors))
         z_mean[:], z_freq[:] = tgt.chunk(2)
         # print(k, v)
 
