@@ -1,13 +1,19 @@
 import numpy as np
-from typing import Any, Optional, List, Tuple, Dict
+from typing import Any, Optional, List, Tuple, Dict, Union, Callable, Generator
 from numpy.typing import ArrayLike
 
-Source = Any
-Target = Any
-Feature = ArrayLike
-Scores = ArrayLike
-TargetID = int
-TargetIDs = ArrayLike
+from collections import namedtuple
+
+Input = Any # thing that goes into a mapping
+Output = Any # thing that comes out of a mapping
+Feature = ArrayLike # Inputs are mapped to Features
+Scores = ArrayLike # Scores describe distance between inputs in feature space
+PairID = int # PairIDs associate Inputs (via Features) with Outputs
+PairIDs = ArrayLike
+
+IDFeaturePair = namedtuple('IDFeaturePair', ['id', 'feature'])
+IOPair = namedtuple('IOPair', ['input', 'output'])
+SearchResult = namedtuple('SearchResult', ['inputs', 'outputs', 'ids', 'scores'])
 
 def _np_coerce(x):
     if hasattr(x, 'numpy'):

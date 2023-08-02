@@ -20,9 +20,6 @@ from textual.widgets import Header, Footer, Static, Button, TextLog, Sparkline
 from textual.containers import Container
 from textual.reactive import reactive
 
-class Pointer(Static):
-    pass
-
 class IMLState(Static):
     value = reactive((None,None))
     def watch_value(self, time: float) -> None:
