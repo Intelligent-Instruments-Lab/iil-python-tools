@@ -29,7 +29,7 @@ def test_project_and_sort():
         ctrl = ctrl[indices]
         z[:] = torch.from_numpy(iml.map(ctrl, k=5))
  
-    for _ in range(1):
+    for _ in range(32):
         update_pos()
         print(f"ctrl indices: {indices}, z: {z}, _z: {_z}")
         assert torch.equal(z, _z), "z should not change, changed by {}".format(z-_z)
