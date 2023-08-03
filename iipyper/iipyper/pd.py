@@ -1,5 +1,9 @@
 import typing
 
+'''
+TODO: Bela project directory name
+'''
+
 class PdPatcher:
     def __init__(self, osc, client_name="client", filepath="osc_controls", 
                  x=0.0, y=0.0, w=1600.0, h=900.0,

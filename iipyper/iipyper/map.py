@@ -28,8 +28,8 @@ class OSCMap:
         self.client_name = client_name
         self.client_address, self.client_port = self.osc.client_names[self.client_name]
         self.dict = {'send': {}, 'receive': {}}
+        self.create_patch = create_patch
         if create_patch is True:
-            self.create_patch = True
             self.init_patcher(patch_type, patch_filepath, pd_net_or_udp, pd_bela)
 
     def init_patcher(self, patch_type, patch_filepath, pd_net_or_udp, pd_bela):
