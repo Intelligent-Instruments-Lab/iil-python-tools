@@ -9,7 +9,8 @@ class IML:
             embed:Union[str,feature.Feature]=None, 
             interp:Union[str,interpolate.Interpolate]=None,
             index:nnsearch.Index=None,
-            k:int=10):
+            k:int=10,
+            verbose=False):
         """
         Args:
             feature_size: dimension of feature vectors
@@ -17,13 +18,14 @@ class IML:
             interp: instance or name of Interpolate subclass (defaults to Smooth)
             index: instance of Index (defaults to IndexBrute)
             k: default k-nearest neighbors (can be overridden later)
+            verbose: verbose debug printing
         """
         
         # Feature converts Inputs to Features
         if embed is None:
             self.embed = feature.Identity(feature_size)
         elif isinstance(embed, str):
-            self.embed = getattr(feature, embed.capitalize())(feature_size)
+            self.embed = getattr(feature, embed)(feature_size)
         elif isinstance(embed, feature.Feature):
             self.embed = embed
         else:
@@ -43,6 +45,8 @@ class IML:
         if index is None:
             index = nnsearch.IndexBrute(self.embed.size)
         self.neighbors = nnsearch.NNSearch(index, k=k)
+
+        self.verbose = verbose
 
         self.reset()
 

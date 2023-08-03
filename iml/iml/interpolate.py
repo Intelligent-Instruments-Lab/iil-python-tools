@@ -73,7 +73,7 @@ class Smooth(Interpolate):
     def __call__(self, targets, scores, eps=1e-9):#, smooth=False):
         targets, scores = np_coerce(targets, scores)
 
-        scores = scores**pow + eps
+        scores = scores + eps
         assert np.min(scores) > 0
 
         # largest scores -> 0 weight
