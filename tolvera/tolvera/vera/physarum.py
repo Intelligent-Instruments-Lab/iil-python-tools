@@ -84,11 +84,11 @@ class Physarum():
                 y = ti.cast(p.pos[1], ti.i32) % self.y
                 self.trail.circle(x, y, p.size, p.rgba * p.active)
     @ti.kernel
-    def deposit_px(self, px: ti.template()):
+    def deposit_px(self, px: ti.template(), weight: ti.f32):
         for i, j in ti.ndrange(self.x, self.y):
             p = px[0,i,j]
             if p > 0.0:
-                self.trail.px.rgba[i, j] = ti.Vector([p,p,p,1])
+                self.trail.px.rgba[i, j] += ti.Vector([p,p,p,1]) * weight
     def step(self, field):
         self.deposit(field)
         self.trail.diffuse()

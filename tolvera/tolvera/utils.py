@@ -85,7 +85,13 @@ def init(**kwargs):
         window = ti.ui.Window(name, (x,y), fps_limit=fps)
         canvas = window.get_canvas()
 
+def show(px):
+    global window, canvas
+    canvas.set_image(px.px.rgba)
+    window.show()
+
 def render(f=None, px=None):
+    # TODO: Add **kwargs to f()
     global canvas, window, headless, headless_rate
     if headless:
         @repeat(headless_rate)
@@ -95,6 +101,5 @@ def render(f=None, px=None):
         while window.running:
             with _lock:
                 if f is not None: f()
-                canvas.set_image(px.px.rgba)
-                window.show()
+                show(px)
 

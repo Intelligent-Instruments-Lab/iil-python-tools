@@ -11,6 +11,7 @@ vec4 = ti.math.vec4
 # TODO: Decouple Species from Particle?
 # @ti.dataclass
 # class Species:
+#     i:         ti.i32
 #     size:      ti.f32
 #     speed:     ti.f32
 #     max_speed: ti.f32
