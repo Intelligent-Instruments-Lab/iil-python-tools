@@ -22,7 +22,7 @@ def setup_iml():
 
     return iml, ctrl, z, tgt_size
 
-def test_update_pos(setup_iml):
+def test_project_and_sort(setup_iml):
     iml, ctrl, z, tgt_size = setup_iml
     _z = torch.zeros(tgt_size)
     _z[:] = torch.from_numpy(iml.map(ctrl, k=5))
