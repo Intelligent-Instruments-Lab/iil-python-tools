@@ -13,6 +13,7 @@ dependencies:
   - textual>=0.27
   - pytorch=1.13
   - pip
+  - pytest
   - pip:
     - mido
     - python-rtmidi
