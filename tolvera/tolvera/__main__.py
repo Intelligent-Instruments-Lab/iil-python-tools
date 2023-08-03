@@ -10,6 +10,7 @@ from tolvera.vera.simple import main as simple
 from tolvera.vera.boids import main as boids
 from tolvera.vera.physarum import main as physarum
 from tolvera.vera.particle_life import main as particle_life
+from tolvera.cv import main as CV
 
 # from tolvera.vera._lenia import main as lenia
 # from tolvera.vera._reaction_diffusion import main as rea_diff
@@ -41,6 +42,8 @@ def main():
                 physarum()
             case 'particle_life':
                 particle_life()
+            case 'cv':
+                CV()
             # case 'reaction_diffusion':
             #     rea_diff()
             # case 'lenia':
