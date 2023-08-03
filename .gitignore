@@ -9,3 +9,5 @@ tmp
 .vscode
 *.ini
 sketches
+examples/iipyper/*.pd
+scripts/iipyper-bela.config

@@ -4,7 +4,6 @@ from . import feature
 from . import interpolate
 
 class IML:
-
     def __init__(self, 
             feature_size:Optional[int]=None, 
             embed:Union[str,feature.Feature]=None, 
@@ -79,7 +78,7 @@ class IML:
         Returns:
             target_id: id of the new data point (you may not need this)
         """
-        print(f'add {source=}, {target=}')
+        if self.verbose: print(f'add {source=}, {target=}')
         feature = self.embed(source)
         target_id = self.neighbors.add(feature)
         # track the mapping from target IDs back to targets

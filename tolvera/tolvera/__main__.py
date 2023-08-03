@@ -1,9 +1,10 @@
 import sys
 import taichi as ti
 
-# TODO: CL args for ti.arch, iipyper
+from iipyper import run
 
-from tolvera.tolvera import main as world
+# TODO: fire CL args for ti.arch, iipyper
+# TODO: default app with OSC etc.
 
 from tolvera.vera.simple import main as simple
 from tolvera.vera.boids import main as boids
@@ -28,7 +29,7 @@ def help():
         obstacles: run Obstacles exmaple
     """)
 
-if __name__=='__main__':
+def main():
     print(sys.argv)
     try:
         match sys.argv[1]:
@@ -56,3 +57,7 @@ if __name__=='__main__':
                 help()
     except IndexError:
         help()
+
+
+if __name__=='__main__':
+    run(main)
