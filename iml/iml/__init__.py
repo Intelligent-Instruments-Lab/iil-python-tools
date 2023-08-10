@@ -115,7 +115,7 @@ class IML:
         """Remove from mapping by proximity to Input
         """
         feature = self.embed(source)
-        self.neighbors.remove_near(feature)
+        self.neighbors.remove_near(feature, k=k)
 
     def search(self, source:Input, k:int=None) -> SearchResult:
         """find k-nearest neighbors
