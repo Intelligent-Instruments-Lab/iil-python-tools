@@ -24,19 +24,18 @@ def main(x=1920, y=1080, n=64, species=5, fps=120,
     d_tgt = torch.zeros(tgt_size)
     ctrl = torch.zeros(d_src)
     z = torch.zeros(tgt_size)
-    iml = IML(d_src)
-    def iml_map():
+    iml = IML(d_src, embed='ProjectAndSort')
+    def iml_add():
         while(len(iml.pairs) < 32):
             src = torch.rand(d_src)#/(ctrl.abs()/2+1)
             tgt = z + torch.randn(tgt_size)*2#/(z.abs()/2+1)
             iml.add(src, tgt)
-    iml_map()
+    iml_add()
     
-    def update_pos():
-        ctrl = torch.FloatTensor(particles.osc_get_pos_all()) # d_src
-        ctrl = ctrl.sort().values
-        z[:] = torch.from_numpy(iml.map(ctrl, k=5))#.float()
-    update = Updater(update_pos, 24)
+    def iml_map():
+        ctrl = particles.osc_get_pos_all_2d()
+        z[:] = torch.from_numpy(iml.map(ctrl, k=5))
+    iml_update = Updater(iml_map, 24)
 
     def send_tgt():
         return d_tgt.tolist()
@@ -44,17 +43,14 @@ def main(x=1920, y=1080, n=64, species=5, fps=120,
  
     # Render loop
     def render():
-        # update()
+        iml_update()
         # osc_send_tgt()
         pixels.diffuse()
         pixels.decay()
         boids(particles)
         particles(pixels)
 
-    if headless:
-        tol.headless(render)
-    else:
-        pixels.show(render)
+    tol.utils.render(render, pixels)
 
 if __name__=='__main__':
     run(main)
