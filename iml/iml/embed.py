@@ -1,18 +1,20 @@
 from .types import *
+from .serialize import JSONSerializable
 
 import numpy as np
 
-class Feature:
-    def __init__(self, size):
-        raise NotImplementedError
+class Embedding(JSONSerializable):
+    def __init__(self, **kw):
+        super().__init__(**kw)
 
     def __call__(self, source: Input) -> Feature:
         raise NotImplementedError
 
-class Identity(Feature):
+class Identity(Embedding):
     """For fixed-length vector data: just check size and convert to numpy array"""
     def __init__(self, size):
         """size is both the Input and Feature size"""
+        super().__init__(size=size)
         self.size = self.input_size = size
 
     def __call__(self, source):
@@ -21,7 +23,7 @@ class Identity(Feature):
             assert source.shape[-1] == self.size
         return source
     
-class ProjectAndSort(Feature):
+class ProjectAndSort(Embedding):
     """
     for point cloud-like data.
     use with L2 distance to compute sliced optimal transport.
@@ -50,7 +52,9 @@ class ProjectAndSort(Feature):
             input_size: input shape [B,C]; if None, lazy init on first __call__
             n: number of random projections.
         """
+        super().__init__(input_size=input_size, n=n)
         assert len(input_size)==2, "ProjectAndSort expects fixed-size 2D array data"
+
         self.n = n
         if input_size is not None:
             self.init(input_size)

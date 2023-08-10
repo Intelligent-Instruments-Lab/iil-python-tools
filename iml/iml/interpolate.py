@@ -1,13 +1,14 @@
 import numpy as np
 
 from .types import *
+from .serialize import JSONSerializable
 
-class Interpolate:
+class Interpolate(JSONSerializable):
     """
     Interpolate combines a set of Outputs weighted by similarity scores.
     """
-    def __init__(self):
-        pass
+    def __init__(self, **kw):
+        super().__init__(**kw)
 
     def __call__(self, targets: List[Output], scores: Scores) -> Output:
         raise NotImplementedError
@@ -65,7 +66,7 @@ class Smooth(Interpolate):
     exactly where close to data points.
 
     works well with larger k.
-    out-of-domain iput areas tend to be averages of many outputs.
+    out-of-domain input areas tend to be averages of many outputs.
     """
     def __init__(self):
         super().__init__()

@@ -1,13 +1,17 @@
 from .types import *
 from . import nnsearch
-from . import feature
+from . import embed
 from . import interpolate
+from . import serialize
 
-class IML:
+# TODO: state serialization
+# TODO: serialize defaults where possible
+
+class IML(serialize.JSONSerializable):
 
     def __init__(self, 
             feature_size:Optional[int]=None, 
-            embed:Union[str,feature.Feature]=None, 
+            emb:Union[str,embed.Embedding]=None, 
             interp:Union[str,interpolate.Interpolate]=None,
             index:nnsearch.Index=None,
             k:int=10):
@@ -21,30 +25,37 @@ class IML:
         """
         
         # Feature converts Inputs to Features
-        if embed is None:
-            self.embed = feature.Identity(feature_size)
-        elif isinstance(embed, str):
-            self.embed = getattr(feature, embed.capitalize())(feature_size)
-        elif isinstance(embed, feature.Feature):
-            self.embed = embed
+        if emb is None:
+            emb = embed.Identity(feature_size)
+        elif isinstance(emb, str):
+            emb = getattr(emb, emb.capitalize())(feature_size)
+        elif isinstance(emb, embed.Embedding):
+            pass
         else:
             raise ValueError
 
          # Interpolate combines a set of Outputs according to their Scores
         if interp is None:
-            self.interpolate = interpolate.Smooth()
+            interp = interpolate.Smooth()
         elif isinstance(interp, str):
-            self.interpolate = getattr(interpolate, interp.capitalize())()
+            interp = getattr(interpolate, interp.capitalize())()
         elif isinstance(interp, interpolate.Interpolate):
-            self.interpolate = interp
+            pass
         else:
             raise ValueError
 
-        # an index determines the distance metric and efficiency
+        # Index determines the distance metric and efficiency
         if index is None:
-            index = nnsearch.IndexBrute(self.embed.size)
-        self.neighbors = nnsearch.NNSearch(index, k=k)
+            index = nnsearch.IndexBrute(emb.size)
+        
+        super().__init__(
+            feature_size=feature_size, 
+            emb=emb, interp=interp, index=index,
+            k=k)
 
+        self.interpolate = interp
+        self.embed = emb
+        self.neighbors = nnsearch.NNSearch(index, k=k)
         self.reset()
 
     def reset(self, keep_near:Input=None, k:int=None):
@@ -56,7 +67,7 @@ class IML:
         print('reset')
         if keep_near is not None and len(self.pairs)>0:
             if len(keep_near)!=len(self.pairs[0][0]):
-                print('ERROR: iml: keep_near should be an input vector')
+                print('ERROR: iml: keep_near should be an Input vector')
                 keep_near = None
             else:
                 print('searching neighbors for keep_near')
@@ -71,20 +82,25 @@ class IML:
             for s,t in zip(srcs,tgts):
                 self.add(s,t)
 
-    def add(self, source: Input, target: Output) -> PairID:
-        """Add a data point to the mapping
+    def add(self, 
+            source: Input, 
+            target: Output, 
+            id: Optional[PairID]=None
+            ) -> PairID:
+        """Add a data point to the mapping.
         Args:
             source: Input item
             target: Output item
+            id: PairID to use; if an existing id, replace the point
         Returns:
-            target_id: id of the new data point (you may not need this)
+            id: id of the new data point if you need to reference it later
         """
         print(f'add {source=}, {target=}')
         feature = self.embed(source)
-        target_id = self.neighbors.add(feature)
+        id = self.neighbors.add(feature, id)
         # track the mapping from target IDs back to targets
-        self.pairs[target_id] = IOPair(source, target)
-        return target_id
+        self.pairs[id] = IOPair(source, target)
+        return id
     
     def get(self, id:PairID) -> IOPair:
         """look up an Input/Output pair by ID"""
@@ -120,8 +136,8 @@ class IML:
             source: input item
             k: max number of neighbors
         Returns:
-            sources: neighboring Inputs
-            targets: corresponding Outputs
+            inputs: neighboring Inputs
+            outputs: corresponding Outputs
             ids: ids of Input/Output pairs
             scores: dissimilarity Scores
         """
@@ -150,15 +166,39 @@ class IML:
         result = self.interpolate(targets, scores, **kw)
 
         return result
+    
+    def save_state(self):
+        """return dataset from this IML object.
+        Returns:
+            state: data in this IML object
+        """
+        return self.pairs
+    
+    def load_state(self, state):
+        """load dataset into this IML object.
+        Args:
+            state: data as obtained from `save_state`
+        """
+        for id,pair in state.items():
+            self.add(*pair, id=PairID(id))        
 
-    def save(self, path):
-        """serialize: store dataset, config"""
-        raise NotImplementedError
+    def save(self, path:str):
+        """serialize the whole IML object to JSON
+        Args:
+            path: path to JSON file
+        """
+        serialize.save(path, self)
 
     @classmethod
     def load(cls, path):
-        """deserialize: construct a new IML from config, load dataset"""
-        raise NotImplementedError
-
+        """deserialize a new IML object from JSON
+        Args:
+            path: path to JSON file
+        Returns:
+            new IML instance
+        """
+        inst = serialize.load(path)
+        assert isinstance(inst, cls), type(inst)
+        return inst
 
 
