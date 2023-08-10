@@ -10,7 +10,7 @@ class Feature:
         raise NotImplementedError
 
 class Identity(Feature):
-    """just check size and convert to numpy array"""
+    """For fixed-length vector data: just check size and convert to numpy array"""
     def __init__(self, size):
         """size is both the Input and Feature size"""
         self.size = self.input_size = size
@@ -47,10 +47,10 @@ class ProjectAndSort(Feature):
     def __init__(self, input_size:Tuple[int,int]=None, n:int=16):
         """
         Args:
-            input_size: if None, lazy init on first __call__
+            input_size: input shape [B,C]; if None, lazy init on first __call__
             n: number of random projections.
         """
-        assert len(input_size)==2, "RandomSorts expects fixed-size 2D array data"
+        assert len(input_size)==2, "ProjectAndSort expects fixed-size 2D array data"
         self.n = n
         if input_size is not None:
             self.init(input_size)
