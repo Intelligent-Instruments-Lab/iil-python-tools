@@ -19,12 +19,6 @@ def main(host="192.168.7.1", port=7563, verbose=False):
 
     model_size = 20
 
-    @repeat(1)
-    def _():
-        nonlocal model_size
-        model = modelGen(model_size)
-        osc("bela", "/resonators", *model.values.flatten())
-
     def modelGen(size):
         res = pd.DataFrame ([], columns=['freq', 'gain', 'decay'])
         for i in range (0, size):
@@ -49,6 +43,12 @@ def main(host="192.168.7.1", port=7563, verbose=False):
     def osc2model(msg):
         model = {}
         return model
+
+    @repeat(1)
+    def _():
+        nonlocal model_size
+        model = modelGen(model_size)
+        osc("bela", "/resonators", *model.values.flatten())
 
 if __name__=='__main__':
     run(main)
