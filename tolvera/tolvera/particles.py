@@ -100,15 +100,20 @@ class Particles:
     def speciate(self):
         for i in range(self.species_n):
             self.species_c[i] = [ti.random(ti.f32)*ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
+        size      = 2.5 + 2.5   * ti.random(ti.f32)
+        speed     = 1.0         * ti.random(ti.f32)
+        max_speed = 1.0 + 5     * ti.random(ti.f32)
+        mass      = 1.0 + 5     * ti.random(ti.f32)
+        decay     = 0.9 + 0.099 * ti.random(ti.f32)
         for i in range(self.max_n):
             s = i % self.species_n
-            self.field[i].species = s
-            self.field[i].rgba    = self.species_c[s]
-            self.field[i].size      = 3.0 + 1     * ti.random(ti.f32)
-            self.field[i].speed     = 1.0     * ti.random(ti.f32)
-            self.field[i].max_speed = 1.0 + 5     * ti.random(ti.f32)
-            self.field[i].mass      = 1.0 + 5     * ti.random(ti.f32)
-            self.field[i].decay     = 0.9 + 0.099 * ti.random(ti.f32)
+            self.field[i].species   = s
+            self.field[i].rgba      = self.species_c[s]
+            self.field[i].size      = size
+            self.field[i].speed     = speed
+            self.field[i].max_speed = max_speed
+            self.field[i].mass      = mass
+            self.field[i].decay     = decay
     @ti.kernel
     def move(self):
         # TOOD: collisions
@@ -251,7 +256,10 @@ class Particles:
         return self.field[i].pos.to_numpy().tolist()
     def osc_get_vel(self, i):
         return self.field[i].vel.to_numpy().tolist()
-    def osc_get_pos_all(self):
+    def osc_get_pos_all_2d(self):
+        self._osc_get_pos_all()
+        return self.tmp_pos.to_numpy().tolist()
+    def osc_get_pos_all_1d(self):
         self._osc_get_pos_all()
         return self.tmp_pos.to_numpy().flatten().tolist()
     @ti.kernel
