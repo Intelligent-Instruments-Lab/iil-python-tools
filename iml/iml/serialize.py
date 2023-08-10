@@ -3,7 +3,18 @@ from typing import Any
 from copy import deepcopy
 
 class JSONSerializable:
-    """Stateless JSON serialization. Just saves arguments at construction."""
+    """JSON serialization for Python classes.
+    Saves keyword arguments at construction,
+    and also any state returned by the `save_state` method.
+
+    to make class a serializable, subclass JSONSerializable, 
+    and in the constructor use e.g. `super().__init__(a=0, b=1 ...)`
+    with any keyword args which should be serialized.
+
+    override `save_state` and `load_state` to handle any mutable state.
+
+    Constructor args and return values of `save_state` can be other JSONSerializable objects.
+    """
     def __init__(self, **kw):
         self._kw = deepcopy(kw)
         self._kw['__inst__'] = '.'.join((
@@ -20,13 +31,6 @@ class JSONSerializable:
     def load_state(self, state):
         """restore from de-serialized state"""
         pass
-    
-    
-class Test(JSONSerializable):
-    def __init__(self, a='a'):
-        # pass any arguments which should be saved 
-        # *as keywords* to super().__init__()
-        super().__init__(a=a)
 
 class JSONEncoder(json.JSONEncoder):
     def default(self, o: Any) -> Any:

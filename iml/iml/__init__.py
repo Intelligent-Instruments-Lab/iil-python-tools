@@ -175,14 +175,16 @@ class IML(serialize.JSONSerializable):
         Returns:
             state: data in this IML object
         """
-        return self.pairs
+        return {
+            'pairs': self.pairs
+        }
     
     def load_state(self, state):
         """load dataset into this IML object.
         Args:
             state: data as obtained from `save_state`
         """
-        for id,pair in state.items():
+        for id,pair in state['pairs'].items():
             self.add(*pair, id=PairID(id))        
 
     def save(self, path:str):
