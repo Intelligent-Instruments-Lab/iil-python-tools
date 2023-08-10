@@ -71,6 +71,8 @@ class IndexBrute(Index):
 
     def search(self, feature:Feature, k:int=3) -> Tuple[PairIDs, Scores]:
         """get feature(s) and IDs by proximity"""
+        if not len(self.data):
+            return [], []
         dist_id = sorted((self.metric(feature, v),k) for k,v in self.data.items())
         scores, ids = zip(*dist_id[:k])
         return ids, scores

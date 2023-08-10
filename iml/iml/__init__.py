@@ -28,7 +28,7 @@ class IML(serialize.JSONSerializable):
         if emb is None:
             emb = embed.Identity(feature_size)
         elif isinstance(emb, str):
-            emb = getattr(emb, emb.capitalize())(feature_size)
+            emb = getattr(emb, emb)(feature_size)
         elif isinstance(emb, embed.Embedding):
             pass
         else:
@@ -65,41 +65,42 @@ class IML(serialize.JSONSerializable):
             k: number of neighbors for above
         """
         print('reset')
+        res = None
         if keep_near is not None and len(self.pairs)>0:
             if len(keep_near)!=len(self.pairs[0][0]):
                 print('ERROR: iml: keep_near should be an Input vector')
                 keep_near = None
             else:
                 print('searching neighbors for keep_near')
-                srcs, tgts, _ = self.search(keep_near, k=k)
+                res = self.search(keep_near, k=k)
 
         self.pairs: Dict[PairID, IOPair] = {}
-        # NNSearch converts feature to target IDs and scores
+        # NNSearch converts feature to output IDs and scores
         self.neighbors.reset()
 
-        if keep_near is not None:
-            print(f'restoring {len(srcs)} neighbors')
-            for s,t in zip(srcs,tgts):
-                self.add(s,t)
+        if res is not None:
+            print(f'restoring {len(res.ids)} neighbors')
+            for id,inp,out in zip(res.ids, res.inputs, res.outputs):
+                self.add(inp,out,id=id)
 
     def add(self, 
-            source: Input, 
-            target: Output, 
+            input: Input, 
+            output: Output, 
             id: Optional[PairID]=None
             ) -> PairID:
         """Add a data point to the mapping.
         Args:
-            source: Input item
-            target: Output item
+            input: Input item
+            output: Output item
             id: PairID to use; if an existing id, replace the point
         Returns:
             id: id of the new data point if you need to reference it later
         """
-        print(f'add {source=}, {target=}')
-        feature = self.embed(source)
+        print(f'add {input=}, {output=}')
+        feature = self.embed(input)
         id = self.neighbors.add(feature, id)
-        # track the mapping from target IDs back to targets
-        self.pairs[id] = IOPair(source, target)
+        # track the mapping from output IDs back to outputs
+        self.pairs[id] = IOPair(input, output)
         return id
     
     def get(self, id:PairID) -> IOPair:
@@ -124,16 +125,16 @@ class IML(serialize.JSONSerializable):
                 print(f"IML: WARNING: can't `remove` ID {ids} which doesn't exist or has already been removed")
             self.neighbors.remove(ids)
 
-    def remove_near(self, source:Input, k:int=None):
+    def remove_near(self, input:Input, k:int=None):
         """Remove from mapping by proximity to Input
         """
-        feature = self.embed(source)
+        feature = self.embed(input)
         self.neighbors.remove_near(feature)
 
-    def search(self, source:Input, k:int=None) -> SearchResult:
+    def search(self, input:Input, k:int=None) -> SearchResult:
         """find k-nearest neighbors
         Args:
-            source: input item
+            input: input item
             k: max number of neighbors
         Returns:
             inputs: neighboring Inputs
@@ -141,29 +142,31 @@ class IML(serialize.JSONSerializable):
             ids: ids of Input/Output pairs
             scores: dissimilarity Scores
         """
-        feature = self.embed(source)
+        feature = self.embed(input)
         ids, scores = self.neighbors(feature, k=k)
         # handle case where there are fewer than k neighbors
-        sources, targets = zip(*(self.pairs[i] for i in ids))
+        if not len(ids):
+            raise RuntimeError('no points in mapping. add some!')
+        inputs, outputs = zip(*(self.pairs[i] for i in ids))
 
         # TODO: text-mode visualize scores
         # s = ' '*len(self.pairs)
 
-        return SearchResult(sources, targets, ids, scores)
+        return SearchResult(inputs, outputs, ids, scores)
 
-    def map(self, source:Input, k:int=None, **kw) -> Output:
+    def map(self, input:Input, k:int=None, **kw) -> Output:
         """convert an Input to an Output using search + interpolate
 
         Args:
-            source: input
+            input: input
             k: max neighbors
             **kw: additional arguments are passed to interpolate
         Returns:
             output instance
         """
-        # print(f'map {source=}')
-        _, targets, _, scores = self.search(source, k)
-        result = self.interpolate(targets, scores, **kw)
+        # print(f'map {input=}')
+        _, outputs, _, scores = self.search(input, k)
+        result = self.interpolate(outputs, scores, **kw)
 
         return result
     

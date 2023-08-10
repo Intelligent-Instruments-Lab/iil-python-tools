@@ -38,26 +38,45 @@ def main(
         osc_host: leave this as empty string to get all traffic on the port
 
     OSC Routes:
-    
-        /iml/config/interp "softmax"
+
+        /iml/config/emb "Identity"
+            set embedding to Identity (the default)
+        /iml/config/emb "ProjectAndSort"
+            set embedding to ProjectAndSort
+
+        /iml/config/interp "Smooth"
+            set interpolator to Smooth (the default)
+        /iml/config/interp "Softmax"
             set interpolator to Softmax
-        /iml/config/interp "ripple"
+        /iml/config/interp "Ripple"
             set interpolator to Ripple
 
-        /iml/add "source" ... "target"... 
+        -- or --
+        /iml/config "emb" ... "interp" ...
+
+        /iml/add "input" ... "output"... 
             add a point to the mapping
 
-        /iml/map "source" ...
-        /iml/map "source" ... "ripple" t
-        /iml/map "source" ... "temp" t
-            map an input to an output
-            "temp" 1 > t > 0 when using softmax interpolator
+        /iml/remove id 
+            remove a point from the mapping by ID
+
+        /iml/remove_near "input" ... ["k" k]
+            remove k points from the mapping by proximity
+
+        /iml/map "input" ... ["k" k] ["ripple" r] ["temp" t]
+            map an input to an output using k neighbors
+            "temp" 1 > t > 0 when using Softmax interpolator
             "ripple" r > 0 when using Ripple interpolator
 
         /iml/reset
             remove all points
-        /iml/reset "keep_near" ... "k" k
-            remove all points except the neighbors of "keep_near"
+        /iml/reset "keep_near" ... ["k" k]
+            remove all points except the k neighbors of "keep_near"
+
+        /iml/load path
+            load IML from file at `path`
+        /iml/save path
+            save IML to file at `path`
     """
     osc = OSC(osc_host, osc_port)
 
@@ -67,7 +86,6 @@ def main(
 
     @osc.kwargs('/iml/config')
     def _(address, **kw):
-        nonlocal iml
         # TODO: validate input
         config.update(kw)
         print(config) 
@@ -79,36 +97,60 @@ def main(
         else:
             iml.set_interp(name)
 
+    @osc.args('/iml/config/emb')
+    def _(address, name):
+        if iml is None:
+            config['emb'] = name
+        else:
+            iml.set_emb(name)
+
     @osc.args('/iml/add')
     def _(address, *a):
         nonlocal iml
         kw = vector_args(a)
 
-        if 'source' not in kw:
-            print('ERROR: iml: no source vector supplied')
+        if 'input' not in kw:
+            print('ERROR: iml: no input vector supplied')
             return
-        if 'target' not in kw:
-            print('ERROR: iml: no target vector supplied')
+        if 'output' not in kw:
+            print('ERROR: iml: no output vector supplied')
             return
 
-        d = len(kw['source'])
-        config['feature_size'] = d
+        # d = len(kw['input'])
+        # config['feature_size'] = d
         if iml is None:
-            print(f'new IML object with source dimension {d}')
+            # print(f'new IML object with Input dimension {d}')
+            print(f'new IML object with {config}')
             iml = IML(**config)
 
         return '/iml/return/add', iml.add(**kw)
     
+    @osc.args('/iml/remove')
+    def _(address, id):
+        iml.remove(id)
+
+    @osc.args('/iml/remove_near')
+    def _(address, *a):
+        kw = vector_args(a)
+        for k in ['k']:
+            if k in kw:
+                kw[k] = kw[k][0]
+
+        if 'input' not in kw:
+            print('ERROR: iml: no input vector supplied')
+            return
+        
+        iml.remove_near(**kw)
 
     @osc.args('/iml/map', return_port=osc_return_port)
     def _(address, *a):
         kw = vector_args(a)
-        for k in ['k', 'temp']:
+        for k in ['k', 'temp', 'ripple']:
             if k in kw:
                 kw[k] = kw[k][0]
 
-        if 'source' not in kw:
-            print('ERROR: iml: no source vector supplied')
+        if 'input' not in kw:
+            print('ERROR: iml: no input vector supplied')
             return
         
         if iml is None:
@@ -128,6 +170,21 @@ def main(
                     kw[k] = kw[k][0]
 
             iml.reset(**kw)
+
+    @osc.args('/iml/load')
+    def _(address, path):
+        nonlocal iml
+        assert isinstance(path, str)
+        assert path.endswith('.json'), "ERROR: iml: path should end with .json"
+        print(f'new IML object from {path}')
+        iml = IML.load(path)
+
+    @osc.args('/iml/save')
+    def _(address, path):
+        assert isinstance(path, str)
+        assert path.endswith('.json'), "ERROR: iml: path should end with .json"
+        print(f'saving IML object to {path}')
+        iml.save(path)
 
 if __name__=='__main__':
     run(main)
