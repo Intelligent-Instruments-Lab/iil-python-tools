@@ -76,28 +76,38 @@ class PdPatcher:
     def connect(self, a_id, a_outlet, b_id, b_inlet):
         self.patch_connections.append(f"#X connect {a_id} {a_outlet} {b_id} {b_inlet};\n")
     
-    def add_osc_send(self, host, port, x, y):
+    def add_osc_send(self, host, port, x, y, send_rate_limit=100):
         loadbang_id = self.add_object("loadbang", x, y)
         y += self.h
         connect_id = self.add_msg(f"connect {host} {port}", x, y)
         y += self.h
         disconnect_id = self.add_msg("disconnect", x+10, y)
-        receive_id = self.add_object("r send.to.iipyper", x+100, y)
+        metro_id = self.add_object(f"metro {send_rate_limit}", x+100, y)
         y += self.h
-        packOSC_id = self.add_object("packOSC", x+100, y)
+        send_rate_id = self.add_object("s rate", x+100, y)
+        y += self.h
+        receive_id = self.add_object("r send.to.iipyper", x+10, y)
+        y += self.h
+        packOSC_id = self.add_object("packOSC", x+10, y)
         y += self.h
         send_type = "netsend -u" if self.net_or_udp == "net" else "udpsend"
         send_id = self.add_object(send_type, x, y)
         y += self.h
         status_id = self.add_number(x, y)
         print_id = self.add_object("print reply.from.netreceive", x+40, y)
+        # loadbang->connect->send->print
         self.connect(loadbang_id, 0, connect_id, 0)
         self.connect(connect_id, 0, send_id, 0)
-        self.connect(disconnect_id, 0, send_id, 0)
-        self.connect(receive_id, 0, packOSC_id, 0)
-        self.connect(packOSC_id, 0, send_id, 0)
         self.connect(send_id, 0, status_id, 0)
         self.connect(send_id, 1, print_id, 0)
+        # loadbang->metro->send_rate
+        self.connect(loadbang_id, 0, metro_id, 0)
+        self.connect(metro_id, 0, send_rate_id, 0)
+        # disconnect->send
+        self.connect(disconnect_id, 0, send_id, 0)
+        # receive->packOSC->send
+        self.connect(receive_id, 0, packOSC_id, 0)
+        self.connect(packOSC_id, 0, send_id, 0)
         return send_id
 
     def add_osc_receive(self, port, x, y):
@@ -231,7 +241,7 @@ class PdPatcher:
         # sliders
         slider_ids, slider_float_ids, int_ids, tbf_ids, _y_off = self.add_sliders(x, y+y_off, parameters, "send")
         y_off+=_y_off+25
-        y_off+=180
+        y_off+=225
 
         pack_id = -1
         out_id = -1
@@ -286,11 +296,13 @@ class PdPatcher:
         int_ids = []
         tbf_ids = []
         y_off = 0
+        send_rate_id = self.add_object("r rate", x-50, y+155)
         for i, s in enumerate(sliders):
             y_off = 0
             x_i = x+(i*self.param_width)
             y_off+=self.h
             slider_id, int_id, float_id, tbf_id = self.add_slider(
+                send_rate_id,
                 x_i, 
                 y+y_off,s["min_val"], 
                 s["size"], 
@@ -302,7 +314,7 @@ class PdPatcher:
             tbf_ids.append(tbf_id)
         return slider_ids, float_ids, int_ids, tbf_ids, y_off
 
-    def add_slider(self, x, y, min_val, size, float=False, io=None):
+    def add_slider(self, send_rate_id, x, y, min_val, size, float=False, io=None):
         assert io is not None, "io must be \"send\" or \"receive\""
         slider_id = self.add_box("obj", x, y, f"vsl 20 120 {min_val} {min_val+size} 0 0 empty empty empty 0 -9 0 12 #fcfcfc #000000 #000000 0 1")
         y += 120+8
@@ -315,29 +327,57 @@ class PdPatcher:
             y+=self.h
             float_id = self.add_number(x, y)
             y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
+            y+=self.h
             tbf_id = self.add_object("t b f", x, y)
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
-            self.connect(float_id, 0, tbf_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+            self.connect(change_id, 0, tbf_id, 0)
         elif float == False and io != "send": # if int and not send
             # int -> number
             int_id = self.add_object("int", x, y)
             y+=self.h
             float_id = self.add_number(x, y)
+            y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
         elif float == True and io == "send": # if float and send
             # number -> t b f
             float_id = self.add_number(x, y)
             y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
+            y+=self.h
             tbf_id = self.add_object("t b f", x, y)
             self.connect(slider_id, 0, float_id, 0)
-            self.connect(float_id, 0, tbf_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+            self.connect(change_id, 0, tbf_id, 0)
         elif float == True and io != "send": # if float and not send
             # number
             float_id = self.add_number(x, y)
+            y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
             self.connect(slider_id, 0, float_id, 0)
-        return slider_id, int_id, float_id, tbf_id
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+        return slider_id, int_id, change_id, tbf_id
 
     def add_param_comments(self, x, y, params):
         comment_ids = []

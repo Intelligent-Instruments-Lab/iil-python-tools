@@ -58,9 +58,9 @@ class OSCMap:
                     if k != 'io' and k != 'count' and k != 'send_mode'}
         f = {'f': func, 'address': address, 'params': params}
         if 'io' not in kwargs:
-            raise ValueError('io must be specified')
+            raise ValueError(f'io must be specified for {n}')
         if 'count' not in kwargs:
-            raise ValueError('count must be specified')
+            raise ValueError(f'count must be specified for {n}')
         if kwargs['io'] == 'send':
             if kwargs['send_mode'] == 'broadcast':
                 f['updater'] = OSCSendUpdater(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
