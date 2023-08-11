@@ -109,6 +109,7 @@ def main(
 
     use_tui=True, # run textual UI
     predict_input=True, # forecasted next events can be for input (preserves model distribution, but can lead to Notochord deciding not to play)
+    predict_follow=False,
     debug_query=False, # don't query notochord when there is no pending event.
     testing=False,
     estimated_latency=1e-2
@@ -205,8 +206,11 @@ def main(
     if config is None:
         config = {
             1:{'type':'input', 'inst':1},
-            2:{'type':'follow', 'inst':1, 'source':1},
-            3:{'type':'auto', 'inst':12},
+            2:{'type':'follow', 'inst':1, 'source':1, 'transpose':(3,15)},
+            3:{'type':'follow', 'inst':10, 'source':2, 'range':(72,96)},
+            4:{'type':'auto', 'inst':12},
+            5:{'type':'follow', 'source':4, 'inst':12, 'transpose':(-15,-3)},
+            10:{'type':'auto', 'inst':129},
         }
 
     def validate_config():
@@ -227,7 +231,6 @@ def main(
         # list of channels with given type
         return [k for k,v in config.items() if v['type'] in t]
     def channel_inst(c):
-        # list of channel,instrument pairs
         return config[c]['inst']
     def channel_insts():
         # list of channel,instrument pairs
@@ -273,7 +276,8 @@ def main(
     def do_send_pc():
         for c,i in channel_insts():
             warn_inst(i)
-            midi.program_change(channel=c, program=(i-1)%128)
+            # convert to 0-index
+            midi.program_change(channel=c-1, program=(i-1)%128)
 
     if send_pc:
         do_send_pc()
@@ -312,7 +316,12 @@ def main(
             s += f'    ({memo})'
         tui(note=s)
 
-    def play_event(event, channel, feed=True, send=True, tag=None, memo=None):
+    def play_event(
+            event, channel, 
+            parent=None, # parent note as (channel, inst, pitch)
+            feed=True, 
+            send=True, 
+            tag=None, memo=None):
         """realize an event as MIDI, terminal display, and Notochord update"""
         # normalize values
         vel = event['vel'] = round(event['vel'])
@@ -324,11 +333,14 @@ def main(
         if send:
             midi.send(
                 'note_on' if vel > 0 else 'note_off', 
-                note=event['pitch'], velocity=vel, channel=channel)
+                note=event['pitch'], velocity=vel, channel=channel-1)
 
         # feed to NotoPerformance
         # put a stopwatch in the held_note_data field for tracking note length
-        history.feed(held_note_data=Stopwatch(), channel=channel, **event)
+        history.feed(held_note_data={
+            'duration':Stopwatch(),
+            'parent':parent
+            }, channel=channel, **event)
 
         # print
         display_event(tag, memo=memo, channel=channel, **event)
@@ -339,25 +351,29 @@ def main(
 
         follow_event(event, channel)
 
-    def follow_event(event, channel):
-        source_vel, source_pitch = event['vel'], event['pitch']
-        source_inst = event['inst']
+    def follow_event(source_event, source_channel):
+        source_vel = source_event['vel']
+        source_pitch = source_event['pitch']
+        source_inst = source_event['inst']
+        source_k = (source_channel, source_inst, source_pitch)
+
         # TODO: process events from 'follow' channels
 
         dt = 0 if nominal_time else estimated_latency
 
         if source_vel > 0:
             # NoteOn
-            for noto_channel in channel_followers(channel):
+            for noto_channel in channel_followers(source_channel):
                 cfg = config[noto_channel]
                 
-                if cfg['muted']: continue
+                if cfg.get('muted', False): continue
 
                 noto_inst = cfg['inst']
-                min_x, max_x = cfg.get('transpose', range(-128,128))
-                lo, hi = cfg.get('range', range(0,128))
+                min_x, max_x = cfg.get('transpose', (-128,128))
+                lo, hi = cfg.get('range', (0,127))
 
                 already_playing = {p for i,p in history.note_pairs if noto_inst==i}
+                # print(f'{already_playing=}')
 
                 pitch_range = range(
                     max(lo,source_pitch+min_x), min(hi, source_pitch+max_x+1))
@@ -368,7 +384,7 @@ def main(
                 if len(pitches)==0:
                     # edge case: no possible pitch
                     print(f'skipping {noto_channel=}, no pitches available')
-                    print(pitch_range, 'minus', {source_pitch}, 'minus', already_playing)
+                    print(f'{pitch_range} minus {{source_pitch}} minus {already_playing}')
                     continue
                 elif len(pitches)==1:
                     # edge case: there is exactly one possible pitch
@@ -380,15 +396,16 @@ def main(
                     h = noto.query(
                         next_inst=noto_inst, next_time=dt, next_vel=source_vel,
                         include_pitch=pitches)
-
-                play_event(h, noto_channel, tag='NOTO', memo='follow')
+                    
+                play_event(h, noto_channel, parent=source_k, tag='NOTO', memo='follow')
         # NoteOff
         else:
+            # print(f'{history.note_data=}')
             dependents = [
-                noto_k
-                for noto_k,player_k 
+                noto_k # chan, inst, pitch
+                for noto_k, note_data
                 in history.note_data.items()
-                if player_k==(source_inst, source_pitch)
+                if note_data['parent']==source_k
             ]
 
             for noto_channel, noto_inst, noto_pitch in dependents:
@@ -411,7 +428,7 @@ def main(
                     dict(inst=inst, pitch=pitch, vel=0),
                     channel=chan, 
                     feed=False, # skip feeding Notochord since we are resetting it
-                    tag='AUTO', memo='reset')
+                    tag='NOTO', memo='reset')
         # reset stopwatch
         stopwatch.punch()
         # reset notochord state
@@ -458,13 +475,14 @@ def main(
 
     # query Notochord for a new next event
     # @lock
-    def auto_query(predict_input=predict_input):
+    def auto_query(predict_input=predict_input, predict_follow=predict_follow):
         # check for stuck notes
         # and prioritize ending those
-        for (_, inst, pitch), sw in history.note_data.items():
+        for (_, inst, pitch), note_data in history.note_data.items():
+            dur = note_data['duration'].read()
             if (
                 inst in type_insts('auto') 
-                and sw.read() > max_note_len*(.1+controls.get('steer_duration', 1))
+                and dur > max_note_len*(.1+controls.get('steer_duration', 1))
                 ):
                 # query for the end of a note with flexible timing
                 # with profile('query', print=print):
@@ -475,15 +493,20 @@ def main(
                 print(f'END STUCK NOTE {inst=},{pitch=}')
                 return
 
-        counts = history.inst_counts(
-            n=n_recent, insts=type_insts(('auto', 'input', 'follow')))
+
+        all_insts = type_insts(('auto', 'input', 'follow'))
+        counts = history.inst_counts(n=n_recent, insts=all_insts)
         print(counts)
 
-        all_insts = type_insts(
-            ('auto', 'input', 'follow') if predict_input else 'auto')
+        inst_types = ['auto']
+        if predict_follow:
+            inst_types.append('follow')
+        if predict_input:
+            inst_types.append('input')
+        allowed_insts = type_insts(inst_types)
 
         held_notes = history.held_inst_pitch_map(all_insts)
-        print(held_notes)
+        print(f'{held_notes=}')
 
         steer_time = 1-controls.get('steer_rate', 0.5)
         steer_pitch = controls.get('steer_pitch', 0.5)
@@ -500,26 +523,24 @@ def main(
         min_time = stopwatch.read()+time_offset
 
         # balance_sample: note-ons only from instruments which have played less
-        bal_insts = set(counts.index[counts <= counts.min()+n_margin])
+        bal_insts = allowed_insts & set(counts.index[counts <= counts.min()+n_margin])
         if balance_sample and len(bal_insts)>0:
-            insts = bal_insts
-        else:
-            insts = all_insts
+            allowed_insts = bal_insts
 
         # VTIP is better for time interventions,
         # VIPT is better for instrument interventions
         # could decide probabilistically based on value of controls + insts...
-        if insts==all_insts:
+        if allowed_insts==all_insts:
             query_method = noto.query_vtip
         else:
             query_method = noto.query_vipt
 
         # print(f'considering {insts} for note_on')
         # use only currently selected instruments
-        inst_pitch_map = inst_ranges(insts)
+        inst_pitch_map = inst_ranges(allowed_insts)
         note_on_map = {
             i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
-            for i in insts
+            for i in allowed_insts
         }
         # use any instruments which are currently holding notes
         note_off_map = {
@@ -529,13 +550,16 @@ def main(
 
         max_t = None if max_time is None else max(max_time, min_time+0.2)
 
-        pending.event = query_method(
-            note_on_map, note_off_map,
-            min_time=min_time, max_time=max_t,
-            truncate_quantile_time=tqt,
-            truncate_quantile_pitch=tqp,
-            steer_density=steer_density,
-        )
+        try:
+            pending.event = query_method(
+                note_on_map, note_off_map,
+                min_time=min_time, max_time=max_t,
+                truncate_quantile_time=tqt,
+                truncate_quantile_pitch=tqp,
+                steer_density=steer_density,
+            )
+        except Exception:
+            print(f'ERROR: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
 
         # display the predicted event
         tui(prediction=pending.event)
@@ -602,14 +626,17 @@ def main(
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
         """MIDI NoteOn events from the player"""
-        # if thru and msg.channel not in noto_map.channels:
-            # midi.send(msg)
+        # convert from 0-index
+        channel = msg.channel+1
 
-        if msg.channel not in type_chans('input'):
-            print('WARNING: ignoring MIDI on non-input channel')
+        if thru and channel in type_chans('input'):
+            midi.send(msg)
+
+        if channel not in type_chans('input'):
+            print(f'WARNING: ignoring MIDI {msg} on non-input channel')
             return
         
-        inst = channel_inst(msg.channel)
+        inst = channel_inst(channel)
         pitch = msg.note
         vel = msg.velocity if msg.type=='note_on' else 0
 
@@ -617,7 +644,7 @@ def main(
         # with profile('feed', print=print):
         play_event(
             {'inst':inst, 'pitch':pitch, 'vel':vel}, 
-            channel=msg.channel, send=thru, tag='PLAYER')
+            channel=channel, send=thru, tag='PLAYER')
 
         # query for new prediction
         auto_query()
@@ -664,7 +691,7 @@ def main(
         for (chan,inst,pitch) in history.note_triples:
         # for (inst,pitch) in notes:
             if inst in type_insts(('auto', 'follow')):
-                midi.note_on(note=pitch, velocity=0, channel=chan)
+                midi.note_on(note=pitch, velocity=0, channel=chan-1)
 
     @tui.set_action
     def mute():
@@ -683,7 +710,7 @@ def main(
         auto_query()
 
     if initial_query:
-        auto_query(predict_input=False)
+        auto_query(predict_input=False, predict_follow=False)
 
     if use_tui:
         tui.run()
