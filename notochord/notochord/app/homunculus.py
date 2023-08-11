@@ -24,6 +24,7 @@ Authors:
 
 from typing import Optional, Dict, Any
 from numbers import Number
+import math
 
 import iipyper, notochord
 from notochord import Notochord, MIDIConfig, NotoPerformance
@@ -33,55 +34,6 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, Button, TextLog, Switch, Checkbox
-
-### def TUI components ###
-class NotoLog(TextLog):
-    value = reactive('')
-    def watch_value(self, time: float) -> None:
-        self.write(self.value)
-
-class NotoPrediction(Static):
-    value = reactive(None)
-    def watch_value(self, time: float) -> None:
-        evt = self.value
-        if evt is None:
-            s = ''
-        else:
-            s = f"\tinstrument: {evt['inst']:3d}    pitch: {evt['pitch']:3d}    time: {int(evt['time']*1000):4d} ms    velocity:{int(evt['vel']):3d}"
-        self.update(Panel(s, title='prediction'))
-
-# class NotoToggle(Static):
-#     def compose(self):
-#         yield Button("Mute", id="mute", variant="error")
-#         yield Switch()
-
-class NotoControl(Static):
-    def compose(self):
-        # yield NotoToggle()
-        # yield Checkbox("Mute", id="mute")
-        yield Button("Mute", id="mute", variant="error")
-        yield Button("Sustain", id="sustain", variant="primary")
-        yield Button("Query", id="query")
-        yield Button("Reset", id="reset", variant='warning')
-
-class NotoTUI(TUI):
-    CSS_PATH = 'improviser.css'
-
-    BINDINGS = [
-        ("m", "mute", "Mute Notochord"),
-        ("s", "sustain", "Mute without ending notes"),
-        ("q", "query", "Re-query Notochord"),
-        ("r", "reset", "Reset Notochord")]
-
-    def compose(self):
-        """Create child widgets for the app."""
-        yield Header()
-        yield self.std_log
-        yield NotoLog(id='note')
-        yield NotoPrediction(id='prediction')
-        yield NotoControl()
-        yield Footer()
-### end def TUI components###
 
 def main(
     checkpoint="artifacts/notochord-latest.ckpt", # Notochord checkpoint
@@ -129,24 +81,24 @@ def main(
         config: mapping from MIDI channels to voice specs.
             MIDI channels and General MIDI instruments are indexed from 1.
             see https://en.wikipedia.org/wiki/General_MIDI for instrument numbers.
-            There are 3 types of voice: 'auto', 'follow' and 'input'.
+            There are 3 modes of voice: 'auto', 'follow' and 'input'.
             Example:
             {
                 1:{
-                    'type':'input', 'inst':1
+                    'mode':'input', 'inst':1
                 }, # input grand piano on MIDI channel 1
                 2:{
-                    'type':'follow', 'source':1, 'inst':1, 
+                    'mode':'follow', 'source':1, 'inst':1, 
                     'transpose':(-12,12)
                 }, # harmonize the channel within 1 octave 1 with more piano
                 3:{
-                    'type':'auto', 'inst':12, 'range':(36,72)
+                    'mode':'auto', 'inst':12, 'range':(36,72)
                 }, # autonomous vibraphone voice in the MIDI pitch 36-72 range
                 10:{
-                    'type':'auto', 'inst':129,
+                    'mode':'auto', 'inst':129,
                 }, # autonomous drums voice
                 4:{
-                    'type':'follow', 'source':3, 'inst':10, 'range':(72,96)
+                    'mode':'follow', 'source':3, 'inst':10, 'range':(72,96)
                 }, # harmonize channel 3 within upper registers of the glockenspiel
             }
             Notes:
@@ -205,31 +157,34 @@ def main(
     # default channel:instrument mappings
     if config is None:
         config = {
-            1:{'type':'input', 'inst':1},
-            2:{'type':'follow', 'inst':1, 'source':1, 'transpose':(3,15)},
-            3:{'type':'follow', 'inst':10, 'source':2, 'range':(72,96)},
-            4:{'type':'auto', 'inst':12},
-            5:{'type':'follow', 'source':4, 'inst':12, 'transpose':(-15,-3)},
-            10:{'type':'auto', 'inst':129},
+            1:{'mode':'input', 'inst':1},
+            2:{'mode':'follow', 'inst':1, 'source':1, 'transpose':(3,15)},
+            3:{'mode':'follow', 'inst':10, 'source':2, 'range':(72,96)},
+            4:{'mode':'auto', 'inst':12},
+            5:{'mode':'follow', 'source':4, 'inst':12, 'transpose':(-15,-3)},
+            10:{'mode':'auto', 'inst':129},
         }
 
     def validate_config():
         assert all(
-            v['source'] in config for v in config.values() if v['type']=='follow'
+            v['source'] in config for v in config.values() if v['mode']=='follow'
             ), 'ERROR: no source given for follow voice'
         # TODO: check for follow cycles
     validate_config()
 
-    def type_insts(t):
+    # for c,v in config.items():
+    #     tui.set_inst(c, v['inst'])
+
+    def mode_insts(t):
         if isinstance(t, str):
             t = t,
-        # set of instruments with given type(s)
-        return {v['inst'] for v in config.values() if v['type'] in t}
-    def type_chans(t):
+        # set of instruments with given mode(s)
+        return {v['inst'] for v in config.values() if v['mode'] in t}
+    def mode_chans(t):
         if isinstance(t, str):
             t = t,
-        # list of channels with given type
-        return [k for k,v in config.items() if v['type'] in t]
+        # list of channels with given mode
+        return [k for k,v in config.items() if v['mode'] in t]
     def channel_inst(c):
         return config[c]['inst']
     def channel_insts():
@@ -257,7 +212,7 @@ def main(
         # return channel of all 'follow' voices with given source
         return [k for k,v in config.items() if v.get('source', None)==chan]
     
-    if len(type_insts('input') & type_insts('auto')):
+    if len(mode_insts('input') & mode_insts('auto')):
         print("WARNING: auto and input instruments shouldn't overlap")
         print('setting to an anonymous instrument')
         # TODO: set to anon insts without changing mel/drum
@@ -324,7 +279,7 @@ def main(
             tag=None, memo=None):
         """realize an event as MIDI, terminal display, and Notochord update"""
         # normalize values
-        vel = event['vel'] = round(event['vel'])
+        vel = event['vel'] = math.ceil(event['vel'])
         dt = stopwatch.punch()
         if 'time' not in event or not nominal_time:
             event['time'] = dt
@@ -423,7 +378,7 @@ def main(
         
         # end Notochord held notes
         for (chan,inst,pitch) in history.note_triples:
-            if inst in type_insts('auto'):
+            if inst in mode_insts('auto'):
                 play_event(
                     dict(inst=inst, pitch=pitch, vel=0),
                     channel=chan, 
@@ -468,7 +423,7 @@ def main(
         
         # end+feed all held notes
         for (chan,inst,pitch) in history.note_triples:
-            if chan in type_chans('auto'):
+            if chan in mode_chans('auto'):
                 play_event(
                     dict(inst=inst, pitch=pitch, vel=0), 
                     channel=chan, tag='AUTO', memo='mute')
@@ -481,7 +436,7 @@ def main(
         for (_, inst, pitch), note_data in history.note_data.items():
             dur = note_data['duration'].read()
             if (
-                inst in type_insts('auto') 
+                inst in mode_insts('auto') 
                 and dur > max_note_len*(.1+controls.get('steer_duration', 1))
                 ):
                 # query for the end of a note with flexible timing
@@ -494,16 +449,16 @@ def main(
                 return
 
 
-        all_insts = type_insts(('auto', 'input', 'follow'))
+        all_insts = mode_insts(('auto', 'input', 'follow'))
         counts = history.inst_counts(n=n_recent, insts=all_insts)
         print(counts)
 
-        inst_types = ['auto']
+        inst_modes = ['auto']
         if predict_follow:
-            inst_types.append('follow')
+            inst_modes.append('follow')
         if predict_input:
-            inst_types.append('input')
-        allowed_insts = type_insts(inst_types)
+            inst_modes.append('input')
+        allowed_insts = mode_insts(inst_modes)
 
         held_notes = history.held_inst_pitch_map(all_insts)
         print(f'{held_notes=}')
@@ -629,10 +584,10 @@ def main(
         # convert from 0-index
         channel = msg.channel+1
 
-        if thru and channel in type_chans('input'):
+        if thru and channel in mode_chans('input'):
             midi.send(msg)
 
-        if channel not in type_chans('input'):
+        if channel not in mode_chans('input'):
             print(f'WARNING: ignoring MIDI {msg} on non-input channel')
             return
         
@@ -655,7 +610,7 @@ def main(
     def auto_event():
         # 'auto' event happens:
         event = pending.event
-        inst, pitch, vel = event['inst'], event['pitch'], round(event['vel'])
+        inst, pitch, vel = event['inst'], event['pitch'], math.ceil(event['vel'])
 
         # note on which is already playing or note off which is not
         if (vel>0) == ((inst, pitch) in history.note_pairs): 
@@ -677,7 +632,7 @@ def main(
             stopwatch.read() > dt
             ):
             # if so, check if it is a notochord-controlled instrument
-            if pending.event['inst'] in type_insts('auto'):
+            if pending.event['inst'] in mode_insts('auto'):
                 # prediction happens
                 auto_event()
             # query for new prediction
@@ -690,11 +645,16 @@ def main(
         # print(f'cleanup: {notes=}')
         for (chan,inst,pitch) in history.note_triples:
         # for (inst,pitch) in notes:
-            if inst in type_insts(('auto', 'follow')):
+            if inst in mode_insts(('auto', 'follow')):
                 midi.note_on(note=pitch, velocity=0, channel=chan-1)
 
     @tui.set_action
     def mute():
+        # TODO: run this automatically after tui starts
+        for c,v in config.items():
+            tui.set_inst(c, v['inst'])
+            tui.set_mode(c, v)
+
         noto_mute()
 
     @tui.set_action
@@ -714,6 +674,154 @@ def main(
 
     if use_tui:
         tui.run()
+
+### def TUI components ###
+class NotoLog(TextLog):
+    value = reactive('')
+    def watch_value(self, time: float) -> None:
+        self.write(self.value)
+
+class NotoPrediction(Static):
+    value = reactive(None)
+    def watch_value(self, time: float) -> None:
+        evt = self.value
+        if evt is None:
+            s = ''
+        else:
+            s = f"\tinstrument: {evt['inst']:3d}    pitch: {evt['pitch']:3d}    time: {int(evt['time']*1000):4d} ms    velocity:{int(evt['vel']):3d}"
+        self.update(Panel(s, title='prediction'))
+
+# class NotoToggle(Static):
+#     def compose(self):
+#         yield Button("Mute", id="mute", variant="error")
+#         yield Switch()
+
+class Mixer(Static):
+    def compose(self):
+        for i in range(1,17):
+            yield MixerButtons(i, id=f"mixer_{i}")
+
+def mode_id(i):
+    return f"mode_{i}"
+def inst_id(i):
+    return f"inst_{i}"
+def mute_id(i):
+    return f"mute_{i}"
+class MixerButtons(Static):
+    def __init__(self, idx, **kw):
+        self.idx = idx
+        super().__init__(**kw)
+
+    def compose(self):
+        yield Button(
+            f"{self.idx:02d}", 
+            id=mode_id(self.idx),
+            # variant="primary",
+            classes="cmode"
+            )
+        yield Button(
+            f"000 \nPIANO\nGRAND", 
+            id=inst_id(self.idx),
+            # variant="warning",
+            classes="cinst"
+            )
+        yield Button(
+            f"MUTE", 
+            id=mute_id(self.idx),
+            # variant="error",
+            classes="cmute"
+            )
+
+class NotoControl(Static):
+    def compose(self):
+        # yield NotoToggle()
+        # yield Checkbox("Mute", id="mute")
+        yield Button("Mute", id="mute", variant="error")
+        yield Button("Sustain", id="sustain", variant="primary")
+        yield Button("Query", id="query")
+        yield Button("Reset", id="reset", variant='warning')
+
+class NotoTUI(TUI):
+    CSS_PATH = 'homunculus.css'
+
+    BINDINGS = [
+        ("m", "mute", "Mute Notochord"),
+        ("s", "sustain", "Mute without ending notes"),
+        ("q", "query", "Re-query Notochord"),
+        ("r", "reset", "Reset Notochord")]
+
+    def compose(self):
+        """Create child widgets for the app."""
+        yield Header()
+        yield self.std_log
+        yield NotoLog(id='note')
+        yield NotoPrediction(id='prediction')
+        yield Mixer()
+        yield NotoControl()
+        yield Footer()
+
+    def set_inst(self, chan, inst):
+        node = self.query_one('#'+inst_id(chan))
+        node.label = inst_label(inst)
+
+    def set_mode(self, chan, cfg):
+        inst_node = self.query_one('#'+inst_id(chan))
+        mode_node = self.query_one('#'+mode_id(chan))
+
+        inst_node.variant = 'warning'
+        mode_node.variant = 'primary'
+
+        mode = cfg['mode']
+        if mode=='auto':
+            mode_node.label = f"{chan:02d}"
+        elif mode=='input':
+            mode_node.label = f"-->{chan:02d}"
+        elif mode=='follow':
+            mode_node.label = f"{cfg['source']:02d}->{chan:02d}"
+
+def inst_label(i):
+    j = i-1
+    g = j//8
+    group = [
+        'PIANO',
+        'CPERC',
+        'ORGAN',
+        'GITAR',
+        'BASS',
+        'STRNG',
+        'ENSMB',
+        'BRASS',
+        'REEDS',
+        'PIPES',
+        'SYNTH',
+        'PAD',
+        'SYNFX',
+        'ETHNC',
+        'PERC',
+        'SOUND',
+        'DRUMS'
+    ][g]
+    name = [
+        'GRAND', 'BRIGHT', 'EGRND', 'HONKT', 'RHODE', 'FM', 'HPSCD', 'CLAV',
+        'CLSTA', 'GLOCK', 'MUBOX', 'VIBES', 'MRMBA', 'XYLO', 'TBELL', 'DULCI',
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        '', '', '', '', '', '', '', '',  
+        'STD.'
+    ][j]
+    return f'{i:03d} \n{name}\n{group}'
+### end def TUI components###
 
 
 if __name__=='__main__':
