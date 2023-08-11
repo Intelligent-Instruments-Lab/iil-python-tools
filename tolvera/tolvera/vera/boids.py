@@ -1,12 +1,11 @@
 import time
 import taichi as ti
 
-# from tolvera.particles import Particle, Particles
-from tolvera.particles_refactor import Particle, Particles
+from tolvera.utils import *
+from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import OSCUpdaters, Updater
 
-from iipyper import OSC, run
+from iipyper import OSC, run, Updater
 
 @ti.dataclass
 class BoidsParams:
@@ -79,12 +78,8 @@ class Boids():
     def osc_get_rule(self, i, j):
         return self.rules[i,j].to_numpy().tolist()
 
-def main(x=1920, y=1080, n=8192, species=5, fps=120, host="127.0.0.1", receive_port=4000, send_port=5000):
-    seed = int(time.time())
-    ti.init(arch=ti.vulkan, random_seed=seed)
-    # ti.init(random_seed=seed)
-    osc = OSC(host, receive_port, verbose=False, concurrent=True)
-    osc.create_client("boids", host, send_port)
+def main():
+    init()
     particles = Particles(x, y, n, species, wall_margin=0)
     pixels = Pixels(x, y, evaporate=0.95, fps=fps)
     boids = Boids(x, y, species)
@@ -95,16 +90,13 @@ def main(x=1920, y=1080, n=8192, species=5, fps=120, host="127.0.0.1", receive_p
         boids.reset()
     update = Updater(reset, fps*8)
 
-    def render():
+    def _():
         update()
         pixels.diffuse()
-        pixels.decay()
-        # particles.activity_decay()
-        # pixels.clear()
         boids(particles)
         particles(pixels)
 
-    pixels.show(render)
+    render(_, pixels)
 
 if __name__ == '__main__':
-    run(main())
+    run(main)

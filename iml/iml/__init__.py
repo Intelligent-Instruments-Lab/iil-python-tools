@@ -14,7 +14,8 @@ class IML(serialize.JSONSerializable):
             emb:Union[str,embed.Embedding]=None, 
             interp:Union[str,interpolate.Interpolate]=None,
             index:nnsearch.Index=None,
-            k:int=10):
+            k:int=10,
+            verbose=False):
         """
         Args:
             feature_size: dimension of feature vectors
@@ -23,7 +24,7 @@ class IML(serialize.JSONSerializable):
             index: instance of Index (defaults to IndexBrute)
             k: default k-nearest neighbors (can be overridden later)
         """
-        
+        self.verbose = verbose
         # Feature converts Inputs to Features
         if emb is None:
             emb = embed.Identity(feature_size)
@@ -96,7 +97,7 @@ class IML(serialize.JSONSerializable):
         Returns:
             id: id of the new data point if you need to reference it later
         """
-        print(f'add {input=}, {output=}')
+        if self.verbose: print(f'add {input=}, {output=}')
         feature = self.embed(input)
         id = self.neighbors.add(feature, id)
         # track the mapping from output IDs back to outputs

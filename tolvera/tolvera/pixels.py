@@ -1,6 +1,8 @@
 import taichi as ti
 from iipyper.state import _lock
 
+# TODO: convert all ints to floats
+
 # FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 
 vec1 = ti.types.vector(1, ti.f32)
@@ -14,26 +16,50 @@ class Pixel:
     rgb: vec3
     rgba: vec4
     rgba_inv: vec4
-    @ti.func
-    def rgba_to_g(self):# -> vec1:
-        # TODO: rgba_to_g
-        pass
-    @ti.func
-    def rgba_to_rgb(self):# -> vec3:
-        # TODO: rgba_to_rgb
-        pass
-    @ti.func
-    def g_inv(self):# -> vec3:
-        # TODO: g_inv
-        pass
-    @ti.func
-    def rgb_inv(self):# -> vec3:
-        # TODO: rgb_inv
-        pass
-    @ti.func
-    def rgba_inv(self):# -> vec3:
-        # TODO: rgba_inv
-        pass
+
+@ti.dataclass
+class Point:
+    x: ti.i32
+    y: ti.i32
+    rgba: vec4
+
+@ti.dataclass
+class Line:
+    x0: ti.i32
+    y0: ti.i32
+    x1: ti.i32
+    y1: ti.i32
+    rgba: vec4
+
+@ti.dataclass
+class Rect:
+    x: ti.i32
+    y: ti.i32
+    width: ti.i32
+    height: ti.i32
+    rgba: vec4
+
+@ti.dataclass
+class Circle:
+    x: ti.i32
+    y: ti.i32
+    radius: ti.i32
+    rgba: vec4
+
+@ti.dataclass
+class Triangle:
+    x0: ti.i32
+    y0: ti.i32
+    x1: ti.i32
+    y1: ti.i32
+    x2: ti.i32
+    y2: ti.i32
+    rgba: vec4
+
+# TODO: ???
+@ti.dataclass
+class Polygon:
+    p: Point
 
 @ti.data_oriented
 class Pixels:
@@ -44,7 +70,6 @@ class Pixels:
                  evaporate=0.99,
                  fps=120,
                  name='Tolvera',
-                 render=True,
                  polygon_mode='crossing'):
         self.lock = _lock
         self.x = x
@@ -54,11 +79,7 @@ class Pixels:
         self.mode = mode
         self.evaporate = ti.field(ti.f32, shape=())
         self.evaporate[None] = evaporate
-        self.should_render = render
         self._polygon_mode = polygon_mode
-        if self.should_render:
-            self.window = ti.ui.Window(name, (x,y), fps_limit=fps)
-            self.canvas = self.window.get_canvas()
     def set(self, px):
         self.px.rgba = px.rgba
     def get(self):
@@ -217,16 +238,31 @@ class Pixels:
         pass
     def reset(self):
         self.clear()
-    def show(self, f=None):
-        if self.should_render:
-            while self.window.running:
-                with self.lock:
-                    if f is not None: f()
-                    self.render()
-    def render(self):
-        self.invert()
-        self.canvas.set_image(self.px.rgba_inv)
-        self.window.show()
-
     def __call__(self):
         return self.get()
+    @ti.func
+    def g_to_rgba(self, g):# -> vec1:
+        for i, j in ti.ndrange(self.x, self.y):
+            # _i, _j = self.y-j-1,self.x-i-1
+            p = g[0,i,j]
+            self.px.rgba[i,j] = ti.Vector([p,p,p,1.0])
+    @ti.func
+    def rgba_to_g(self, rgba):# -> vec1:
+        # TODO: rgba_to_g
+        pass
+    @ti.func
+    def rgba_to_rgb(self, rgba):# -> vec3:
+        # TODO: rgba_to_rgb
+        pass
+    @ti.func
+    def g_inv(self):# -> vec3:
+        # TODO: g_inv
+        pass
+    @ti.func
+    def rgb_inv(self):# -> vec3:
+        # TODO: rgb_inv
+        pass
+    @ti.func
+    def rgba_inv(self):# -> vec3:
+        # TODO: rgba_inv
+        pass

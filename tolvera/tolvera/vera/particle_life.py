@@ -5,7 +5,7 @@ from iipyper import OSC, run
 
 from tolvera.particles import Particle, Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import OSCUpdaters
+from iipyper.osc import OSCUpdaters
 
 # FIXME: doesn't work
 

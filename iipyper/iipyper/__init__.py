@@ -7,6 +7,9 @@ import fire
 
 from .midi import *
 from .osc import *
+from .max import *
+from .map import *
+from .pd import *
 from .audio import *
 from .tui import *
 from .state import _lock

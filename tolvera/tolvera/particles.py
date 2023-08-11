@@ -103,13 +103,9 @@ class Particles:
             s = i % self.species_n
             self.field[i].species = s
             self.field[i].rgba    = self.species_c[s]
-            self.field[i].size      = 10.0 + 1     * ti.random(ti.f32)
-            # self.field[i].speed     = 0.1 + 2     * ti.random(ti.f32)
-            # self.field[i].max_speed = 0.5 + 2     * ti.random(ti.f32)
-            self.field[i].speed     = 0.01      * ti.random(ti.f32)
-            self.field[i].max_speed = 0.05      * ti.random(ti.f32)
-            # self.field[i].speed     = 3.0 + 4     * ti.random(ti.f32)
-            # self.field[i].max_speed = 3.0 + 8     * ti.random(ti.f32)
+            self.field[i].size      = 3.0 + 1     * ti.random(ti.f32)
+            self.field[i].speed     = 1.0     * ti.random(ti.f32)
+            self.field[i].max_speed = 1.0 + 5     * ti.random(ti.f32)
             self.field[i].mass      = 1.0 + 5     * ti.random(ti.f32)
             self.field[i].decay     = 0.9 + 0.099 * ti.random(ti.f32)
     @ti.kernel

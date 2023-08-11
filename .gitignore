@@ -9,3 +9,4 @@ tmp
 .vscode
 *.ini
 sketches
+examples/iipyper/*.pd

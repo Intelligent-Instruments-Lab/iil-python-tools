@@ -2,11 +2,10 @@ import time
 import numpy as np
 import taichi as ti
 
+from tolvera.utils import *
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from tolvera.utils import Updater, OSCUpdaters
-
-from iipyper import OSC, run
+from iipyper import OSC, run, Updater, OSCUpdaters
 
 # TODO: multi-species sensing
 # TODO: rendering brightness
@@ -34,7 +33,7 @@ class Physarum():
         self.substep = substep
         self.evaporate = ti.field(ti.f32, shape=())
         self.evaporate[None] = evaporate
-        self.trail = Pixels(self.x, self.y, evaporate=evaporate, render=False)
+        self.trail = Pixels(self.x, self.y, evaporate=evaporate)
         self.init()
     @ti.kernel
     def init(self):
@@ -44,9 +43,9 @@ class Physarum():
         for i in range(self.species_n):
             self.rules[i] = PhysarumParams(
                 sense_angle = ti.random(ti.f32) * 0.3 * ti.math.pi,
-                sense_dist  = ti.random(ti.f32) * 100.0 + 0.1,
+                sense_dist  = ti.random(ti.f32) * 50.0 + 0.1,
                 move_angle  = ti.random(ti.f32) * 0.3 * ti.math.pi,
-                move_dist   = ti.random(ti.f32) * 0.1 + 0.1)
+                move_dist   = ti.random(ti.f32) * 1 + 0.1)
     @ti.kernel
     def move(self, field: ti.template()):
         for i in range(field.shape[0]):
@@ -84,6 +83,12 @@ class Physarum():
                 x = ti.cast(p.pos[0], ti.i32) % self.x
                 y = ti.cast(p.pos[1], ti.i32) % self.y
                 self.trail.circle(x, y, p.size, p.rgba * p.active)
+    @ti.kernel
+    def deposit_px(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            p = px[0,i,j]
+            if p > 0.0:
+                self.trail.px.rgba[i, j] = ti.Vector([p,p,p,1])
     def step(self, field):
         self.deposit(field)
         self.trail.diffuse()
@@ -106,13 +111,10 @@ class Physarum():
         self.process(particles)
         return self.trail.px.rgba
 
-def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=4000):
-    seed = int(time.time())
-    ti.init(arch=ti.vulkan, random_seed=seed)
-    # ti.init(random_seed=seed)
-    osc = OSC(host, port, verbose=False, concurrent=True)
+def main():
+    init()
     particles = Particles(x, y, n, species)
-    pixels = Pixels(x,y, fps=fps)
+    pixels = Pixels(x,y)
     physarum = Physarum(x, y, species)
 
     def reset():
@@ -121,27 +123,13 @@ def main(x=1920, y=1080, n=32786, species=4, fps=120, host="127.0.0.1", port=400
         physarum.reset()
     update = Updater(reset, fps*4)
 
-    osc_update = OSCUpdaters(osc, client="particles",
-        receives={
-            "/tolvera/physarum/reset":   reset,
-            "/tolvera/physarum/set/pos": particles.osc_set_pos,
-            "/tolvera/physarum/set/vel": particles.osc_set_vel
-        }, receive_count=10,
-        sends={
-            "/tolvera/physarum/get/pos/all": particles.osc_get_pos_all,
-            "/tolvera/physarum/get/pos/": particles.osc_get_pos,
-            "/tolvera/physarum/get/vel/": particles.osc_get_vel
-        }, send_count=60
-    )
-
-    def render():
-        # osc_update() 
+    def _():
         update()
         physarum(particles)
         particles.activity_decay()
         pixels.set(physarum.trail.px)
 
-    pixels.show(render)
+    render(_, pixels)
 
 if __name__ == '__main__':
-    run(main())
+    run(main)
