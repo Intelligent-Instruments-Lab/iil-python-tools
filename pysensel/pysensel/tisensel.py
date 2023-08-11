@@ -6,9 +6,11 @@ from pysensel import PySensel
 class TiSensel(): # MultiTouchPressureSurfaceInputs...?
     def __init__(self,
                  px_x,
-                 px_y):
+                 px_y,
+                 debug=False):
         self._px_x = px_x
         self._px_y = px_y
+        self._debug = debug
         self._device = PySensel()
         self._x = self._device.info.width
         self._y = self._device.info.height
@@ -51,7 +53,7 @@ class TiSensel(): # MultiTouchPressureSurfaceInputs...?
                 for y in range(yi, yj):
                     self._px_g[0, x, y] = _f*self._brightness
     
-    def parse_frame(self, contacts, ids):
+    def _from_numpy(self, contacts, ids):
         self.contacts.from_numpy(contacts)
         self.contact_ids.from_numpy(ids)
 
@@ -60,9 +62,10 @@ class TiSensel(): # MultiTouchPressureSurfaceInputs...?
 
     def process(self):
         self._device.scanFrames()
-        self.parse_frame(self._device.np_contacts, self._device.np_contact_ids)
-        self.raster()
-        return self.get_image()
+        self._from_numpy(self._device.np_contacts, self._device.np_contact_ids)
+        if self._debug is True:
+            self.raster()
+            return self.get_image()
 
 def main():
     ti.init(arch=ti.vulkan)

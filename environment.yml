@@ -1,16 +1,17 @@
 name: iil-python-tools
 channels:
   - pytorch
-  - defaults
   - conda-forge
+  - defaults
 dependencies:
   - python=3.10
-  - pytorch=1.13
+  - faiss
   - ipykernel
   - seaborn
   - tqdm
   - fire
-  - textual
+  - textual>=0.27
+  - pytorch=1.13
   - pip
   - pip:
     - mido
