@@ -132,6 +132,7 @@ class Notochord(nn.Module):
         self.pitch_start_token = num_pitches
         self.pitch_domain = num_pitches+1
 
+        self.max_dt = time_bounds[1]
         self.time_dist = CensoredMixtureLogistic(
             time_components, time_res, 
             sharp_bounds=(1e-4,2e3),

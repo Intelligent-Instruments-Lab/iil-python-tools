@@ -3,7 +3,7 @@ TODO: send args? maybe this is only useful for sending repeated things with fixe
 '''
 
 from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater
-from .max import MaxPatcher
+from .maxmsp import MaxPatcher
 from .pd import PdPatcher
 
 from typing import Any

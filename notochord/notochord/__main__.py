@@ -8,7 +8,8 @@ def help():
     print("""
     available subcommands:
         server: run the Notochord OSC server
-        harminonizer: run the Notochord harmonizer TUI
+        homunculus: run the Notochord homunculus TUI
+        harmonizer: run the Notochord harmonizer TUI
         improviser: run the Notochord improviser TUI
     """)
 
@@ -18,6 +19,9 @@ if __name__=='__main__':
         if sys.argv[1] == 'server':
             sys.argv = sys.argv[1:]
             run(server)
+        if sys.argv[1] == 'homunculus':
+            sys.argv = sys.argv[1:]
+            run(homunculus)
         if sys.argv[1] == 'harmonizer':
             sys.argv = sys.argv[1:]
             run(harmonizer)
