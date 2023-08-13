@@ -720,7 +720,7 @@ class MixerButtons(Static):
             classes="cmode"
             )
         yield Button(
-            f"000 \nPIANO\nGRAND", 
+            f"--- \n-----\n-----", 
             id=inst_id(self.idx),
             # variant="warning",
             classes="cinst"
@@ -779,48 +779,43 @@ class NotoTUI(TUI):
         elif mode=='follow':
             mode_node.label = f"{cfg['source']:02d}->{chan:02d}"
 
+gm_names = [
+    'GRAND\nPIANO', 'BRGHT\nPIANO', 'EGRND\nPIANO', 'HONKY\n-TONK', 
+    'RHODE\nPIANO', 'FM   \nPIANO', 'HRPSI\nCHORD', 'CLAV \n INET',
+    'CEL  \n ESTA', 'GLOCN\nSPIEL', 'MUSIC\n BOX ', 'VIBRA\nPHONE', 
+    'MARI \n  MBA', 'XYLO \nPHONE', 'TUBLR\n BELL', 'DULCI\n  MER',
+    'DRAWB\nORGAN', 'PERC \nORGAN', 'ROCK \nORGAN', 'CHRCH\nORGAN', 
+    'REED \nORGAN', 'ACCOR\n DION', 'HARMO\n NICA', 'BANDO\n NEON',  
+    'A-GTR\nNYLON', 'A-GTR\nSTEEL', 'E-GTR\nJAZZ ', 'E-GTR\nCLEAN', 
+    'E-GTR\nMUTED', 'E-GTR\nDRIVE', 'E-GTR\nDIST ', 'E-GTR\nHRMNC',  
+    'A-GTR\n BASS', 'EBASS\nFINGR', 'EBASS\n PICK', 'EBASS\nFRTLS', 
+    'SLAP \nBASS1', 'SLAP \nBASS2', 'SYNTH\nBASS1', 'SYNTH\nBASS2',  
+    'STRNG\nVIOLN', 'STRNG\nVIOLA', 'STRNG\nCELLO', 'STRNG\nCBASS', 
+    'STRNG\nTREMO', 'STRNG\nPIZZC', 'ORCH \n HARP', 'TIMP \n  ANI',  
+    'STRNG\nENSB1', 'STRNG\nENSB2', 'SYNTH\nSTRG1', 'SYNTH\nSTRG2', 
+    'CHOIR\n AAH ', 'CHOIR\n OOH ', 'SYNTH\nVOICE', 'ORCH \n  HIT',  
+    'TRUM \n  PET', 'TROM \n BONE', 'TUBA \n     ', 'MUTED\nTRMPT', 
+    'FRNCH\nHORN ', 'BRASS\nSECTN', 'SYNTH\nBRSS1', 'SYNTH\nBRSS2',  
+    'SPRNO\n SAX ', 'ALTO \n  SAX', 'TENOR\n SAX ', 'BARI \n  SAX', 
+    'OBOE \n     ', 'ENGLS\nHORN ', 'BASS \n  OON', 'CLARI\n  NET',  
+    'PICC \n  OLO', 'FLUTE\n     ', 'RECO \n RDER', ' PAN \nFLUTE',
+    'BLOWN\nBOTTL', 'SHAKU\nHACHI', 'WHIS \n  TLE', 'OCA  \n RINA',  
+    'LEAD1\nSQUAR', 'LEAD2\n SAW ', 'LEAD3\n TRI ', 'LEAD4\nCHIFF',
+    'LEAD5\nCHRNG', 'LEAD6\nVOICE', 'LEAD7\nFIFTH', 'LEAD8\nSYNTH',  
+    'PAD 1\nNWAGE', 'PAD 2\n WARM', 'PAD 3\n POLY', 'PAD 4\nCHOIR',
+    'PAD 5\nGLASS', 'PAD 6\nMETAL', 'PAD 7\n HALO', 'PAD 8\nSWEEP',
+    'FX  1\n RAIN', 'FX  2\nSDTRK', 'FX  3\nCRYST', 'FX  4\nATMOS',
+    'FX  5\nBRGHT', 'FX  6\nGOBLN', 'FX  7\nECHOS', 'FX  8\nSCIFI',
+    'SITAR\n     ', 'BANJO\n     ', 'SHAM \n ISEN', 'KOTO \n     ',
+    'KAL  \n IMBA', 'BAG  \n PIPE', 'FID  \n  DLE', 'SHA  \n  NAI',  
+    'TINKL\nBELL ', 'AGO  \n   GÔ', 'STEEL\nDRUM ', 'WOOD \nBLOCK', 
+    'TAIKO\nDRUM ', 'MELO \n  TOM', 'SYNTH\nDRUM ', ' REV \nCYMBL',  
+    'GTR  \n FRET', 'BRE  \n  ATH', ' SEA \nSHORE', 'BIRD \nTWEET',
+    'TELE \nPHONE', 'HELI \nCOPTR', 'APP  \nLAUSE', 'GUN  \n SHOT',  
+    ' STD \nDRUMS'
+]
 def inst_label(i):
-    j = i-1
-    g = j//8
-    group = [
-        'PIANO',
-        'CPERC',
-        'ORGAN',
-        'GITAR',
-        'BASS',
-        'STRNG',
-        'ENSMB',
-        'BRASS',
-        'REEDS',
-        'PIPES',
-        'SYNTH',
-        'PAD',
-        'SYNFX',
-        'ETHNC',
-        'PERC',
-        'SOUND',
-        'DRUMS'
-    ][g]
-    name = [
-        'GRAND', 'BRIGHT', 'EGRND', 'HONKT', 'RHODE', 'FM', 'HPSCD', 'CLAV',
-        'CLSTA', 'GLOCK', 'MUBOX', 'VIBES', 'MRMBA', 'XYLO', 'TBELL', 'DULCI',
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        '', '', '', '', '', '', '', '',  
-        'STD.'
-    ][j]
-    return f'{i:03d} \n{name}\n{group}'
+    return f'{i:03d} \n{gm_names[i-1]}'
 ### end def TUI components###
 
 

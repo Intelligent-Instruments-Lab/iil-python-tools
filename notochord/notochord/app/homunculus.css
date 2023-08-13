@@ -50,10 +50,6 @@ MixerButtons Button {
 .cmute {
     width:7;
     height:3;
-    /* border-bottom: hkey; */
-
-    /* row-span: 1; */
-    /* column-span: 4; */
 }
 
 /* MixerButtons Button {
