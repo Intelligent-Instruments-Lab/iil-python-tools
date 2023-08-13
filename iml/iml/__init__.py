@@ -29,7 +29,7 @@ class IML(serialize.JSONSerializable):
         if emb is None:
             emb = embed.Identity(feature_size)
         elif isinstance(emb, str):
-            emb = getattr(emb, emb)(feature_size)
+            emb = getattr(embed, emb)(feature_size)
         elif isinstance(emb, embed.Embedding):
             pass
         else:
@@ -39,7 +39,7 @@ class IML(serialize.JSONSerializable):
         if interp is None:
             interp = interpolate.Smooth()
         elif isinstance(interp, str):
-            interp = getattr(interpolate, interp.capitalize())()
+            interp = getattr(interpolate, interp)()
         elif isinstance(interp, interpolate.Interpolate):
             pass
         else:
