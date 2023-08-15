@@ -25,6 +25,7 @@ Authors:
 from typing import Optional, Dict, Any
 from numbers import Number
 import math
+import functools as ft
 
 import iipyper, notochord
 from notochord import Notochord, MIDIConfig, NotoPerformance
@@ -49,7 +50,7 @@ def main(
     dump_midi=False, # print all incoming MIDI
 
     balance_sample=False, # choose instruments which have played less recently
-    n_recent=64, # number of recent note-on events to consider for above
+    n_recent=32, # number of recent note-on events to consider for above
     n_margin=8, # amount of 'slack' in the balance_sample calculation
     
     max_note_len=5, # in seconds, to auto-release stuck Notochord notes
@@ -156,14 +157,53 @@ def main(
 
     # default channel:instrument mappings
     if config is None:
+        start_mute = True
         config = {
-            1:{'mode':'input', 'inst':1},
-            2:{'mode':'follow', 'inst':1, 'source':1, 'transpose':(3,15)},
-            3:{'mode':'follow', 'inst':10, 'source':2, 'range':(72,96)},
-            4:{'mode':'auto', 'inst':12},
-            5:{'mode':'follow', 'source':4, 'inst':12, 'transpose':(-15,-3)},
-            10:{'mode':'auto', 'inst':129},
+            1:{'mode':'input', 'inst':27},
+            2:{'mode':'follow', 'inst':29, 'source':1, 'transpose':(3,15),
+                'mute':start_mute},
+            3:{'mode':'follow', 'inst':12, 'source':1, 'transpose':(12,24),
+                'mute':start_mute},
+            4:{'mode':'follow', 'inst':13, 'source':1, 'transpose':(-15,-3),
+                'mute':start_mute},
+            5:{'mode':'follow', 'inst':33, 'source':1, 'transpose':(-36,-12),
+                'mute':start_mute},
+            6:{'mode':'follow', 'inst':10, 'source':1, 'range':(72,96),
+                'mute':start_mute},
+            7:{'mode':'follow', 'inst':60, 'source':1, 'range':(12,36),
+                'mute':start_mute},
+            8:{'mode':'follow', 'inst':74, 'source':7, 'transpose':(24,36),
+                'mute':start_mute},
+            9:{'mode':'follow', 'inst':109, 'source':8, 'transpose':(3,7),
+                'mute':start_mute},
+            11:{'mode':'follow', 'inst':122, 'source':1, 'range':(60,72),
+                'mute':start_mute},
+            12:{'mode':'follow', 'inst':48, 'source':1, 'range':(0,81),
+                'mute':start_mute},
+            13:{'mode':'follow', 'inst':78, 'source':8, 'transpose':(7,12),
+                'mute':start_mute},
+            14:{'mode':'follow', 'inst':93, 'source':7, 'transpose':(12,24),
+                'mute':start_mute},
+            15:{'mode':'follow', 'inst':21, 'source':7, 'transpose':(0,4),
+                'mute':start_mute},
+            16:{'mode':'follow', 'inst':16, 'source':7, 'range':(84,108),
+                'mute':start_mute},
+            
+
+            # 1:{'mode':'input', 'inst':8},
+            # 2:{'mode':'follow', 'inst':8, 'source':1, 'transpose':(3,15)},
+            # 3:{'mode':'follow', 'inst':10, 'source':2, 'range':(72,96)},
+            # 4:{'mode':'auto', 'inst':12},
+            # 5:{'mode':'follow', 'source':4, 'inst':13, 'transpose':(-15,-3)},
+            # 6:{'mode':'auto', 'inst':18},
+            # 10:{'mode':'auto', 'inst':129},
         }
+
+    # defaults
+    config_in = config
+    config = {i:{'mode':'auto', 'inst':1, 'mute':False} for i in config_in}
+    for k,v in config_in.items():
+        config[k].update(v)
 
     def validate_config():
         assert all(
@@ -175,11 +215,14 @@ def main(
     # for c,v in config.items():
     #     tui.set_inst(c, v['inst'])
 
-    def mode_insts(t):
+    def mode_insts(t, allow_muted=True):
         if isinstance(t, str):
             t = t,
         # set of instruments with given mode(s)
-        return {v['inst'] for v in config.values() if v['mode'] in t}
+        return {
+            v['inst'] for v in config.values() 
+            if v['mode'] in t and (allow_muted or not v['mute'])
+            }
     def mode_chans(t):
         if isinstance(t, str):
             t = t,
@@ -210,7 +253,10 @@ def main(
         raise ValueError
     def channel_followers(chan):
         # return channel of all 'follow' voices with given source
-        return [k for k,v in config.items() if v.get('source', None)==chan]
+        return [
+            k for k,v in config.items() 
+            if v['mode']=='follow' 
+            and v.get('source', None)==chan]
     
     if len(mode_insts('input') & mode_insts('auto')):
         print("WARNING: auto and input instruments shouldn't overlap")
@@ -321,7 +367,7 @@ def main(
             for noto_channel in channel_followers(source_channel):
                 cfg = config[noto_channel]
                 
-                if cfg.get('muted', False): continue
+                if cfg.get('mute', False): continue
 
                 noto_inst = cfg['inst']
                 min_x, max_x = cfg.get('transpose', (-128,128))
@@ -449,7 +495,7 @@ def main(
                 return
 
 
-        all_insts = mode_insts(('auto', 'input', 'follow'))
+        all_insts = mode_insts(('auto', 'input', 'follow'), allow_muted=True)
         counts = history.inst_counts(n=n_recent, insts=all_insts)
         print(counts)
 
@@ -458,7 +504,7 @@ def main(
             inst_modes.append('follow')
         if predict_input:
             inst_modes.append('input')
-        allowed_insts = mode_insts(inst_modes)
+        allowed_insts = mode_insts(inst_modes, allow_muted=False)
 
         held_notes = history.held_inst_pitch_map(all_insts)
         print(f'{held_notes=}')
@@ -478,29 +524,39 @@ def main(
         min_time = stopwatch.read()+time_offset
 
         # balance_sample: note-ons only from instruments which have played less
-        bal_insts = allowed_insts & set(counts.index[counts <= counts.min()+n_margin])
-        if balance_sample and len(bal_insts)>0:
-            allowed_insts = bal_insts
+        bal_insts = allowed_insts 
+        if balance_sample:
+            bal_insts = bal_insts & set(counts.index[counts <= counts.min()+n_margin])
+            if not len(bal_insts):
+                bal_insts = allowed_insts
+        # if balance_sample and len(bal_insts)>0:
+            # allowed_insts = bal_insts
+        print(f'{bal_insts=}')
 
         # VTIP is better for time interventions,
         # VIPT is better for instrument interventions
         # could decide probabilistically based on value of controls + insts...
-        if allowed_insts==all_insts:
+        if bal_insts==all_insts:
             query_method = noto.query_vtip
         else:
             query_method = noto.query_vipt
 
         # print(f'considering {insts} for note_on')
         # use only currently selected instruments
-        inst_pitch_map = inst_ranges(allowed_insts)
+        inst_pitch_map = inst_ranges(all_insts)
         note_on_map = {
             i: set(inst_pitch_map[i])-set(held_notes[i]) # exclude held notes
-            for i in allowed_insts
+            for i in bal_insts#allowed_insts
         }
         # use any instruments which are currently holding notes
+        # note_off_map = held_notes
+        # note_off_map = {
+        #     i: set(ps)&set(held_notes[i]) # only held notes
+        #     for i,ps in inst_pitch_map.items()
+        # }
         note_off_map = {
-            i: set(ps)&set(held_notes[i]) # only held notes
-            for i,ps in inst_pitch_map.items()
+            i: set(held_notes[i]) # only held notes
+            for i in allowed_insts
         }
 
         max_t = None if max_time is None else max(max_time, min_time+0.2)
@@ -514,7 +570,8 @@ def main(
                 steer_density=steer_density,
             )
         except Exception:
-            print(f'ERROR: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
+            print(f'WARNING: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
+            pending.event = None
 
         # display the predicted event
         tui(prediction=pending.event)
@@ -584,12 +641,16 @@ def main(
         # convert from 0-index
         channel = msg.channel+1
 
-        if thru and channel in mode_chans('input'):
-            midi.send(msg)
-
         if channel not in mode_chans('input'):
             print(f'WARNING: ignoring MIDI {msg} on non-input channel')
             return
+        
+        if config[channel]['mute']:
+            print(f'WARNING: ignoring MIDI {msg} on non-input channel')
+            return
+        
+        if thru:
+            midi.send(msg)
         
         inst = channel_inst(channel)
         pitch = msg.note
@@ -648,13 +709,51 @@ def main(
             if inst in mode_insts(('auto', 'follow')):
                 midi.note_on(note=pitch, velocity=0, channel=chan-1)
 
+    def update_config():
+        for c,v in config.items():
+            tui.set_channel(c, v)
+
+    @tui.on
+    def mount():
+        update_config()
+
+    # this is pretty awful
+    # need a better way to reconcile iipyper and textual here
+    def action_mode(i):
+        if i not in config: return
+        config[i]['mode'] = 'auto'
+        print(f'set channel {i} to auto mode')
+        update_config()
+
+    def action_inst(i):
+        print(f'inst channel {i}')
+        # update_config()
+
+    def action_mute(i):
+        if i not in config: return
+        if config[i]['mute']:
+            print(f'unmute channel {i}')
+            config[i]['mute'] = False
+        else:
+            print(f'mute channel {i}')
+            config[i]['mute'] = True
+            # release held notes
+            for (chan,inst,pitch) in history.note_triples:
+                if chan==i and config[i]['mode']!='input':
+                    play_event(
+                        dict(inst=inst, pitch=pitch, vel=0),
+                        channel=chan, 
+                        tag='NOTO', memo='mute channel')
+
+        update_config()
+
+    for i in range(1,17):
+        setattr(tui, f'action_mode_{i}', ft.partial(action_mode, i))
+        setattr(tui, f'action_inst_{i}', ft.partial(action_inst, i))
+        setattr(tui, f'action_mute_{i}', ft.partial(action_mute, i))
+
     @tui.set_action
     def mute():
-        # TODO: run this automatically after tui starts
-        for c,v in config.items():
-            tui.set_inst(c, v['inst'])
-            tui.set_mode(c, v)
-
         noto_mute()
 
     @tui.set_action
@@ -760,18 +859,23 @@ class NotoTUI(TUI):
         yield NotoControl()
         yield Footer()
 
-    def set_inst(self, chan, inst):
-        node = self.query_one('#'+inst_id(chan))
-        node.label = inst_label(inst)
-
-    def set_mode(self, chan, cfg):
+    def set_channel(self, chan, cfg):
         inst_node = self.query_one('#'+inst_id(chan))
         mode_node = self.query_one('#'+mode_id(chan))
+        mute_node = self.query_one('#'+mute_id(chan))
 
-        inst_node.variant = 'warning'
-        mode_node.variant = 'primary'
-
+        if cfg is None:
+            inst_node.variant = 'default'
+            mute_node.variant = 'default'
+            mode_node.variant = 'default'
+            return
+        
         mode = cfg['mode']
+        mute = cfg['mute']
+        inst = cfg['inst']
+
+        inst_node.label = inst_label(inst)
+
         if mode=='auto':
             mode_node.label = f"{chan:02d}"
         elif mode=='input':
@@ -779,11 +883,22 @@ class NotoTUI(TUI):
         elif mode=='follow':
             mode_node.label = f"{cfg['source']:02d}->{chan:02d}"
 
+        if mute:
+            mode_node.variant = 'default'
+            inst_node.variant = 'default'
+            mute_node.label = 'UNMUTE'
+            mute_node.variant = 'error'
+        else:
+            mode_node.variant = 'primary'
+            inst_node.variant = 'warning'
+            mute_node.label = 'MUTE'
+            mute_node.variant = 'default'
+
 gm_names = [
     'GRAND\nPIANO', 'BRGHT\nPIANO', 'EGRND\nPIANO', 'HONKY\n-TONK', 
     'RHODE\nPIANO', 'FM   \nPIANO', 'HRPSI\nCHORD', 'CLAV \n INET',
     'CEL  \n ESTA', 'GLOCN\nSPIEL', 'MUSIC\n BOX ', 'VIBRA\nPHONE', 
-    'MARI \n  MBA', 'XYLO \nPHONE', 'TUBLR\n BELL', 'DULCI\n  MER',
+    'MAR  \n IMBA', 'XYLO \nPHONE', 'TUBLR\n BELL', 'DULCI\n  MER',
     'DRAWB\nORGAN', 'PERC \nORGAN', 'ROCK \nORGAN', 'CHRCH\nORGAN', 
     'REED \nORGAN', 'ACCOR\n DION', 'HARMO\n NICA', 'BANDO\n NEON',  
     'A-GTR\nNYLON', 'A-GTR\nSTEEL', 'E-GTR\nJAZZ ', 'E-GTR\nCLEAN', 
@@ -815,6 +930,8 @@ gm_names = [
     ' STD \nDRUMS'
 ]
 def inst_label(i):
+    if i is None:
+        return f"--- \n-----\n-----"
     return f'{i:03d} \n{gm_names[i-1]}'
 ### end def TUI components###
 
