@@ -2,6 +2,7 @@
 TODO: send args? maybe this is only useful for sending repeated things with fixed args.
 TODO: Make it easier to send non-kwarg lists
 TODO: Refactor self.dict[io][name][params] to a labelled dictionary & add type hints
+TODO: Load OSCMap from XML or JSON (probably involves refactoring, for the better)
 '''
 
 from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater
