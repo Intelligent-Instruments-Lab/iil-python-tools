@@ -13,7 +13,9 @@ See Setup below for how to install these.
 
 ## Examples
 
-- iipyper: basic usage for iipyper
+- iipyper: 
+    - basic usage for iipyper
+    - declarative OSC mappings that can auto-generate clients for Pure Data and Max/MSP, and export to XML and JSON
 - notochord: interactive MIDI apps with notochord and SuperCollider
     - tidalcycles: notochord interface to TidalCycles
 - bela: [Bela](https://bela.io) examples in C++, Pure Data and so on
