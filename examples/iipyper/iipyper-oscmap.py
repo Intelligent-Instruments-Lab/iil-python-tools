@@ -34,10 +34,9 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     OSC Mapping
 
     This simple example OSCMap shows one send function and one receive function.
-    We add functions to the OSCMap instance using the `add` method.
-    In the `@osc_map.add()` decorator we specify OSC parameters as `name=(default, min, max)`.
-    The additional variables `io`, `count`, and `send_mode` describe different behaviours:
-    - `io` can be `send` or `receive`
+    We add functions to the OSCMap instance using `send_args`, `send_list`, `receive_args` or `receive_list` methods.
+    In the `@osc_map.send|receive()` decorator we specify OSC parameters as `name=(default, min, max)`.
+    The additional variables `count`, and `send_mode` describe different behaviours:
     - `count` is the number of times the function is called before sending or receiving
     - `send_mode` can be `broadcast` or `event`, describing whether the message is sent continuously, or only when called manually.
     We also use type hints in the method signature for sends and receives, and also return type hints for receives, which should always be a tuple.
@@ -46,30 +45,39 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     '''
     Patcher → Python
     '''
-    io, update_rate = 'receive', 5
+    update_rate = 5
     receive_counter = 0
 
-    # Receive test `/from/pd`
-    @osc_map.add(f_val=(0.5,0,1), io='receive', count=update_rate)
-    def from_pd(f_val: float):
-        nonlocal receive_counter
-        receive_counter += f_val
-        print(f"Received /from/pd {f_val} and added to `receive_counter`: {receive_counter}")
+    # add -> args
+    @osc_map.receive_args(arg=(0,0,100), count=update_rate)
+    def test_receive_args(arg: float):
+        print(f"Receiving args: {arg}")
+
+    @osc_map.receive_list(arg=(0.0,0.0,100.0), length=10, count=update_rate)
+    def test_receive_list(arg: list[float]):
+        print(f"Receiving list: {arg}")
+
+    # @osc_map.receive_kwargs()
+    # def test3(arg: float, arg2: float):
+    #     pass
 
     '''
     Python → Patcher
     '''
-    io, update_rate = 'send', 7
+    update_rate = 7
     send_mode = 'broadcast' # | 'event'
     send_counter = 0
 
-    # Receive test
-    @osc_map.add(i_val=(50,0,100), io=io, count=update_rate, send_mode=send_mode)
-    def to_pd(i_val: int=100) -> tuple[str]:
-        nonlocal send_counter
-        send_counter += 1
-        print(f"Sending /to/pd {send_counter}")
-        return [send_counter]
+    # TODO: Why does this need an arg...?
+    @osc_map.send_args(arg=(0,0,100), count=update_rate, send_mode=send_mode)
+    def test_send_arg(arg: float=0.0) -> tuple[float]:
+        print(f"Sending args: {0.0}")
+        return [0.0]
+    
+    @osc_map.send_list(arg=(0.0,0.0,100.0), length=10, count=update_rate, send_mode=send_mode)
+    def test_send_list(arg: list[float]=[0.0]) -> list[float]:
+        print(f"Sending list: {arg*10}")
+        return arg*10
 
     @repeat(0.125)
     def _():

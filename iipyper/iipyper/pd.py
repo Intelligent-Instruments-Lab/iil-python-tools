@@ -124,7 +124,7 @@ class PdPatcher:
         self.connect(unpackOSC_id, 0, print_id, 0)
         return self.get_last_id()
 
-    def add_send_func(self, f):
+    def add_send_args_func(self, f):
         hints = typing.get_type_hints(f['f'])['return'].__args__
         f_p = f['params']
         params = []
@@ -141,7 +141,7 @@ class PdPatcher:
         self.r_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
         self.save(self.filepath)
     
-    def add_receive_func(self, f):
+    def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
         f_p = f['params']
         params = []

@@ -1,12 +1,11 @@
 '''
-TODO: send args? maybe this is only useful for sending repeated things with fixed args.
-TODO: Make it easier to send non-kwarg lists
+TODO: Add send_kwargs and receive_kwargs
 TODO: Refactor self.dict[io][name][params] to a labelled dictionary & add type hints
 TODO: Load OSCMap from XML or JSON (probably involves refactoring, for the better)
 TODO: Better handling of directories when saving/exporting (separate dir for xml/json?)
 '''
 
-from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater
+from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
 from .max import MaxPatcher
 from .pd import PdPatcher
 
@@ -21,8 +20,6 @@ class OSCMap:
     OSCMap maps OSC messages to functions
     It creates a Max/MSP patcher that can be used to control the OSCMap
     It uses OSCSendUpdater and OSCReceiveUpdater to decouple incoming messages
-    TODO: make max_patch optional
-    TODO: OSC sends should have broadcast vs event option?
     '''
     def __init__(self, osc, client_name="client", 
                  patch_type="Max", # | "Pd"
@@ -45,11 +42,202 @@ class OSCMap:
             assert export == 'JSON' or export == 'XML' or export == True, "export must be 'JSON', 'XML' or True"
         self.export = export
 
+    def init_patcher(self, patch_type, patch_filepath, pd_net_or_udp, pd_bela):
+        # create self.patch_dir if it doesn't exist
+        self.patch_dir = "pd" if patch_type=="Pd" else "max"
+        if not os.path.exists(self.patch_dir):
+            print(f"Creating {self.patch_dir} directory...")
+            os.makedirs(self.patch_dir)
+        self.patch_appendix = "_local" if self.osc.host=="127.0.0.1" else "_remote"
+        self.patch_filepath = self.patch_dir+'/'+patch_filepath+self.patch_appendix
+        if patch_type == "Max":
+            self.patcher = MaxPatcher(self.osc, self.client_name, self.patch_filepath)
+        elif patch_type == "Pd":
+            if pd_bela is True:
+                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp, bela=True)
+            else:
+                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp)
+        else:
+            assert False, "`patch_type` must be 'Max' or 'Pd'"
+
+    def add(self, **kwargs):
+        print("DeprecationError: OSCMap.add() has been split into separate functions: use `send_args`, `send_list`, `receive_args` or `receive_list` instead!")
+        exit()
+    
+    def map_func_to_dict(self, func, kwargs):
+        n = func.__name__
+        address = '/'+n.replace('_', '/')
+        # TODO: Move this into specific send/receive functions
+        params = {k: v for k, v in kwargs.items() \
+                    if k != 'count' and \
+                    k != 'send_mode' and \
+                    k != 'length'}
+        # TODO: turn params into dict with type hints (see export_dict)
+        hints = get_type_hints(func)
+        f = {'f': func, 'name': n, 'address': address, 'params': params, 'hints': hints}
+        return f
+
+    '''
+    send args
+    '''
+    
+    def send_args(self, **kwargs):
+        def decorator(func):
+            def wrapper(*args):
+                self.add_send_args_to_osc_map(func, kwargs)
+                if self.create_patch is True:
+                    self.add_send_args_to_patcher(func)
+                return func(*args)
+            default_args = [kwargs[a][0] for a in kwargs \
+                            if a != 'count' and a != 'send_mode']
+            wrapper(*default_args)
+            return wrapper
+        return decorator
+
+    def add_send_args_to_osc_map(self, func, kwargs):
+        f = self.map_func_to_dict(func, kwargs)
+        if kwargs['send_mode'] == 'broadcast':
+            f['updater'] = OSCSendUpdater(self.osc, f['address'], f=func, count=kwargs['count'], client=self.client_name)
+        else:
+            f['sender'] = OSCSend(self.osc, f['address'], f=func, count=kwargs['count'], client=self.client_name)
+        f['type'] = 'args'
+        self.dict['send'][f['name']] = f
+        print(f"added send_args to osc map: {f}")
+        if self.export is not None:
+            self.export_dict()
+    
+    def add_send_args_to_patcher(self, func):
+        f = self.dict['send'][func.__name__]
+        self.patcher.add_send_args_func(f)
+
+    '''
+    send list
+    '''
+
+    def send_list(self, **kwargs):
+        def decorator(func):
+            def wrapper(*args):
+                self.add_send_list_to_osc_map(func, kwargs)
+                if self.create_patch is True:
+                    self.add_send_list_to_patcher(func)
+                return func(*args)
+            default_arg = [kwargs[a][0] for a in kwargs \
+                            if a != 'count' and a != 'send_mode' and a != 'length']
+            default_arg = default_arg#*kwargs['length']
+            wrapper(default_arg)
+            return wrapper
+        return decorator
+
+    def add_send_list_to_osc_map(self, func, kwargs):
+        f = self.map_func_to_dict(func, kwargs)
+        hint = f['hints']['return']
+        assert hint == list[float], "send_list can only send list[float], found "+str(hint)
+        if kwargs['send_mode'] == 'broadcast':
+            f['updater'] = OSCSendUpdater(self.osc, f['address'], f=func, count=kwargs['count'], client=self.client_name)
+        else:
+            f['sender'] = OSCSend(self.osc, f['address'], f=func, count=kwargs['count'], client=self.client_name)
+        f['type'] = 'list'
+        f['length'] = kwargs['length']
+        self.dict['send'][f['name']] = f
+        print(f"added send_list to osc map: {f}")
+        if self.export is not None:
+            self.export_dict()
+    
+    def add_send_list_to_patcher(self, func):
+        f = self.dict['send'][func.__name__]
+        self.patcher.add_send_args_func(f)
+
+    '''
+    send kwargs
+    '''
+
+    def send_kwargs(self, **kwargs):
+        raise NotImplementedError("send_kwargs not implemented yet")
+
+    '''
+    receive args
+    '''
+
+    def receive_args(self, **kwargs):
+        def decorator(func):
+            def wrapper(*args):
+                self.add_receive_args_to_osc_map(func, kwargs)
+                if self.create_patch is True:
+                    self.add_receive_args_to_patcher(func)
+                return func(*args)
+            default_args = [kwargs[a][0] for a in kwargs if a != 'count']
+            wrapper(*default_args)
+            return wrapper
+        return decorator
+    
+    def add_receive_args_to_osc_map(self, func, kwargs):
+        f = self.map_func_to_dict(func, kwargs)
+        f['updater'] = OSCReceiveUpdater(self.osc, f['address'], f=func, count=kwargs['count'])
+        f['type'] = 'args'
+        self.dict['receive'][f['name']] = f
+
+    def add_receive_args_to_patcher(self, func):
+        f = self.dict['receive'][func.__name__]
+        self.patcher.add_receive_args_func(f)
+
+    '''
+    receive list
+    '''
+
+    def receive_list(self, **kwargs):
+        def decorator(func):
+            def wrapper(*args):
+                self.add_receive_list_to_osc_map(func, kwargs)
+                if self.create_patch is True:
+                    self.add_receive_list_to_patcher(func)
+                return func(*args)
+            default_arg = [kwargs[a][0] for a in kwargs \
+                            if a != 'count' and a != 'length']
+            default_arg = default_arg*kwargs['length']
+            wrapper(default_arg)
+            return wrapper
+        return decorator
+    
+    def add_receive_list_to_osc_map(self, func, kwargs):
+        '''
+        TODO: Should this support list[float] only, or list[int] list[str] etc?
+        '''
+        f = self.map_func_to_dict(func, kwargs)
+        assert len(f['params']) == 1, "receive_list can only receive one param (list[float])"
+        hint = f['hints'][list(f['params'].keys())[0]]
+        assert hint == list[float], "receive_list can only receive list[float], found "+str(hint)
+        f['updater'] = OSCReceiveListUpdater(self.osc, f['address'], f=func, count=kwargs['count'])
+        f['type'] = 'list'
+        f['length'] = kwargs['length']
+        self.dict['receive'][f['name']] = f
+        print(f"added receive_list to osc map: {f}")
+        if self.export is not None:
+            self.export_dict()
+    
+    def add_receive_list_to_patcher(self, func):
+        f = self.dict['receive'][func.__name__]
+        self.patcher.add_receive_args_func(f)
+
+    '''
+    receive kwargs
+    '''
+
+    def receive_kwargs(self, **kwargs):
+        '''
+        Same as receive_args but with named params
+        '''
+        raise NotImplementedError("receive_kwargs not implemented yet")
+
+    '''
+    xml / json export
+    '''
+
     def export_dict(self):
         '''
         Save the OSCMap dict as XML
         '''
         client_ip, client_port = self.osc.client_names[self.client_name]
+        # TODO: This should be defined in the OSCMap dict / on init
         metadata = {
             'HostIP': self.osc.host,
             'HostPort': str(self.osc.port),
@@ -66,20 +254,55 @@ class OSCMap:
         for io in ['send', 'receive']:
             for name in self.dict[io]:
                 f = self.dict[io][name]
-                kw = {
-                    "Address": '/'+name.replace('_', '/'),
-                    "Params": str(len(f['params']))
-                }
-                route = ET.SubElement(root.find(io.capitalize()), "Route", **kw)
-                for i, param in enumerate(f['params']):
-                    kw = {
-                        "Name": param,
-                        "Type": f['hints'][param].__name__,
-                        "Default": str(f['params'][param][0]),
-                        "Min": str(f['params'][param][1]),
-                        "Max": str(f['params'][param][2])
-                    }
-                    ET.SubElement(route, "Param", **kw)
+                if f['type'] == 'args':
+                    self.xml_add_args_params(root, name, io, f)
+                elif f['type'] == 'list':
+                    self.xml_add_list_param(root, name, io, f)
+                elif f['type'] == 'kwargs':
+                    raise NotImplementedError("kwargs not implemented yet")
+        self.export_update(root)
+    
+    def xml_add_args_params(self, root, name, io, f):
+        params = f['params']
+        hints = f['hints']
+        kw = {
+            "Address": '/'+name.replace('_', '/'),
+            "Type": f['type'],
+            "Params": str(len(params)),
+        }
+        route = ET.SubElement(root.find(io.capitalize()), "Route", **kw)
+        for i, p in enumerate(params):
+            # TODO: This should already be defined by this point
+            kw = {
+                "Name": p,
+                "Type": hints[p].__name__,
+                "Default": str(params[p][0]),
+                "Min": str(params[p][1]),
+                "Max": str(params[p][2])
+            }
+            ET.SubElement(route, "Param", **kw)
+    
+    def xml_add_list_param(self, root, name, io, f):
+        params = f['params']
+        hints = f['hints']
+        length = f['length']
+        kw = {
+            "Address": '/'+name.replace('_', '/'),
+            "Type": f['type'],
+            "Length": str(length),
+        }
+        route = ET.SubElement(root.find(io.capitalize()), "Route", **kw)
+        p = list(params.keys())[0]
+        kw = {
+            "Name": p,
+            "Type": hints[p].__args__[0].__name__,
+            "Default": str(params[p][0]),
+            "Min": str(params[p][1]),
+            "Max": str(params[p][2])
+        }
+        ET.SubElement(route, "ParamList", **kw)
+    
+    def export_update(self, root):
         tree = ET.ElementTree(root)
         ET.indent(tree, space="\t", level=0)
         if self.export == 'XML':
@@ -95,11 +318,11 @@ class OSCMap:
         print(f"Exported OSCMap to {self.patch_filepath}.xml")
 
     def save_json(self, xml_root):
+        # TODO: params should be `params: []` and not `param: {}, param: {}, ...`
         json_dict = self.xml_to_json(ET.tostring(xml_root, encoding='utf8', method='xml'))
         with open(self.patch_filepath+".json", 'w') as f:
             f.write(json_dict)
         print(f"Exported OSCMap to {self.patch_filepath}.json")
-
 
     def pascal_to_camel(self, pascal_str):
         return pascal_str[0].lower() + pascal_str[1:]
@@ -132,79 +355,6 @@ class OSCMap:
         e = ET.ElementTree(ET.fromstring(xml_str))
         return json.dumps(self.etree_to_dict(e.getroot()), indent=4)
 
-    def init_patcher(self, patch_type, patch_filepath, pd_net_or_udp, pd_bela):
-        # create self.patch_dir if it doesn't exist
-        self.patch_dir = "pd" if patch_type=="Pd" else "max"
-        if not os.path.exists(self.patch_dir):
-            print(f"Creating {self.patch_dir} directory...")
-            os.makedirs(self.patch_dir)
-        self.patch_appendix = "_local" if self.osc.host=="127.0.0.1" else "_remote"
-        self.patch_filepath = self.patch_dir+'/'+patch_filepath+self.patch_appendix
-        if patch_type == "Max":
-            self.patcher = MaxPatcher(self.osc, self.client_name, self.patch_filepath)
-        elif patch_type == "Pd":
-            if pd_bela is True:
-                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp, bela=True)
-            else:
-                self.patcher = PdPatcher(self.osc, self.client_name, self.patch_filepath, net_or_udp=pd_net_or_udp)
-        else:
-            assert False, "`patch_type` must be 'Max' or 'Pd'"
-
-    def add_func_to_osc_map(self, func, kwargs):
-        n = func.__name__
-        address = '/'+n.replace('_', '/')
-        params = {k: v for k, v in kwargs.items() \
-                    if k != 'io' and k != 'count' and k != 'send_mode'}
-        hints = get_type_hints(func)
-        f = {'f': func, 'address': address, 'params': params, 'hints': hints}
-        if 'io' not in kwargs:
-            raise ValueError(f'io must be specified for {n}')
-        if 'count' not in kwargs:
-            raise ValueError(f'count must be specified for {n}')
-        if kwargs['io'] == 'send':
-            if kwargs['send_mode'] == 'broadcast':
-                f['updater'] = OSCSendUpdater(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
-            else:
-                f['sender'] = OSCSend(self.osc, address, f=func, count=kwargs['count'], client=self.client_name)
-            self.dict['send'][n] = f
-        elif kwargs['io'] == 'receive':
-            f['updater'] = OSCReceiveUpdater(self.osc, address, f=func, count=kwargs['count'])
-            self.dict['receive'][n] = f
-        else:
-            raise ValueError('io must be send or receive')
-        if self.export is not None:
-            self.export_dict()
-        return f
-
-    def add_func_to_patcher(self, func, io):
-        f = self.dict[io][func.__name__]
-        if io == 'send':
-            self.patcher.add_send_func(f)
-        elif io == 'receive':
-            self.patcher.add_receive_func(f)
-    
-    def add(self, **kwargs):
-        def decorator(func):
-            def wrapper(*args):
-                self.add_func_to_osc_map(func, kwargs)
-                if self.create_patch is True:
-                    self.add_func_to_patcher(func, kwargs['io'])
-                # TODO: type checking/scaling/clamping of params
-                # modified_kwargs = {key: decorator_kwargs.get(key, value) for key, value in kwargs.items()}
-                if kwargs['io'] == "receive":
-                    return func(*args)
-                else:
-                    return func()
-            # call wrapped function on declaration to add to map
-            default_args = [kwargs[a][0] for a in kwargs \
-                            if a != 'io' and a != 'count']
-            wrapper(*default_args)
-            return wrapper
-        return decorator
-    
-    def send(self, f, *args):
-        self.dict['send'][f]['sender'](*args)
-
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         for k, v in self.dict['send'].items():
             if 'updater' in v:
@@ -212,4 +362,3 @@ class OSCMap:
             # v['updater']()
         for k, v in self.dict['receive'].items():
             v['updater']()
-

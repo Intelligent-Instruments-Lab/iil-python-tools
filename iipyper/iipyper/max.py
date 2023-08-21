@@ -360,7 +360,7 @@ class MaxPatcher:
 
         return slider_ids, unpack_id
 
-    def add_send_func(self, f):
+    def add_send_args_func(self, f):
         hints = typing.get_type_hints(f['f'])['return'].__args__
         f_p = f['params']
         params = []
@@ -377,7 +377,7 @@ class MaxPatcher:
         self.r_x += max(len(params) * 52.0 + 100.0, len(f['address'])*6.0 + 25.0)
         self.save(self.filepath)
 
-    def add_receive_func(self, f):
+    def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
         f_p = f['params']
         params = []
