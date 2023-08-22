@@ -68,8 +68,8 @@ class OSCMap:
         n = func.__name__
         address = '/'+n.replace('_', '/')
         # TODO: Move this into specific send/receive functions
-        params = {k: v for k, v in kwargs.items() \
-                    if k != 'count' and \
+        params = {k: v for k, v in kwargs.items() if \
+                    k != 'count' and \
                     k != 'send_mode' and \
                     k != 'length'}
         # TODO: turn params into dict with type hints (see export_dict)
@@ -87,7 +87,7 @@ class OSCMap:
                 self.add_send_args_to_osc_map(func, kwargs)
                 if self.create_patch is True:
                     self.add_send_args_to_patcher(func)
-                return func(*args)
+                return func()
             default_args = [kwargs[a][0] for a in kwargs \
                             if a != 'count' and a != 'send_mode']
             wrapper(*default_args)
@@ -120,7 +120,7 @@ class OSCMap:
                 self.add_send_list_to_osc_map(func, kwargs)
                 if self.create_patch is True:
                     self.add_send_list_to_patcher(func)
-                return func(*args)
+                return func()
             default_arg = [kwargs[a][0] for a in kwargs \
                             if a != 'count' and a != 'send_mode' and a != 'length']
             default_arg = default_arg#*kwargs['length']
