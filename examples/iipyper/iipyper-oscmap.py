@@ -75,9 +75,9 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
         return [0.0]
     
     @osc_map.send_list(arg=(0.0,0.0,100.0), length=10, count=update_rate, send_mode=send_mode)
-    def test_send_list(arg: list[float]=[0.0]) -> list[float]:
-        print(f"Sending list: {arg*10}")
-        return arg*10
+    def test_send_list() -> list[float]:
+        print(f"Sending list: {[0]*10}")
+        return [0]*10
 
     @repeat(0.125)
     def _():

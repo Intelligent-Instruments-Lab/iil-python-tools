@@ -5,6 +5,7 @@ TODO: Load OSCMap from XML or JSON (probably involves refactoring, for the bette
 TODO: Better handling of directories when saving/exporting (separate dir for xml/json?)
 TODO: Update Max and Pd patch generation to use the new OSCMap send/receive list functions
 TODO: Add generator for ESP32
+TODO: send funcs in send_mode=broadcast mode cannot have args, but in event mode you might want args
 '''
 
 from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
@@ -104,7 +105,6 @@ class OSCMap:
             f['sender'] = OSCSend(self.osc, f['address'], f=func, count=kwargs['count'], client=self.client_name)
         f['type'] = 'args'
         self.dict['send'][f['name']] = f
-        print(f"added send_args to osc map: {f}")
         if self.export is not None:
             self.export_dict()
     
@@ -141,7 +141,6 @@ class OSCMap:
         f['type'] = 'list'
         f['length'] = kwargs['length']
         self.dict['send'][f['name']] = f
-        print(f"added send_list to osc map: {f}")
         if self.export is not None:
             self.export_dict()
     
@@ -212,7 +211,6 @@ class OSCMap:
         f['type'] = 'list'
         f['length'] = kwargs['length']
         self.dict['receive'][f['name']] = f
-        print(f"added receive_list to osc map: {f}")
         if self.export is not None:
             self.export_dict()
     
@@ -275,9 +273,13 @@ class OSCMap:
         route = ET.SubElement(root.find(io.capitalize()), "Route", **kw)
         for i, p in enumerate(params):
             # TODO: This should already be defined by this point
+            if io == 'receive':
+                p_type = hints[p].__name__
+            elif io == 'send':
+                p_type = hints['return'].__args__[i].__name__
             kw = {
                 "Name": p,
-                "Type": hints[p].__name__,
+                "Type": p_type,
                 "Default": str(params[p][0]),
                 "Min": str(params[p][1]),
                 "Max": str(params[p][2])
@@ -295,9 +297,13 @@ class OSCMap:
         }
         route = ET.SubElement(root.find(io.capitalize()), "Route", **kw)
         p = list(params.keys())[0]
+        if io == 'receive':
+            p_type = hints[p].__name__
+        elif io == 'send':
+            p_type = hints['return'].__args__[0].__name__
         kw = {
             "Name": p,
-            "Type": hints[p].__args__[0].__name__,
+            "Type": p_type,
             "Default": str(params[p][0]),
             "Min": str(params[p][1]),
             "Max": str(params[p][2])
