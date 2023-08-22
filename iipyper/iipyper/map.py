@@ -3,6 +3,8 @@ TODO: Add send_kwargs and receive_kwargs
 TODO: Refactor self.dict[io][name][params] to a labelled dictionary & add type hints
 TODO: Load OSCMap from XML or JSON (probably involves refactoring, for the better)
 TODO: Better handling of directories when saving/exporting (separate dir for xml/json?)
+TODO: Update Max and Pd patch generation to use the new OSCMap send/receive list functions
+TODO: Add generator for ESP32
 '''
 
 from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
