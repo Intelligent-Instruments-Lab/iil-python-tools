@@ -1,8 +1,12 @@
+'''
+TODO: color palette
+TODO: wall margin per wall (for Marco)
+FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
+'''
+
 import taichi as ti
 import numpy as np
 
-# TODO: color palette
-# FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
