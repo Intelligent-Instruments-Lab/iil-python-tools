@@ -24,6 +24,7 @@ class Boids():
         self.y = y
         self.species_n = species
         self.rules = BoidsParams.field(shape=(species,species))
+        self.radius_max = 300.0
         self.init()
     @ti.kernel
     def init(self):
@@ -36,7 +37,7 @@ class Boids():
                     separate= ti.random(ti.f32),
                     align   = ti.random(ti.f32), 
                     cohere  = ti.random(ti.f32),
-                    radius  = ti.random(ti.f32)*300.0)
+                    radius  = ti.random(ti.f32)*self.radius_max)
     @ti.kernel
     def step(self, field: ti.template()):
         for i in range(field.shape[0]):
@@ -73,9 +74,34 @@ class Boids():
         self.init()
     def __call__(self, particles):
         self.step(particles.field)
-    def osc_set_rule(self, i, j, separate, align, cohere, radius):
+    def set_rule(self, i, j, separate, align, cohere, radius):
         self.rules[i,j] = BoidsParams(separate, align, cohere, radius)
-    def osc_get_rule(self, i, j):
+    @ti.kernel
+    def set_all_rules(self, separate: ti.template(), align: ti.template(), cohere: ti.template(), radii: ti.template()):
+        for i in range(self.species_n):
+            self._set_all_rules(i, separate, align, cohere, radii)
+    @ti.func
+    def _set_all_rules(self, i, separate, align, cohere, radii):
+        for j in range(self.species_n):
+            self.rules[i,j] = BoidsParams(separate[i,j], align[i,j], cohere[i,j], radii[i,j])
+    @ti.kernel
+    def set_all_rules_from_list(self, rules: ti.types.ndarray()):
+        assert rules.shape[0] == self.species_n * self.species_n * 4, f"rules.shape[0]={rules.shape[0]} != {self.species_n * self.species_n * 4}"
+        for i in range(self.species_n):
+            self._set_all_rules_from_list(i, rules)
+    @ti.func
+    def _set_all_rules_from_list(self, i, rules: ti.types.ndarray()):
+        for j in range(self.species_n):
+            self.rules[i,j] = BoidsParams(rules[i*4+j+0], rules[i*4+j+1], rules[i*4+j+2], rules[i*4+j+3]*self.radius_max)
+    @ti.kernel
+    def set_species_rules(self, i: ti.i32, separate: ti.template(), align: ti.template(), cohere: ti.template(), radii: ti.template()):
+        for j in range(self.species_n):
+            self.rules[i,j] = BoidsParams(separate[j], align[j], cohere[j], radii[j])
+    @ti.kernel
+    def set_species_rules_from_list(self, i: ti.i32, rules: ti.types.ndarray()):
+        for j in range(self.species_n):
+            self.rules[i,j] = BoidsParams(rules[j*4+0], rules[j*4+1], rules[j*4+2], rules[j*4+3]*self.radius_max)
+    def get_rule(self, i, j):
         return self.rules[i,j].to_numpy().tolist()
 
 def main():

@@ -1,4 +1,5 @@
 import taichi as ti
+import numpy as np
 
 # TODO: color palette
 # FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
@@ -99,7 +100,7 @@ class Particles:
     @ti.func
     def speciate(self):
         for i in range(self.species_n):
-            self.species_c[i] = [ti.random(ti.f32)*ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
+            self.species_c[i] = [ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
         size      = 2.5 + 2.5   * ti.random(ti.f32)
         speed     = 1.0         * ti.random(ti.f32)
         max_speed = 1.0 + 5     * ti.random(ti.f32)
@@ -210,56 +211,80 @@ class Particles:
                     factor = (target_distance-radius)/radius
                     self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
     @ti.kernel
-    def osc_set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
+    def set_species(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32, size: ti.f32, speed: ti.f32, max_speed: ti.f32):
+        for j in range(self.max_n):
+            if self.field[j].species == i:
+                self.field[j].rgba = [r,g,b,1]
+                self.field[j].size = size
+                self.field[j].speed = speed
+                self.field[j].max_speed = max_speed
+    @ti.kernel
+    def set_all_species(self, r: ti.template(), g: ti.template(), b: ti.template(), size: ti.template(), speed: ti.template(), max_speed: ti.template()):
+        for i in range(self.max_n):
+            s = i % self.species_n
+            self.field[i].rgba = [r[s],g[s],b[s],1]
+            self.field[i].size = size[s]
+            self.field[i].speed = speed[s]
+            self.field[i].max_speed = max_speed[s]
+    @ti.kernel
+    def set_all_species_from_list(self, species: ti.template()):
+        for i in range(self.max_n):
+            s = i % self.species_n
+            self.field[i].rgba = [species[s+0],species[s+1],species[s+2],1]
+            self.field[i].size = species[s+3]
+            self.field[i].speed = species[s+4]
+            self.field[i].max_speed = species[s+5]
+    @ti.kernel
+    def set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
         for j in range(self.max_n):
             if self.field[j].species == i:
                 self.field[j].speed = speed
                 self.field[j].max_speed = max_speed
     @ti.kernel
-    def osc_set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
+    def set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
         for j in range(self.max_n):
             if self.field[j].species == i:
                 self.field[j].rgba = [r,g,b,1]
     @ti.kernel
-    def osc_set_species_size(self, i: ti.i32, size: ti.f32):
+    def set_species_size(self, i: ti.i32, size: ti.f32):
         for j in range(self.max_n):
             if self.field[j].species == i:
                 self.field[j].size = size
     @ti.kernel
-    def osc_set_active(self, a: ti.i32):
+    def set_active(self, a: ti.i32):
         for i in range(self.field.shape[0]):
             if i > a:
                 self.field[i].active = 0
             else:
                 self.field[i].active = 1
     @ti.kernel
-    def osc_set_species_active(self, i: ti.i32, a: ti.i32):
+    def set_species_active(self, i: ti.i32, a: ti.i32):
         for j in range(self.field.shape[0]):
             if self.field[j].species == i:
                 if j > a:
                     self.field[j].active = 0
                 else:
                     self.field[j].active = 1
-    def osc_set_pos(self, i, x, y):
+    def set_pos(self, i, x, y):
         self.field[i].pos = [x, y]
-    def osc_set_vel(self, i, x, y):
+    def set_vel(self, i, x, y):
         self.field[i].vel = [x, y]
-    def osc_set_speed(self, i, s, m):
+    def set_speed(self, i, s, m):
         self.field[i].speed = s
         self.field[i].max_speed = m
-    def osc_set_size(self, i, s):
+    def set_size(self, i, s):
         self.field[i].size = s
-    def osc_set_wall_repel(self, m, t):
+    def set_wall_repel(self, m, t):
         self.wall_margin[None] = m
         self.turn_factor[None] = t
-    def osc_get_pos(self, i):
+    def get_pos(self, i):
         return self.field[i].pos.to_numpy().tolist()
-    def osc_get_vel(self, i):
+    def get_vel(self, i):
         return self.field[i].vel.to_numpy().tolist()
-    def osc_get_pos_all_2d(self):
+    def get_pos_all_2d(self):
         self._osc_get_pos_all()
         return self.tmp_pos.to_numpy().tolist()
-    def osc_get_pos_all_1d(self):
+    def get_pos_all_1d(self):
         self._osc_get_pos_all()
         return self.tmp_pos.to_numpy().flatten().tolist()
     @ti.kernel
