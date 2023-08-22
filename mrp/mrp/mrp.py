@@ -232,7 +232,7 @@ class MRP(object):
     """
     /mrp/qualities
     """
-    def quality_update(self, note, quality, value, relative=False, channel=None):
+    def quality_update(self, note: int, quality: str, value: float, relative=False, channel=None):
         """
         Update a note's quality to a new value.
 
