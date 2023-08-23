@@ -80,26 +80,20 @@ def init(**kwargs):
             case _:
                 assert False, f"Invalid GPU: {gpu}"
         print(f"Tolvera running on {gpu}")
-    if headless is False:
-        global window, canvas
-        window = ti.ui.Window(name, (x,y), fps_limit=fps)
-        canvas = window.get_canvas()
+    global window, canvas
+    window = ti.ui.Window(name, (x,y), fps_limit=fps, show_window=not headless)
+    canvas = window.get_canvas()
 
 def show(px):
-    global window, canvas
+    global window, canvas, headless
     canvas.set_image(px.px.rgba)
-    window.show()
+    if not headless: window.show()
 
 def render(f=None, px=None):
     # TODO: Add **kwargs to f()
-    global canvas, window, headless, headless_rate
-    if headless:
-        @repeat(headless_rate)
-        def _():
+    global window
+    while window.running:
+        with _lock:
             if f is not None: f()
-    else:
-        while window.running:
-            with _lock:
-                if f is not None: f()
-                show(px)
+            show(px)
 
