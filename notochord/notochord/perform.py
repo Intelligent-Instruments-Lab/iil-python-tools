@@ -116,19 +116,17 @@ class NotoPerformance:
         df = df.loc[df.vel > 0]
         df = df.iloc[-n:]
         counts = df.inst.value_counts()
-        for inst in insts:
-            if inst not in counts.index:
-                counts[inst] = 0
+        if insts is not None:
+            for inst in insts:
+                if inst not in counts.index:
+                    counts[inst] = 0
         return counts
     
     def held_inst_pitch_map(self, insts=None):
         """held notes as {inst:[pitch]} for given instruments"""
-        # if insts is None:
-        #     insts = self.events.inst.unique()
-        # note_map = {i:[] for i in insts}
         note_map = defaultdict(list)
         for note in self._notes:
-            if note.inst in insts:
+            if insts is None or note.inst in insts:
                 note_map[note.inst].append(note.pitch)
         return note_map
     
