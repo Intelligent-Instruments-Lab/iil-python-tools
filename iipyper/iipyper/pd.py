@@ -2,6 +2,7 @@ import typing
 
 '''
 TODO: Bela project directory name
+TODO: Consistent send/receive terminology
 '''
 
 class PdPatcher:
@@ -140,6 +141,11 @@ class PdPatcher:
             self.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
         self.r_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
         self.save(self.filepath)
+
+    def add_send_list_func(self, f):
+        self.add_osc_receive_list(self.r_x, self.r_y, f['address'], f['params'])
+        self.r_x += len(f['address'])*15.0 + 25.0
+        self.save(self.filepath)
     
     def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
@@ -156,6 +162,11 @@ class PdPatcher:
                 })
             self.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
         self.s_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
+        self.save(self.filepath)
+    
+    def add_receive_list_func(self, f):
+        self.add_osc_send_list(self.s_x, self.s_y, f['address'], f['params'])
+        self.s_x += len(f['address'])*15.0 + 25.0
         self.save(self.filepath)
 
     def add_osc_receive_msg(self, x, y, path):
@@ -204,7 +215,7 @@ class PdPatcher:
         # [s arg_name]
         y_off+=_y_off+25
         send_ids = [
-            self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+            self.add_object("s "+self.path_to_snakecase(path)+'_'+p['label'][0:3], 
                             x+i*self.param_width, 
                             y+y_off+(0 if i % 2 == 0 else 25)) 
             for i, p in enumerate(parameters)]
@@ -232,7 +243,7 @@ class PdPatcher:
         # [r path_arg_name]
         y_off+=35
         receive_ids = [
-            self.add_object("r "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+            self.add_object("r "+self.path_to_snakecase(path)+'_'+p['label'][0:3], 
                             x+i*self.param_width, 
                             y+y_off+(0 if i % 2 == 0 else 25)) 
             for i, p in enumerate(parameters)]
@@ -393,6 +404,57 @@ class PdPatcher:
             comment_ids.append(comment_id2)
         return comment_ids, y_off
     
+    def add_osc_send_list(self, x, y, path, params):
+        '''
+        [comment] path, list name, params
+        [r] path
+        [list prepend path]
+        [list trim]
+        [s send.to.iipyper]
+        '''
+        y_off=0
+        self.add_comment(path, x, y)
+        y_off+=15
+        l = list(params.items())[0]
+        self.add_comment(f"{l[0]}", x, y+y_off)
+        y_off+=15
+        self.add_comment(f"l {l[1][1]} {l[1][2]}", x, y+y_off)
+        y_off+=self.h
+        receive_id = self.add_object(f"r {self.path_to_snakecase(path)}", x, y+y_off)
+        y_off+=self.h
+        prepend_id = self.add_object(f"list prepend {path}", x, y+y_off)
+        y_off+=self.h
+        trim_id = self.add_object(f"list trim", x, y+y_off)
+        y_off+=self.h
+        send_id = self.add_object(f"s send.to.iipyper", x, y+y_off)
+        self.connect(receive_id, 0, prepend_id, 0)
+        self.connect(prepend_id, 0, trim_id, 0)
+        self.connect(trim_id, 0, send_id, 0)
+    
+    def add_osc_receive_list(self, x, y, path, params):
+        '''
+        [comment] path
+        [r receive.from.iipyper]
+        [routeOSC path]
+        [s path]
+        [comment] params
+        '''
+        y_off=0
+        self.add_comment(path, x, y)
+        y_off+=self.h
+        receive_id = self.add_object(f"r receive.from.iipyper", x, y+y_off)
+        y_off+=self.h
+        route_id = self.add_object(f"routeOSC {path}", x, y+y_off)
+        y_off+=self.h
+        send_id = self.add_object(f"s {self.path_to_snakecase(path)}", x, y+y_off)
+        y_off+=self.h
+        l = list(params.items())[0]
+        self.add_comment(f"{l[0]}", x, y+y_off)
+        y_off+=15
+        self.add_comment(f"l {l[1][1]} {l[1][2]}", x, y+y_off)
+        self.connect(receive_id, 0, route_id, 0)
+        self.connect(route_id, 0, send_id, 0)
+
     def _pack_args(self, args):
         arg_types = []
         for a in args:
@@ -407,6 +469,9 @@ class PdPatcher:
 
     def _msg_args(self, args):
         return " ".join(["\$"+str(i+1) for i in range(len(args))])
+
+    def path_to_snakecase(self, path):
+        return path.replace('/', '_')[1:]#+'_'+label[0:3]
 
     def save(self, name):
         with open(name+".pd", 'w') as f:

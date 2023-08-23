@@ -146,7 +146,7 @@ class OSCMap:
     
     def add_send_list_to_patcher(self, func):
         f = self.dict['send'][func.__name__]
-        self.patcher.add_send_args_func(f)
+        self.patcher.add_send_list_func(f)
 
     '''
     send kwargs
@@ -216,7 +216,7 @@ class OSCMap:
     
     def add_receive_list_to_patcher(self, func):
         f = self.dict['receive'][func.__name__]
-        self.patcher.add_receive_args_func(f)
+        self.patcher.add_receive_list_func(f)
 
     '''
     receive kwargs
