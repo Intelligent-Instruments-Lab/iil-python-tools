@@ -162,21 +162,21 @@ class Particles:
             self.field.vel[i][0] -= tl
             self.field.pos[i][0] -= ti.random(ti.f32)*5.0
     @ti.kernel
-    def set_wall_margins(self, t: ti.f32, r: ti.f32, b: ti.f32, l: ti.f32):
-        self.wall_margins[0] = t
-        self.wall_margins[1] = r
-        self.wall_margins[2] = b
-        self.wall_margins[3] = l
+    def set_wall_margins(self, top: ti.f32, right: ti.f32, bottom: ti.f32, left: ti.f32):
+        self.wall_margins[0] = top
+        self.wall_margins[1] = right
+        self.wall_margins[2] = bottom
+        self.wall_margins[3] = left
     @ti.kernel
-    def set_turn_factors(self, t: ti.f32, r: ti.f32, b: ti.f32, l: ti.f32):
-        self.turn_factors[0] = t
-        self.turn_factors[1] = r
-        self.turn_factors[2] = b
-        self.turn_factors[3] = l
+    def set_turn_factors(self, top: ti.f32, right: ti.f32, bottom: ti.f32, left: ti.f32):
+        self.turn_factors[0] = top
+        self.turn_factors[1] = right
+        self.turn_factors[2] = bottom
+        self.turn_factors[3] = left
     @ti.kernel
-    def set_wall(self, i: ti.i32, m: ti.f32, t: ti.f32):
-        self.wall_margins[i] = m
-        self.turn_factors[i] = t
+    def set_wall(self, wall: ti.i32, margin: ti.f32, turn: ti.f32):
+        self.wall_margins[wall] = margin
+        self.turn_factors[wall] = turn
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
