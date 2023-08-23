@@ -173,7 +173,7 @@ def main(
             for p in soundfont.presets 
             if hasattr(p,'bank') and p.bank==0}
         
-        def get_range(i):
+        def _get_range(i):
             if i>127:
                 return 0, 127
             lo, hi = 127,0
@@ -187,6 +187,9 @@ def main(
                 hi = max(hi, h)
             assert lo<hi, (i-1,lo,hi)
             return lo, hi
+        sf_inst_ranges = {i:_get_range(i) for i in range(1,129)}
+        def get_range(i):
+            return sf_inst_ranges.get(i, (0,127))
     else:
         def get_range(i):
             return 0,127
@@ -745,6 +748,7 @@ def main(
                 auto_event()
             # query for new prediction
             if dt < noto.max_dt and not debug_query:
+            # if not debug_query:
                 auto_query()
 
     @cleanup
@@ -791,6 +795,8 @@ def main(
         
         config[c]['mode'] = m
         print(f'set channel {c} from {prev_m} to {m} mode')
+
+        ### NOTE changing a channel with followers to input causes stuck notes
 
         if prev_m=='follow':
             # emancipate held notes
@@ -865,7 +871,7 @@ def main(
         # TODO: mode picker
         if config[c]['mode'] == 'auto':
             set_mode(c, 'input')
-        elif config[c]['mode'] == 'input':
+        elif config[c]['mode'] == 'input' and config[c]['source']!=c:
             # TODO: source picker for follow
             set_mode(c, 'follow')
         else:
