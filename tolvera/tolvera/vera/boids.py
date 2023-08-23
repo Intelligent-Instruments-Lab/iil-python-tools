@@ -106,7 +106,7 @@ class Boids():
 
 def main():
     init()
-    particles = Particles(x, y, n, species, wall_margin=0)
+    particles = Particles(x, y, n, species)
     pixels = Pixels(x, y, evaporate=0.95, fps=fps)
     boids = Boids(x, y, species)
 

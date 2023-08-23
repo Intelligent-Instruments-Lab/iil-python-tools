@@ -1,6 +1,9 @@
 '''
 TODO: color palette
-TODO: wall margin per wall (for Marco)
+TODO: walls
+    default behaviour in particles
+    default wrap vs avoid flags per wall
+    then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 '''
 
@@ -62,18 +65,17 @@ class Particles:
                  x: ti.i32, y: ti.i32,
                  max_n: ti.i32,
                  species: ti.i32 = 1,
-                 wall_margin: ti.i32 = 50,
-                 turn_factor: ti.f32 = 0.8,
                  substep: ti.i32 = 1):
         self.max_n = max_n
         self.species_n = species
         self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
         self.x = x
         self.y = y
-        self.turn_factor = ti.field(ti.f32, shape=())
-        self.turn_factor[None] = turn_factor
-        self.wall_margin = ti.field(ti.f32, shape=())
-        self.wall_margin[None] = wall_margin
+        # Wall behaviours: top, right, bottom, left (clockwise, a la CSS margin)
+        self.wall_margins = ti.field(ti.f32, shape=(4))
+        self.turn_factors = ti.field(ti.f32, shape=(4))
+        self.wall_margins.fill(50.0)
+        self.turn_factors.fill(0.8)
         self.field = Particle.field(shape=(self.max_n))
         self.substep = substep
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
@@ -140,20 +142,37 @@ class Particles:
     @ti.func
     def wall_repel(self, i):
         p = self.field[i]
-        w, t = self.wall_margin[None], self.turn_factor[None]
+        wt, wr, wb, wl = self.wall_margins[0], self.wall_margins[1], self.wall_margins[2], self.wall_margins[3]
+        tt, tr, tb, tl = self.turn_factors[0], self.turn_factors[1], self.turn_factors[2], self.turn_factors[3]
         x, y = p.pos[0], p.pos[1]
-        if  (x > self.x-w): # left
-            self.field.vel[i][0] -= t
-            self.field.pos[i][0] -= ti.random(ti.f32)*5.0
-        elif(x < w):        # right
-            self.field.vel[i][0] += t
-            self.field.pos[i][0] += ti.random(ti.f32)*5.0
-        elif(y > self.y-w): # up
-            self.field.vel[i][1] -= t
+        if  (y > self.y-wt): # top
+            # self.field.vel[i][1] *= -0.9
+            self.field.vel[i][1] -= tt
             self.field.pos[i][1] -= ti.random(ti.f32)*5.0
-        elif(y < w):        # down
-            self.field.vel[i][1] += t
+        elif(x < wr):        # right
+            # self.field.vel[i][0] *= -0.9
+            self.field.vel[i][0] += tr
+            self.field.pos[i][0] += ti.random(ti.f32)*5.0
+        elif(y < wb):        # bottom
+            # self.field.vel[i][1] *= -0.9
+            self.field.vel[i][1] += tb
             self.field.pos[i][1] += ti.random(ti.f32)*5.0
+        elif(x > self.x-wl): # left
+            # self.field.vel[i][0] *= -0.9
+            self.field.vel[i][0] -= tl
+            self.field.pos[i][0] -= ti.random(ti.f32)*5.0
+    @ti.kernel
+    def set_wall_margins(self, t: ti.f32, r: ti.f32, b: ti.f32, l: ti.f32):
+        self.wall_margins[0] = t
+        self.wall_margins[1] = r
+        self.wall_margins[2] = b
+        self.wall_margins[3] = l
+    @ti.kernel
+    def set_turn_factors(self, t: ti.f32, r: ti.f32, b: ti.f32, l: ti.f32):
+        self.turn_factors[0] = t
+        self.turn_factors[1] = r
+        self.turn_factors[2] = b
+        self.turn_factors[3] = l
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
