@@ -173,6 +173,10 @@ class Particles:
         self.turn_factors[1] = r
         self.turn_factors[2] = b
         self.turn_factors[3] = l
+    @ti.kernel
+    def set_wall(self, i: ti.i32, m: ti.f32, t: ti.f32):
+        self.wall_margins[i] = m
+        self.turn_factors[i] = t
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
