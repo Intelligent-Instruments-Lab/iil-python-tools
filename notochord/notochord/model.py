@@ -582,6 +582,8 @@ class Notochord(nn.Module):
             truncate_quantile_time=None,
             truncate_quantile_pitch=None,
             steer_density=None, # truncate_quantile_type ? 
+            inst_weights=None,
+            no_steer=None, # TODO
             ):
         """ Query in velocity-time-instrument-pitch order,
             efficiently truncating the joint distribution to just allowable
@@ -598,15 +600,15 @@ class Notochord(nn.Module):
             raise ValueError(f"""
                 no possible notes {note_on_map=} {note_off_map=}""")
         
-        def get_subquery(ipm, path):
+        def get_subquery(ipm, path, weights=None):
             return Query(
                 'time',
                 Query(
                     'inst', [(
-                        Subset([i]), 
+                        Subset([i], 1 if weights is None else weights[i]), 
                         Query('pitch', path, 
                             whitelist=list(ps), 
-                            truncate_quantile=truncate_quantile_pitch)
+                            truncate_quantile=None if self.is_drum(i) else truncate_quantile_pitch)
                     ) for i,ps in ipm.items() if len(ps)]
                 ),
                 truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
@@ -618,7 +620,7 @@ class Notochord(nn.Module):
         
         return self.deep_query(Query('vel', [
             (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
-            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on', inst_weights))
         ]))
     
     def query_vipt(self,
@@ -627,6 +629,8 @@ class Notochord(nn.Module):
         truncate_quantile_time=None,
         truncate_quantile_pitch=None,
         steer_density=None,
+        inst_weights=None,
+        no_steer=None,
         ):
         """
         Query in velocity-instrument-pitch-time order,
@@ -644,16 +648,16 @@ class Notochord(nn.Module):
             raise ValueError(f"""
                 no possible notes {note_on_map=} {note_off_map=}""")
         
-        def get_subquery(note_map, path):
+        def get_subquery(note_map, path, weights=None):
             return Query(
                 'inst', 
-                then=[(Subset([i]), Query(
+                then=[(Subset([i], 1 if weights is None else weights[i]), Query(
                     'pitch', 
                     whitelist=list(ps), 
-                    truncate_quantile=truncate_quantile_pitch,
+                    truncate_quantile=None if self.is_drum(i) else truncate_quantile_pitch,
                     then=Query(
                         'time', path,         
-                        truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=truncate_quantile_time
+                        truncate=(min_time or -np.inf, max_time or np.inf), truncate_quantile=None if i in no_steer else truncate_quantile_time
                     )
                 )) for i,ps in note_map.items() if len(ps)]
             )
@@ -665,7 +669,7 @@ class Notochord(nn.Module):
         
         return self.deep_query(Query('vel', [
             (Range(-np.inf,0.5,w_off), get_subquery(note_off_map, 'note off')),
-            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on'))
+            (Range(0.5,np.inf,w_on), get_subquery(note_on_map, 'note on', inst_weights))
         ]))
     
     # def query_ipvt(self,

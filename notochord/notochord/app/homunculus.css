@@ -12,6 +12,18 @@ NotoControl {
     dock: bottom;
 }
 
+NotoPresets {
+    /* layout: horizontal; */
+    /* width: 1fr; */
+    layout: grid;
+    grid-size: 10 1;
+    height: 3;
+}
+
+NotoPresets Button {
+    border: outer black;
+}
+
 Mixer {
     layout: grid;
     /* content-align: center middle; */

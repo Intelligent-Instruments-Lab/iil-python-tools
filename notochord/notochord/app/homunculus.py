@@ -7,6 +7,8 @@ Authors:
   Intelligent Instruments Lab 2023
 """
 
+# TODO: move soundfont / general MIDI stuff out of script
+
 # TODO: make key bindings visibly click corresponding buttons
 # TODO: make Mute a toggle but Reset a momentary
 
@@ -26,6 +28,10 @@ from typing import Optional, Dict, Any
 from numbers import Number
 import math
 import functools as ft
+import json
+from pathlib import Path
+
+import numpy as np
 
 import iipyper, notochord
 from notochord import Notochord, MIDIConfig, NotoPerformance
@@ -65,7 +71,9 @@ def main(
     predict_follow=False,
     debug_query=False, # don't query notochord when there is no pending event.
     testing=False,
-    estimated_latency=1e-2
+    estimated_latency=1e-2,
+    soundfont=None,
+    limit_input=None
     ):
     """
     Args:
@@ -150,58 +158,156 @@ def main(
         osc = OSC(osc_host, osc_port)
     midi = MIDI(midi_in, midi_out)
 
+    if soundfont is not None:
+        # attempt to get instrument ranges from the soundfont
+        # assumes first bank is used
+        # not sure if entirely correct
+        from sf2utils.sf2parse import Sf2File
+        from sf2utils.generator import Sf2Gen
+
+        with open(soundfont, 'rb') as file:
+            soundfont = Sf2File(file)
+        sf_presets = {
+            p.preset:p
+            for p in soundfont.presets 
+            if hasattr(p,'bank') and p.bank==0}
+        
+        def get_range(i):
+            if i>127:
+                return 0, 127
+            lo, hi = 127,0
+            for b in sf_presets[i-1].bags:
+                if Sf2Gen.OPER_INSTRUMENT not in b.gens: 
+                    continue
+                if b.key_range is None: 
+                    return 0, 127
+                l,h = b.key_range
+                lo = min(lo, l)
+                hi = max(hi, h)
+            assert lo<hi, (i-1,lo,hi)
+            return lo, hi
+    else:
+        def get_range(i):
+            return 0,127
+    
+
     ### Textual UI
     tui = NotoTUI()
     print = notochord.print = iipyper.print = tui.print
     ###
 
-    # default channel:instrument mappings
-    if config is None:
-        start_mute = True
-        config = {
-            1:{'mode':'input', 'inst':27},
-            2:{'mode':'follow', 'inst':29, 'source':1, 'transpose':(3,15),
-                'mute':start_mute},
-            3:{'mode':'follow', 'inst':12, 'source':1, 'transpose':(12,24),
-                'mute':start_mute},
-            4:{'mode':'follow', 'inst':13, 'source':1, 'transpose':(-15,-3),
-                'mute':start_mute},
-            5:{'mode':'follow', 'inst':33, 'source':1, 'transpose':(-36,-12),
-                'mute':start_mute},
-            6:{'mode':'follow', 'inst':10, 'source':1, 'range':(72,96),
-                'mute':start_mute},
-            7:{'mode':'follow', 'inst':60, 'source':1, 'range':(12,36),
-                'mute':start_mute},
-            8:{'mode':'follow', 'inst':74, 'source':7, 'transpose':(24,36),
-                'mute':start_mute},
-            9:{'mode':'follow', 'inst':109, 'source':8, 'transpose':(3,7),
-                'mute':start_mute},
-            11:{'mode':'follow', 'inst':122, 'source':1, 'range':(60,72),
-                'mute':start_mute},
-            12:{'mode':'follow', 'inst':48, 'source':1, 'range':(0,81),
-                'mute':start_mute},
-            13:{'mode':'follow', 'inst':78, 'source':8, 'transpose':(7,12),
-                'mute':start_mute},
-            14:{'mode':'follow', 'inst':93, 'source':7, 'transpose':(12,24),
-                'mute':start_mute},
-            15:{'mode':'follow', 'inst':21, 'source':7, 'transpose':(0,4),
-                'mute':start_mute},
-            16:{'mode':'follow', 'inst':16, 'source':7, 'range':(84,108),
-                'mute':start_mute},
-            
+    with open(Path(__file__).parent / 'preset.json') as f:
+        presets = json.load(f)
+    # convert MIDI channels to int
+    presets = {p:{int(k):v for k,v in d.items()} for p,d in presets.items()}
 
-            # 1:{'mode':'input', 'inst':8},
-            # 2:{'mode':'follow', 'inst':8, 'source':1, 'transpose':(3,15)},
-            # 3:{'mode':'follow', 'inst':10, 'source':2, 'range':(72,96)},
-            # 4:{'mode':'auto', 'inst':12},
-            # 5:{'mode':'follow', 'source':4, 'inst':13, 'transpose':(-15,-3)},
-            # 6:{'mode':'auto', 'inst':18},
-            # 10:{'mode':'auto', 'inst':129},
-        }
+    if config is None: config = 'ens1'
+    if isinstance(config, str):
+        config = presets[config]
+
+    # # default channel:instrument mappings
+    # if config is None:
+    #     start_mute = True
+    #     config = {
+    #         1:{'mode':'input', 'inst':8},
+    #         2:{'mode':'follow', 'inst':7, 'source':1, 'transpose':(3,15),
+    #             'mute':start_mute},
+    #         3:{'mode':'follow', 'inst':12, 'source':1, 'transpose':(12,24),
+    #             'mute':start_mute},
+    #         4:{'mode':'follow', 'inst':13, 'source':1, 'transpose':(-15,-3),
+    #             'mute':start_mute},
+    #         5:{'mode':'follow', 'inst':33, 'source':1, 'transpose':(-36,-12),
+    #             'mute':start_mute},
+    #         6:{'mode':'follow', 'inst':10, 'source':1, 'range':(72,96),
+    #             'mute':start_mute},
+    #         7:{'mode':'follow', 'inst':60, 'source':1, 'range':(12,36),
+    #             'mute':start_mute},
+    #         8:{'mode':'follow', 'inst':74, 'source':7, 'transpose':(24,36),
+    #             'mute':start_mute},
+    #         9:{'mode':'follow', 'inst':109, 'source':8, 'transpose':(3,7),
+    #             'mute':start_mute},
+    #         11:{'mode':'follow', 'inst':122, 'source':1, 'range':(60,72),
+    #             'mute':start_mute},
+    #         12:{'mode':'follow', 'inst':48, 'source':1, 'range':(0,81),
+    #             'mute':start_mute},
+    #         13:{'mode':'follow', 'inst':78, 'source':8, 'transpose':(7,12),
+    #             'mute':start_mute},
+    #         14:{'mode':'follow', 'inst':93, 'source':7, 'transpose':(12,24),
+    #             'mute':start_mute},
+    #         15:{'mode':'follow', 'inst':21, 'source':7, 'transpose':(0,4),
+    #             'mute':start_mute},
+    #         16:{'mode':'follow', 'inst':16, 'source':1, 'range':(84,108),
+    #             'mute':start_mute},
+    #         # 1:{'mode':'input', 'inst':8},
+    #         # 2:{'mode':'follow', 'inst':8, 'source':1, 'transpose':(3,15)},
+    #         # 3:{'mode':'follow', 'inst':10, 'source':2, 'range':(72,96)},
+    #         # 4:{'mode':'auto', 'inst':12},
+    #         # 5:{'mode':'follow', 'source':4, 'inst':13, 'transpose':(-15,-3)},
+    #         # 6:{'mode':'auto', 'inst':18},
+    #         # 10:{'mode':'auto', 'inst':129},
+    #     }
+    # elif config=='strings':
+    #     config = {
+    #         1:{'mode':'input', 'inst':7}, # harpsichord
+    #         2:{'mode':'auto', 'inst':41, 'range':(55,103)}, # violin
+    #         3:{'mode':'auto', 'inst':42, 'range':(48,91)}, # viola
+    #         4:{'mode':'auto', 'inst':43, 'range':(36,76)}, # cello
+    #         5:{'mode':'auto', 'inst':44, 'range':(28,67)}, # bass
+    #     }
+    # elif config=='brass':
+    #     config = {
+    #         1:{'mode':'input', 'inst':5}, # electric piano
+    #         2:{'mode':'auto', 'inst':57, 'range':(55,82)}, # trumpet
+    #         3:{'mode':'auto', 'inst':58, 'range':(40,72)}, # trombone
+    #         4:{'mode':'auto', 'inst':59, 'range':(28,58)}, # tuba
+    #         5:{'mode':'auto', 'inst':61, 'range':(34,77)}, # french horn
+    #     }
+    # elif config=='rock':
+    #     config = {
+    #         1:{'mode':'input', 'inst':29}, # mute guitar
+    #         # 2:{'mode':'auto', 'inst':19}, # rock organ
+    #         3:{'mode':'auto', 'inst':30, 'mute':True}, # overdrive guitar
+    #         4:{'mode':'auto', 'inst':35}, # picked bass
+    #         5:{'mode':'auto', 'inst':28, 'mute':True}, # clean guitar
+    #         6:{'mode':'auto', 'inst':31, 'mute':True}, # distortion guitar
+    #         7:{'mode':'auto', 'inst':32, 'mute':True}, # harmonic guitar
+    #         10:{'mode':'auto', 'inst':129}, # drums
+    #     }
+    # elif config=='synths':
+    #     config = {
+    #         1:{'mode':'input', 'inst':85}, # charang
+    #         2:{'mode':'auto', 'inst':84}, # square wave
+    #         3:{'mode':'auto', 'inst':91}, # polysynth
+    #         4:{'mode':'auto', 'inst':119}, # synth drum
+    #         5:{'mode':'auto', 'inst':99}, # crystal
+    #     }
+    # elif config=='fx':
+    #     config = {
+    #         1:{'mode':'input', 'inst':122},
+    #         2:{'mode':'auto', 'inst':114}, 
+    #         3:{'mode':'auto', 'inst':119}, 
+    #         4:{'mode':'auto', 'inst':100},
+    #         5:{'mode':'auto', 'inst':56}, 
+    #         6:{'mode':'auto', 'inst':102}, 
+    #         7:{'mode':'auto', 'inst':103}, 
+    #         8:{'mode':'auto', 'inst':104}, 
+    #         9:{'mode':'auto', 'inst':121}, 
+    #         10:{'mode':'auto', 'inst':97}, 
+    #         11:{'mode':'auto', 'inst':123}, 
+    #         12:{'mode':'auto', 'inst':124}, 
+    #         13:{'mode':'auto', 'inst':125}, 
+    #         14:{'mode':'auto', 'inst':126}, 
+    #         15:{'mode':'auto', 'inst':127}, 
+    #         16:{'mode':'auto', 'inst':128}, 
+    #     }
+    #         # 6:{'mode':'auto', 'inst':66, 'range':(49,81)}, # alto sax
+    #         # 7:{'mode':'auto', 'inst':68, 'range':(36,69)}, # bari sax
 
     # defaults
     config_in = config
-    config = {i:{'mode':'auto', 'inst':1, 'mute':False} for i in config_in}
+    def default_config_channel():
+        return {'mode':'auto', 'inst':1, 'mute':False, 'mono':False, 'source':1}
+    config = {i:default_config_channel() for i in config_in}
     for k,v in config_in.items():
         config[k].update(v)
 
@@ -235,12 +341,11 @@ def main(
         return [(c,channel_inst(c)) for c in config]
     def inst_ranges(insts):
         # instruments to sets of allowed MIDI numbers
-        # TODO: better defaults here
         r = {}
         for v in config.values():
             i = v['inst']
             if i in insts:
-                s = set(v.get('range', range(128)))
+                s = set(range(*v.get('range', get_range(i))))
                 if i in r:
                     r[i] |= s
                 else:
@@ -274,14 +379,14 @@ def main(
             else:
                 print(f"WARNING: instrument {i} is not General MIDI")
 
-    def do_send_pc():
-        for c,i in channel_insts():
-            warn_inst(i)
-            # convert to 0-index
-            midi.program_change(channel=c-1, program=(i-1)%128)
+    def do_send_pc(c, i):
+        warn_inst(i)
+        # convert to 0-index
+        midi.program_change(channel=c-1, program=(i-1)%128)
 
     if send_pc:
-        do_send_pc()
+        for c,i in channel_insts():
+            do_send_pc(c, i)
     
     # load notochord model
     try:
@@ -373,7 +478,9 @@ def main(
                 min_x, max_x = cfg.get('transpose', (-128,128))
                 lo, hi = cfg.get('range', (0,127))
 
-                already_playing = {p for i,p in history.note_pairs if noto_inst==i}
+                # already_playing = {p for i,p in history.note_pairs if noto_inst==i}
+                already_playing = {
+                    note.pitch for note in history.notes if noto_inst==note.inst}
                 # print(f'{already_playing=}')
 
                 pitch_range = range(
@@ -423,11 +530,12 @@ def main(
         tui(prediction=pending.event)
         
         # end Notochord held notes
-        for (chan,inst,pitch) in history.note_triples:
-            if inst in mode_insts('auto'):
+        # for (chan,inst,pitch) in history.note_triples:
+        for note in history.notes:
+            if note.inst in mode_insts('auto'):
                 play_event(
-                    dict(inst=inst, pitch=pitch, vel=0),
-                    channel=chan, 
+                    dict(inst=note.inst, pitch=note.pitch, vel=0),
+                    channel=note.chan, 
                     feed=False, # skip feeding Notochord since we are resetting it
                     tag='NOTO', memo='reset')
         # reset stopwatch
@@ -468,11 +576,12 @@ def main(
             return
         
         # end+feed all held notes
-        for (chan,inst,pitch) in history.note_triples:
-            if chan in mode_chans('auto'):
+        # for (chan,inst,pitch) in history.note_triples:
+        for note in history.notes:
+            if note.chan in mode_chans('auto'):
                 play_event(
-                    dict(inst=inst, pitch=pitch, vel=0), 
-                    channel=chan, tag='AUTO', memo='mute')
+                    dict(inst=note.inst, pitch=note.pitch, vel=0), 
+                    channel=note.chan, tag='AUTO', memo='mute')
 
     # query Notochord for a new next event
     # @lock
@@ -525,18 +634,29 @@ def main(
 
         # balance_sample: note-ons only from instruments which have played less
         bal_insts = allowed_insts 
+        inst_weights = None
         if balance_sample:
-            bal_insts = bal_insts & set(counts.index[counts <= counts.min()+n_margin])
-            if not len(bal_insts):
-                bal_insts = allowed_insts
+            # inst_weights = {i:1/(1+10*counts[i]) for i in counts.index}
+            inst_weights = {i:np.exp(max(0, max(counts) - counts[i] - n_margin)) for i in bal_insts}
+            # inst_weights = {i:1000 if counts[i]==0 else 1 for i in counts.index}
+            # inst_weights = {i:1 if i in set(counts.index[counts <= counts.min()+n_margin]) else 0 for i in allowed_insts}
+            # bal_insts = bal_insts & set(counts.index[counts <= counts.min()+n_margin])
+            # if not len(bal_insts):
+            #     bal_insts = allowed_insts
         # if balance_sample and len(bal_insts)>0:
             # allowed_insts = bal_insts
         print(f'{bal_insts=}')
+        print(f'{inst_weights=}')
 
         # VTIP is better for time interventions,
         # VIPT is better for instrument interventions
         # could decide probabilistically based on value of controls + insts...
-        if bal_insts==all_insts:
+        # if bal_insts==all_insts:
+        # query_method = noto.query_vtip
+        # else:
+        # query_method = noto.query_vipt
+
+        if min_time > estimated_latency or abs(tqt) > abs(tqp):
             query_method = noto.query_vtip
         else:
             query_method = noto.query_vipt
@@ -568,6 +688,8 @@ def main(
                 truncate_quantile_time=tqt,
                 truncate_quantile_pitch=tqp,
                 steer_density=steer_density,
+                inst_weights=inst_weights,
+                no_steer=mode_insts(('input','follow'), allow_muted=False),
             )
         except Exception:
             print(f'WARNING: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
@@ -635,6 +757,9 @@ def main(
                 controls[ctrl] = arg
                 print(controls)
 
+    input_sw = Stopwatch()
+    dropped = set()# (channel, pitch)
+    input_dts = []
     @midi.handle(type=('note_on', 'note_off'))
     def _(msg):
         """MIDI NoteOn events from the player"""
@@ -646,15 +771,33 @@ def main(
             return
         
         if config[channel]['mute']:
-            print(f'WARNING: ignoring MIDI {msg} on non-input channel')
+            print(f'WARNING: ignoring MIDI {msg} on muted channel')
             return
         
         if thru:
             midi.send(msg)
-        
+
         inst = channel_inst(channel)
         pitch = msg.note
         vel = msg.velocity if msg.type=='note_on' else 0
+        
+        dt = input_sw.punch()
+        if len(input_dts) >= 10:
+            input_dts.pop(0)
+        input_dts.append(dt)
+        input_dens = sum(input_dts) / len(input_dts)
+        # TODO: 
+        # want to drop input when event density is high,
+        # not just dt is short
+        k = (channel,pitch)
+        if vel==0 and k in dropped:
+            dropped.remove(k)
+            print(f'WARNING: ignoring rate-limited input')
+            return
+        if vel>0 and limit_input and input_dens<limit_input:
+            print(f'WARNING: ignoring rate-limited input')
+            dropped.add(k)
+            return 
 
         # feed event to Notochord
         # with profile('feed', print=print):
@@ -672,6 +815,7 @@ def main(
         # 'auto' event happens:
         event = pending.event
         inst, pitch, vel = event['inst'], event['pitch'], math.ceil(event['vel'])
+        chan = auto_inst_channel(inst)
 
         # note on which is already playing or note off which is not
         if (vel>0) == ((inst, pitch) in history.note_pairs): 
@@ -679,7 +823,6 @@ def main(
             auto_query()
             return
         
-        chan = auto_inst_channel(inst)
         play_event(event, channel=chan, tag='NOTO')
 
     @repeat(1e-3, lock=True)
@@ -704,53 +847,165 @@ def main(
     def _():
         """end any remaining notes"""
         # print(f'cleanup: {notes=}')
-        for (chan,inst,pitch) in history.note_triples:
+        # for (chan,inst,pitch) in history.note_triples:
+        for note in history.notes:
         # for (inst,pitch) in notes:
-            if inst in mode_insts(('auto', 'follow')):
-                midi.note_on(note=pitch, velocity=0, channel=chan-1)
+            if note.inst in mode_insts(('auto', 'follow')):
+                midi.note_on(note=note.pitch, velocity=0, channel=note.chan-1)
+
+    ### update_* keeps the UI in sync with the state
 
     def update_config():
         for c,v in config.items():
             tui.set_channel(c, v)
 
+    def update_presets():
+        for p,k in enumerate(presets):
+            tui.set_preset(p, k)
+
     @tui.on
     def mount():
         update_config()
+        update_presets()
+
+
+    ### set_* does whatever necessary to change channel properties
+    ### calls update_config() to keep the UI in sync
+
+    def set_mode(c, m, update=True):
+        if c in config:
+            prev_m = config[c]['mode']
+        else:
+            prev_m = None
+        if m==prev_m:
+            return
+        
+        if m=='follow':
+            if 'source' not in config[c]:
+                print('WARNING: follower without a source, setting to 1')
+                config[c]['source'] = 1
+        
+        config[c]['mode'] = m
+        print(f'set channel {c} from {prev_m} to {m} mode')
+
+        if prev_m=='follow':
+            # emancipate held notes
+            for (dep_c,_,_), note_data in history.note_data.items():
+                if dep_c==c:
+                    note_data['parent'] = None
+
+        if prev_m=='auto':
+            # release held notes
+            for note in history.notes:
+                if note.chan==c:
+                    play_event(
+                        dict(inst=note.inst, pitch=note.pitch, vel=0),
+                        channel=note.chan, 
+                        tag='NOTO', memo='mode change')
+
+        if update:
+            update_config()
+
+    def set_inst(c, i, update=True):
+        if c in config:
+            prev_i = config[c]['inst']
+        else:
+            prev_i = None
+        if prev_i==i:
+            return
+        # TODO: warn if instrument already in use?
+
+        # for (chan,inst,pitch) in history.note_triples:
+        for note in history.notes:
+            if note.chan==c and config[note.chan]['mode']!='input':
+                play_event(
+                    dict(inst=note.inst, pitch=note.pitch, vel=0),
+                    channel=note.chan, 
+                    tag='NOTO', memo='change instrument')
+        # send pc if appropriate
+        if send_pc:
+            do_send_pc(c, i)
+        # then set config
+        config[c]['inst'] = i
+        # and call:
+        if update:
+            update_config()
+
+    def set_mute(c, b, update=True):
+        if b:
+            print(f'mute channel {c}')
+            # release held notes
+            # for (chan,inst,pitch) in history.note_triples:
+            for note in history.notes:
+                if note.chan==c and config[c]['mode']!='input':
+                    play_event(
+                        dict(inst=note.inst, pitch=note.pitch, vel=0),
+                        channel=note.chan, 
+                        tag='NOTO', memo='mute channel')
+        else:
+            print(f'unmute channel {c}')
+
+        config[c]['mute'] = b
+        if update:
+            update_config()
+
+    ### action_* runs on key/button press;
+    ### invokes cycler / picker logic and calls set_*
 
     # this is pretty awful
     # need a better way to reconcile iipyper and textual here
-    def action_mode(i):
-        if i not in config: return
-        config[i]['mode'] = 'auto'
-        print(f'set channel {i} to auto mode')
-        update_config()
-
-    def action_inst(i):
-        print(f'inst channel {i}')
-        # update_config()
-
-    def action_mute(i):
-        if i not in config: return
-        if config[i]['mute']:
-            print(f'unmute channel {i}')
-            config[i]['mute'] = False
+    def action_mode(c):
+        if c not in config: return
+        # TODO: mode picker
+        if config[c]['mode'] == 'auto':
+            set_mode(c, 'input')
+        elif config[c]['mode'] == 'input':
+            # TODO: source picker for follow
+            set_mode(c, 'follow')
         else:
-            print(f'mute channel {i}')
-            config[i]['mute'] = True
-            # release held notes
-            for (chan,inst,pitch) in history.note_triples:
-                if chan==i and config[i]['mode']!='input':
-                    play_event(
-                        dict(inst=inst, pitch=pitch, vel=0),
-                        channel=chan, 
-                        tag='NOTO', memo='mute channel')
+            set_mode(c, 'auto')
 
+    def action_inst(c):
+        print(f'inst channel {c}')
+        # TODO: instrument picker
+        i = 1
+        set_inst(c, i)
+
+    def action_mute(c):
+        if i not in config: return
+        set_mute(c, not config[c].get('mute', False))
+
+    def action_preset(p):
+        ks = list(presets.keys())
+        if p >= len(ks):
+            return
+        k = ks[p]
+        preset = presets[k]
+        print(f'load preset: {k}')
+        for c in range(1,17):    
+            if c not in config:
+                config[c] = default_config_channel()
+            if c not in preset:
+                set_mute(c, True, update=False)
+            else:
+                v = preset[c]
+                set_mode(c, v.get('mode', 'auto'), update=False)
+                set_inst(c, v.get('inst', 1), update=False)
+                set_mute(c, v.get('mute', False), update=False)
         update_config()
+
+    ### set actions which have an with index argument
+    ### TODO move this logic into @tui.set_action
 
     for i in range(1,17):
         setattr(tui, f'action_mode_{i}', ft.partial(action_mode, i))
         setattr(tui, f'action_inst_{i}', ft.partial(action_inst, i))
         setattr(tui, f'action_mute_{i}', ft.partial(action_mute, i))
+
+    for i in range(10):
+        setattr(tui, f'action_preset_{i}', ft.partial(action_preset, i))
+
+    ### additional key/button actions
 
     @tui.set_action
     def mute():
@@ -800,6 +1055,8 @@ class Mixer(Static):
         for i in range(1,17):
             yield MixerButtons(i, id=f"mixer_{i}")
 
+def preset_id(i):
+    return f"preset_{i}"
 def mode_id(i):
     return f"mode_{i}"
 def inst_id(i):
@@ -830,6 +1087,11 @@ class MixerButtons(Static):
             # variant="error",
             classes="cmute"
             )
+        
+class NotoPresets(Static):
+    def compose(self):
+        for i in range(10):
+            yield Button('---', id=preset_id(i))
 
 class NotoControl(Static):
     def compose(self):
@@ -856,8 +1118,13 @@ class NotoTUI(TUI):
         yield NotoLog(id='note')
         yield NotoPrediction(id='prediction')
         yield Mixer()
+        yield NotoPresets()
         yield NotoControl()
         yield Footer()
+
+    def set_preset(self, idx, name):
+        node = self.query_one('#'+preset_id(idx))
+        node.label = name
 
     def set_channel(self, chan, cfg):
         inst_node = self.query_one('#'+inst_id(chan))
@@ -911,7 +1178,7 @@ gm_names = [
     'CHOIR\n AAH ', 'CHOIR\n OOH ', 'SYNTH\nVOICE', 'ORCH \n  HIT',  
     'TRUM \n  PET', 'TROM \n BONE', 'TUBA \n     ', 'MUTED\nTRMPT', 
     'FRNCH\nHORN ', 'BRASS\nSECTN', 'SYNTH\nBRSS1', 'SYNTH\nBRSS2',  
-    'SPRNO\n SAX ', 'ALTO \n  SAX', 'TENOR\n SAX ', 'BARI \n  SAX', 
+    'SPRNO\n SAX ', 'ALTO \n  SAX', 'TENOR\n  SAX', 'BARI \n  SAX', 
     'OBOE \n     ', 'ENGLS\nHORN ', 'BASS \n  OON', 'CLARI\n  NET',  
     'PICC \n  OLO', 'FLUTE\n     ', 'RECO \n RDER', ' PAN \nFLUTE',
     'BLOWN\nBOTTL', 'SHAKU\nHACHI', 'WHIS \n  TLE', 'OCA  \n RINA',  
