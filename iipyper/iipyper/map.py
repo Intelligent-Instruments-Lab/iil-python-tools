@@ -14,9 +14,9 @@ from .pd import PdPatcher
 
 from typing import Any, get_type_hints
 import os
-import sys
 import xml.etree.ElementTree as ET
 import json
+import numpy as np
 
 class OSCMap:
     '''
@@ -192,10 +192,10 @@ class OSCMap:
                 if self.create_patch is True:
                     self.add_receive_list_to_patcher(func)
                 return func(*args)
-            default_arg = [kwargs[a][0] for a in kwargs \
-                            if a != 'count' and a != 'length']
-            default_arg = default_arg*kwargs['length']
-            wrapper(default_arg)
+            # TODO: This probably shouldn't be here...
+            v_len, v_min, v_max = kwargs['length'], kwargs['vector'][1], kwargs['vector'][2]
+            randomise_list = v_min + (np.random.rand(v_len).astype(np.float32) * (v_max - v_min))
+            wrapper(randomise_list)
             return wrapper
         return decorator
     

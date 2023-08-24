@@ -213,7 +213,7 @@ class PdPatcher:
         y_off+=160
 
         # [s arg_name]
-        y_off+=_y_off+25
+        y_off+=_y_off+75
         send_ids = [
             self.add_object("s "+self.path_to_snakecase(path)+'_'+p['label'][0:3], 
                             x+i*self.param_width, 
