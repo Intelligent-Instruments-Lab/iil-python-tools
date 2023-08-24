@@ -6,6 +6,7 @@ TODO: walls
     default wrap vs avoid flags per wall
     then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
+TODO: Fix tmp_pos / tmp_vel
 '''
 
 import taichi as ti
@@ -76,7 +77,7 @@ class Particles:
             'speed_min': 0.1,
             'speed_scale': 1.0,
             'max_speed_min': 1.0,
-            'max_speed_scale': 5.0,
+            'max_speed_scale': 3.0,
             'mass_min': 1.0,
             'mass_scale': 5.0,
             'decay_min': 0.9,
@@ -92,6 +93,8 @@ class Particles:
         self.field = Particle.field(shape=(self.max_n))
         self.substep = substep
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
+        self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(species)) # FIXME: hack
+        self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
         self.active_indexes = ti.field(ti.i32, shape=(self.max_n))
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
@@ -270,7 +273,7 @@ class Particles:
             self.field[i].speed = c['speed_min'] + c['speed_scale'] * speed[s]
             self.field[i].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed[s]
     @ti.kernel
-    def set_all_species_from_list(self, species: ti.template()):
+    def set_all_species_from_list(self, species: ti.types.ndarray()):
         c = self.species_consts
         for i in range(self.max_n):
             s = i % self.species_n
@@ -327,14 +330,20 @@ class Particles:
         return self.field[i].pos.to_numpy().tolist()
     def get_vel(self, i):
         return self.field[i].vel.to_numpy().tolist()
-    def get_pos_all_2d(self):
-        self._osc_get_pos_all()
-        return self.tmp_pos.to_numpy().tolist()
     def get_pos_all_1d(self):
-        self._osc_get_pos_all()
+        self._get_pos_all()
         return self.tmp_pos.to_numpy().flatten().tolist()
+    def get_pos_all_2d(self):
+        self._get_pos_all()
+        return self.tmp_pos.to_numpy().tolist()
+    def get_vel_all_1d(self):
+        self._get_vel_all()
+        return self.tmp_vel.to_numpy().flatten().tolist()
+    def get_vel_all_2d(self):
+        self._get_vel_all()
+        return self.tmp_vel.to_numpy().tolist()
     @ti.kernel
-    def _osc_get_pos_all(self):
+    def _get_pos_all(self):
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
@@ -343,6 +352,24 @@ class Particles:
             p = self.field[i]
             if p.active > 0.0:
                 self.tmp_pos[i] = p.pos / [self.x, self.y]
+    @ti.kernel
+    def _get_vel_all(self):
+        for i in range(self.max_n):
+            p = self.field[i]
+            if p.active > 0.0:
+                self.tmp_vel[i] = p.vel
+    def get_pos_species_1d(self, species):
+        self._get_pos_species()
+        return self.tmp_pos_species.to_numpy().flatten().tolist()
+    def get_pos_species_2d(self, species):
+        self._get_pos_species(species)
+        return self.tmp_pos_species.to_numpy().tolist()
+    @ti.kernel
+    def _get_pos_species(self, i: ti.i32):
+        for j in range(self.max_n):
+            p = self.field[i]
+            if self.field[j].species == i and p.active > 0.0:
+                self.tmp_pos_species[j] = p.pos / [self.x, self.y]
     def reset(self):
         self.init()
     def __call__(self, pixels):

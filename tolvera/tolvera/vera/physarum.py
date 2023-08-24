@@ -1,14 +1,15 @@
-import time
-import numpy as np
+'''
+TODO: Custom wall behaviour
+TODO: Colour sensing -> species sensing
+TODO: Rendering brightness (?) 
+'''
+
 import taichi as ti
 
 from tolvera.utils import *
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
-from iipyper import OSC, run, Updater, OSCUpdaters
-
-# TODO: multi-species sensing
-# TODO: rendering brightness
+from iipyper import run, Updater
 
 @ti.dataclass
 class PhysarumParams:
@@ -27,7 +28,13 @@ class Physarum():
                  substep: ti.i32 = 1) -> None:
         self.species_n = species
         self.rules = PhysarumParams.field(shape=(species))
-        # self.rules = BoidsParams.field(shape=(species,species))
+        self.rule_consts = {
+            'sense_angle': 0.3 * ti.math.pi,
+            'move_angle':  0.3 * ti.math.pi,
+            'sense_dist':  50.0,
+            'move_dist':   1.0,
+            'dist_min':    0.1,
+        }
         self.x = trail_x
         self.y = trail_y
         self.substep = substep
@@ -40,12 +47,13 @@ class Physarum():
         self.init_rules()
     @ti.func
     def init_rules(self):
+        c = self.rule_consts
         for i in range(self.species_n):
             self.rules[i] = PhysarumParams(
-                sense_angle = ti.random(ti.f32) * 0.3 * ti.math.pi,
-                sense_dist  = ti.random(ti.f32) * 50.0 + 0.1,
-                move_angle  = ti.random(ti.f32) * 0.3 * ti.math.pi,
-                move_dist   = ti.random(ti.f32) * 1 + 0.1)
+                sense_angle = ti.random(ti.f32) * c['sense_angle'],
+                move_angle  = ti.random(ti.f32) * c['move_angle'],
+                sense_dist  = ti.random(ti.f32) * c['sense_dist'] + c['dist_min'],
+                move_dist   = ti.random(ti.f32) * c['move_dist'] + c['dist_min'])
     @ti.kernel
     def move(self, field: ti.template()):
         for i in range(field.shape[0]):
@@ -98,14 +106,36 @@ class Physarum():
             self.step(particles.field)
     def reset(self):
         self.init()
-    def osc_set_evaporate(self, evaporate):
+    def set_evaporate(self, evaporate):
         self.evaporate[None] = evaporate
         self.trail.evaporate[None] = evaporate
-    def osc_set_rule(self, i, sense_angle, sense_dist, move_angle, move_dist):
-        sense_angle = sense_angle * 0.3 * ti.math.pi
-        move_angle  = move_angle * 0.3 * ti.math.pi
-        self.rules[i] = PhysarumParams(sense_angle, sense_dist, move_angle, move_dist)
-    def osc_get_rule(self, i, j):
+    @ti.kernel
+    def set_rule(self, i: ti.i32, sense_angle: ti.f32, sense_dist: ti.f32, move_angle: ti.f32, move_dist: ti.f32):
+        c = self.rule_consts
+        self.rules[i] = PhysarumParams(
+            sense_angle * c['sense_angle'],
+            sense_dist  * c['sense_dist'] + c['dist_min'],
+            move_angle  * c['move_angle'],
+            move_dist   * c['move_dist'] + c['dist_min'])
+    @ti.kernel
+    def set_all_rules(self, sense_angle: ti.template(), sense_dist: ti.template(), move_angle: ti.template(), move_dist: ti.template()):
+        c = self.rule_consts
+        for i in range(self.species_n):
+            self.rules[i] = PhysarumParams(
+                sense_angle[i] * c['sense_angle'],
+                sense_dist[i]  * c['sense_dist'] + c['dist_min'],
+                move_angle[i]  * c['move_angle'],
+                move_dist[i]   * c['move_dist'] + c['dist_min'])
+    @ti.kernel
+    def set_all_rules_from_list(self, rules: ti.types.ndarray()):
+        c = self.rule_consts
+        for i in range(self.species_n):
+            self.rules[i] = PhysarumParams(
+                rules[i*4+0] * c['sense_angle'],
+                rules[i*4+1] * c['sense_dist'] + c['dist_min'],
+                rules[i*4+2] * c['move_angle'],
+                rules[i*4+3] * c['move_dist'] + c['dist_min'])
+    def get_rule(self, i, j):
         return self.rules[i,j].to_numpy().tolist()
     def __call__(self, particles):
         self.process(particles)
