@@ -1,5 +1,6 @@
 '''
 TODO: color palette
+TODO: global speed scalar
 TODO: walls
     default behaviour in particles
     default wrap vs avoid flags per wall
@@ -69,6 +70,18 @@ class Particles:
         self.max_n = max_n
         self.species_n = species
         self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
+        self.species_consts = {
+            'size_min': 2.5,
+            'size_scale': 2.5,
+            'speed_min': 0.1,
+            'speed_scale': 1.0,
+            'max_speed_min': 1.0,
+            'max_speed_scale': 5.0,
+            'mass_min': 1.0,
+            'mass_scale': 5.0,
+            'decay_min': 0.9,
+            'decay_scale': 0.099,
+        }
         self.x = x
         self.y = y
         # Wall behaviours: top, right, bottom, left (clockwise, a la CSS margin)
@@ -107,11 +120,12 @@ class Particles:
     def speciate(self):
         for i in range(self.species_n):
             self.species_c[i] = [ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
-        size      = 2.5 + 2.5   * ti.random(ti.f32)
-        speed     = 1.0         * ti.random(ti.f32)
-        max_speed = 1.0 + 5     * ti.random(ti.f32)
-        mass      = 1.0 + 5     * ti.random(ti.f32)
-        decay     = 0.9 + 0.099 * ti.random(ti.f32)
+        c = self.species_consts
+        size      = c['size_min']      + c['size_scale']      * ti.random(ti.f32)
+        speed     = c['speed_min']     + c['speed_scale']     * ti.random(ti.f32)
+        max_speed = c['max_speed_min'] + c['max_speed_scale'] * ti.random(ti.f32)
+        mass      = c['mass_min']      + c['mass_scale']      * ti.random(ti.f32)
+        decay     = c['decay_min']     + c['decay_scale']     * ti.random(ti.f32)
         for i in range(self.max_n):
             s = i % self.species_n
             self.field[i].species   = s
@@ -239,34 +253,38 @@ class Particles:
                     self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
     @ti.kernel
     def set_species(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32, size: ti.f32, speed: ti.f32, max_speed: ti.f32):
+        c = self.species_consts
         for j in range(self.max_n):
             if self.field[j].species == i:
                 self.field[j].rgba = [r,g,b,1]
-                self.field[j].size = size
-                self.field[j].speed = speed
-                self.field[j].max_speed = max_speed
+                self.field[j].size = c['size_min'] + c['size_scale'] * size
+                self.field[j].speed = c['speed_min'] + c['speed_scale'] * speed
+                self.field[j].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed
     @ti.kernel
     def set_all_species(self, r: ti.template(), g: ti.template(), b: ti.template(), size: ti.template(), speed: ti.template(), max_speed: ti.template()):
+        c = self.species_consts
         for i in range(self.max_n):
             s = i % self.species_n
             self.field[i].rgba = [r[s],g[s],b[s],1]
-            self.field[i].size = size[s]
-            self.field[i].speed = speed[s]
-            self.field[i].max_speed = max_speed[s]
+            self.field[i].size = c['size_min'] + c['size_scale'] * size[s]
+            self.field[i].speed = c['speed_min'] + c['speed_scale'] * speed[s]
+            self.field[i].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed[s]
     @ti.kernel
     def set_all_species_from_list(self, species: ti.template()):
+        c = self.species_consts
         for i in range(self.max_n):
             s = i % self.species_n
             self.field[i].rgba = [species[s+0],species[s+1],species[s+2],1]
-            self.field[i].size = species[s+3]
-            self.field[i].speed = species[s+4]
-            self.field[i].max_speed = species[s+5]
+            self.field[i].size = c['size_min'] + c['size_scale'] * species[s+3]
+            self.field[i].speed = c['speed_min'] + c['speed_scale'] * species[s+4]
+            self.field[i].max_speed = c['max_speed_min'] + c['max_speed_scale'] * species[s+5]
     @ti.kernel
     def set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
+        c = self.species_consts
         for j in range(self.max_n):
             if self.field[j].species == i:
-                self.field[j].speed = speed
-                self.field[j].max_speed = max_speed
+                self.field[j].speed = c['speed_min'] + c['speed_scale'] * speed
+                self.field[j].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed
     @ti.kernel
     def set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
         for j in range(self.max_n):
@@ -274,9 +292,10 @@ class Particles:
                 self.field[j].rgba = [r,g,b,1]
     @ti.kernel
     def set_species_size(self, i: ti.i32, size: ti.f32):
+        c = self.species_consts
         for j in range(self.max_n):
             if self.field[j].species == i:
-                self.field[j].size = size
+                self.field[j].size = c['size_min'] + c['size_scale'] * size
     @ti.kernel
     def set_active(self, a: ti.i32):
         for i in range(self.field.shape[0]):
