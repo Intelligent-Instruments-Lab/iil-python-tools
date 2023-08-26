@@ -431,7 +431,7 @@ class MRP(object):
             note['midi']['number'] 
             for note in self.notes 
             if note['status']==NOTE_ON]
-# 
+
     def note_on_is_valid(self, note):
         """
         check if the note is on & in range

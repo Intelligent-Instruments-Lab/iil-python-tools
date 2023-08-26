@@ -193,6 +193,8 @@ class OSCMap:
                     self.add_receive_list_to_patcher(func)
                 return func(*args)
             # TODO: This probably shouldn't be here...
+            # TODO: 'vector' shouldn't be hardcoded
+            # TODO: should this be np.array or list?
             v_len, v_min, v_max = kwargs['length'], kwargs['vector'][1], kwargs['vector'][2]
             randomise_list = v_min + (np.random.rand(v_len).astype(np.float32) * (v_max - v_min))
             wrapper(randomise_list)
