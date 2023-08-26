@@ -1,10 +1,14 @@
-import taichi as ti
-from tolvera.particles import Particle
+'''
+TODO: render()
+TODO: more neighbour funcs/stats
+TODO: move particles.seek|avoid here? (attract|repel)
+TODO: rename to Target?
+TODO: wall behaviour
+TODO: should be a particle field itself? to use move functions etc
+'''
 
-# TODO: render()
-# TODO: more neighbour funcs/stats
-# TODO: move particles.seek|avoid here? (attract|repel)
-# TODO: rename to Target?
+import taichi as ti
+from tolvera.particles import Particle, Particles
 
 @ti.dataclass
 class Attractor:
@@ -18,6 +22,7 @@ class Attractors:
         self.y = y
         self.n = n
         self.field = Attractor.field(shape=(n))
+        self.particles = Particles(x,y,n,1)
     def set(self, i, attractor: Attractor):
         self.field[i] = attractor
     def get(self, i):
@@ -27,6 +32,9 @@ class Attractors:
         for i in range(self.n):
             self.field[i].p.pos = ti.Vector([ti.random() * self.x, ti.random() * self.y])
             self.field[i].p.mass = ti.random() * 1.0
+            self.field[i].p.active = 1.0
+            self.field[i].p.speed = 0.5
+            self.field[i].p.max_speed = 1.0
             self.field[i].radius = ti.random() * self.y
     @ti.kernel
     def nn(self, field: ti.template()):
@@ -52,6 +60,23 @@ class Attractors:
     #     # fill based on p.nearby
     #     # radius based on radius
     #     pass
+    def update(self, i, px, py, d, w):
+        # self.field[i].p.vel[0] += vx
+        # self.field[i].p.vel[1] += vy
+        # self.particles.field[i].vel[0] += vx
+        # self.particles.field[i].vel[0] += vy
+        self.field[i].p.pos[0] = px
+        self.field[i].p.pos[1] = py
+        self.field[i].radius = d
+        self.field[i].p.mass = w
+        self.particles.field[i].pos[0] = px
+        self.particles.field[i].pos[0] = py
+    @ti.kernel
+    def process(self):
+        for i in range(self.n):
+            self.field[i].p.pos = self.particles.field[i].pos
     def __call__(self, particles):
+        # self.particles()
+        # self.process()
         self.nn(particles.field)
 

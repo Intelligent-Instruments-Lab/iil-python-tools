@@ -230,11 +230,14 @@ class Particles:
         #     x = ti.cast(p.pos[0], ti.i32)
         #     y = ti.cast(p.pos[1], ti.i32)
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
-    def seeks(self, attractors):
-        [self.seek(a) for a in attractors]
+    @ti.kernel
+    def seeks(self, attractors: ti.template()):
+        for i in range(attractors.n):
+            a = attractors.field[i]
+            self._seek(a.p.pos, a.p.mass, a.radius)
     def seek(self, attractor): # attractor: Attractor
         self._seek(attractor.p.pos, attractor.p.mass, attractor.radius)
-    @ti.kernel
+    @ti.func
     def _seek(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
         for i in range(self.field.shape[0]):
             if self.field[i].active > 0.0:
@@ -348,10 +351,13 @@ class Particles:
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
         #     self.tmp_pos[i] = p.pos / [self.x, self.y]
+        # TODO: Only send active particle positions...? Or inactive=-1?
         for i in range(self.max_n):
             p = self.field[i]
             if p.active > 0.0:
                 self.tmp_pos[i] = p.pos / [self.x, self.y]
+            # else:
+            #     self.tmp_pos[i] = [0.0,0.0] # ???
     @ti.kernel
     def _get_vel_all(self):
         for i in range(self.max_n):
@@ -372,6 +378,7 @@ class Particles:
                 self.tmp_pos_species[j] = p.pos / [self.x, self.y]
     def reset(self):
         self.init()
-    def __call__(self, pixels):
+    def __call__(self, pixels=None):
         self.process()
-        self.render(pixels)
+        if pixels is not None:
+            self.render(pixels)
