@@ -355,9 +355,18 @@ def main(
         #     insts = all_insts
 
         # query_method = noto.query_tipv_onsets
+
         if len(insts) > 2:
+            # in this case *only* time is messed with,
+            # so if we sample time first,
+            # the rest can be properly conditioned on it
             query_method = noto.query_tipv_onsets
         else:
+            # in this case, instrument and time have both been constrained,
+            # and we can't sample the true joint distribution,
+            # but we sample instrument first
+            # under the assumption that the instrument constraint is
+            # 'stronger' than the time constraint
             query_method = noto.query_itpv_onsets
 
         max_t = None if max_time is None else max(max_time, min_time+0.2)

@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Any, Optional, List, Tuple, Dict, Union, Callable, Generator
+from typing import NamedTuple
 from numpy.typing import ArrayLike
 
 from collections import namedtuple
@@ -11,9 +12,20 @@ Scores = ArrayLike # Scores describe distance between inputs in feature space
 PairID = int # PairIDs associate Inputs (via Features) with Outputs
 PairIDs = ArrayLike
 
-IDFeaturePair = namedtuple('IDFeaturePair', ['id', 'feature'])
-IOPair = namedtuple('IOPair', ['input', 'output'])
-SearchResult = namedtuple('SearchResult', ['inputs', 'outputs', 'ids', 'scores'])
+class IDFeaturePair(NamedTuple):
+    id:PairID
+    feature:Feature
+class IOPair(NamedTuple):
+    input:Input
+    output:Output
+class SearchResult(NamedTuple):
+    inputs:List[Input]
+    outputs:List[Output]
+    ids:PairIDs
+    scores:Scores
+# IDFeaturePair = namedtuple('IDFeaturePair', ['id', 'feature'])
+# IOPair = namedtuple('IOPair', ['input', 'output'])
+# SearchResult = namedtuple('SearchResult', ['inputs', 'outputs', 'ids', 'scores'])
 
 def _np_coerce(x):
     if hasattr(x, 'numpy'):

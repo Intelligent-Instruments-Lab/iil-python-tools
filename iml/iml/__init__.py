@@ -1,12 +1,17 @@
 from .types import *
 from . import nnsearch
-from . import feature
+from . import embed
 from . import interpolate
+from . import serialize
 
-class IML:
+# TODO: state serialization
+# TODO: serialize defaults where possible
+
+class IML(serialize.JSONSerializable):
+
     def __init__(self, 
             feature_size:Optional[int]=None, 
-            embed:Union[str,feature.Feature]=None, 
+            emb:Union[str,embed.Embedding]=None, 
             interp:Union[str,interpolate.Interpolate]=None,
             index:nnsearch.Index=None,
             k:int=10,
@@ -18,36 +23,40 @@ class IML:
             interp: instance or name of Interpolate subclass (defaults to Smooth)
             index: instance of Index (defaults to IndexBrute)
             k: default k-nearest neighbors (can be overridden later)
-            verbose: verbose debug printing
         """
-        
+        self.verbose = verbose
         # Feature converts Inputs to Features
-        if embed is None:
-            self.embed = feature.Identity(feature_size)
-        elif isinstance(embed, str):
-            self.embed = getattr(feature, embed)(feature_size)
-        elif isinstance(embed, feature.Feature):
-            self.embed = embed
+        if emb is None:
+            emb = embed.Identity(feature_size)
+        elif isinstance(emb, str):
+            emb = getattr(embed, emb)(feature_size)
+        elif isinstance(emb, embed.Embedding):
+            pass
         else:
             raise ValueError
 
          # Interpolate combines a set of Outputs according to their Scores
         if interp is None:
-            self.interpolate = interpolate.Smooth()
+            interp = interpolate.Smooth()
         elif isinstance(interp, str):
-            self.interpolate = getattr(interpolate, interp.capitalize())()
+            interp = getattr(interpolate, interp)()
         elif isinstance(interp, interpolate.Interpolate):
-            self.interpolate = interp
+            pass
         else:
             raise ValueError
 
-        # an index determines the distance metric and efficiency
+        # Index determines the distance metric and efficiency
         if index is None:
-            index = nnsearch.IndexBrute(self.embed.size)
+            index = nnsearch.IndexBrute(emb.size)
+        
+        super().__init__(
+            feature_size=feature_size, 
+            emb=emb, interp=interp, index=index,
+            k=k)
+
+        self.interpolate = interp
+        self.embed = emb
         self.neighbors = nnsearch.NNSearch(index, k=k)
-
-        self.verbose = verbose
-
         self.reset()
 
     def reset(self, keep_near:Input=None, k:int=None):
@@ -57,37 +66,43 @@ class IML:
             k: number of neighbors for above
         """
         print('reset')
+        res = None
         if keep_near is not None and len(self.pairs)>0:
             if len(keep_near)!=len(self.pairs[0][0]):
-                print('ERROR: iml: keep_near should be an input vector')
+                print('ERROR: iml: keep_near should be an Input vector')
                 keep_near = None
             else:
                 print('searching neighbors for keep_near')
-                srcs, tgts, _ = self.search(keep_near, k=k)
+                res = self.search(keep_near, k=k)
 
         self.pairs: Dict[PairID, IOPair] = {}
-        # NNSearch converts feature to target IDs and scores
+        # NNSearch converts feature to output IDs and scores
         self.neighbors.reset()
 
-        if keep_near is not None:
-            print(f'restoring {len(srcs)} neighbors')
-            for s,t in zip(srcs,tgts):
-                self.add(s,t)
+        if res is not None:
+            print(f'restoring {len(res.ids)} neighbors')
+            for id,inp,out in zip(res.ids, res.inputs, res.outputs):
+                self.add(inp,out,id=id)
 
-    def add(self, source: Input, target: Output) -> PairID:
-        """Add a data point to the mapping
+    def add(self, 
+            input: Input, 
+            output: Output, 
+            id: Optional[PairID]=None
+            ) -> PairID:
+        """Add a data point to the mapping.
         Args:
-            source: Input item
-            target: Output item
+            input: Input item
+            output: Output item
+            id: PairID to use; if an existing id, replace the point
         Returns:
-            target_id: id of the new data point (you may not need this)
+            id: id of the new data point if you need to reference it later
         """
-        if self.verbose: print(f'add {source=}, {target=}')
-        feature = self.embed(source)
-        target_id = self.neighbors.add(feature)
-        # track the mapping from target IDs back to targets
-        self.pairs[target_id] = IOPair(source, target)
-        return target_id
+        if self.verbose: print(f'add {input=}, {output=}')
+        feature = self.embed(input)
+        id = self.neighbors.add(feature, id)
+        # track the mapping from output IDs back to outputs
+        self.pairs[id] = IOPair(input, output)
+        return id
     
     def get(self, id:PairID) -> IOPair:
         """look up an Input/Output pair by ID"""
@@ -111,57 +126,84 @@ class IML:
                 print(f"IML: WARNING: can't `remove` ID {ids} which doesn't exist or has already been removed")
             self.neighbors.remove(ids)
 
-    def remove_near(self, source:Input, k:int=None):
+    def remove_near(self, input:Input, k:int=None):
         """Remove from mapping by proximity to Input
         """
-        feature = self.embed(source)
-        self.neighbors.remove_near(feature, k=k)
+        feature = self.embed(input)
+        self.neighbors.remove_near(feature)
 
-    def search(self, source:Input, k:int=None) -> SearchResult:
+    def search(self, input:Input, k:int=None) -> SearchResult:
         """find k-nearest neighbors
         Args:
-            source: input item
+            input: input item
             k: max number of neighbors
         Returns:
-            sources: neighboring Inputs
-            targets: corresponding Outputs
+            inputs: neighboring Inputs
+            outputs: corresponding Outputs
             ids: ids of Input/Output pairs
             scores: dissimilarity Scores
         """
-        feature = self.embed(source)
+        feature = self.embed(input)
         ids, scores = self.neighbors(feature, k=k)
         # handle case where there are fewer than k neighbors
-        sources, targets = zip(*(self.pairs[i] for i in ids))
+        if not len(ids):
+            raise RuntimeError('no points in mapping. add some!')
+        inputs, outputs = zip(*(self.pairs[i] for i in ids))
 
         # TODO: text-mode visualize scores
         # s = ' '*len(self.pairs)
 
-        return SearchResult(sources, targets, ids, scores)
+        return SearchResult(inputs, outputs, ids, scores)
 
-    def map(self, source:Input, k:int=None, **kw) -> Output:
+    def map(self, input:Input, k:int=None, **kw) -> Output:
         """convert an Input to an Output using search + interpolate
 
         Args:
-            source: input
+            input: input
             k: max neighbors
             **kw: additional arguments are passed to interpolate
         Returns:
             output instance
         """
-        # print(f'map {source=}')
-        _, targets, _, scores = self.search(source, k)
-        result = self.interpolate(targets, scores, **kw)
+        # print(f'map {input=}')
+        _, outputs, _, scores = self.search(input, k)
+        result = self.interpolate(outputs, scores, **kw)
 
         return result
+    
+    def save_state(self):
+        """return dataset from this IML object.
+        Returns:
+            state: data in this IML object
+        """
+        return {
+            'pairs': self.pairs
+        }
+    
+    def load_state(self, state):
+        """load dataset into this IML object.
+        Args:
+            state: data as obtained from `save_state`
+        """
+        for id,pair in state['pairs'].items():
+            self.add(*pair, id=PairID(id))        
 
-    def save(self, path):
-        """serialize: store dataset, config"""
-        raise NotImplementedError
+    def save(self, path:str):
+        """serialize the whole IML object to JSON
+        Args:
+            path: path to JSON file
+        """
+        serialize.save(path, self)
 
     @classmethod
     def load(cls, path):
-        """deserialize: construct a new IML from config, load dataset"""
-        raise NotImplementedError
-
-
+        """deserialize a new IML object from JSON
+        Args:
+            path: path to JSON file
+        Returns:
+            new IML instance
+        """
+        inst = serialize.load(path)
+        assert isinstance(inst, cls), type(inst)
+        return inst
 

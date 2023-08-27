@@ -1,10 +1,16 @@
 import numpy as np
 from .types import *    
+from .serialize import JSONSerializable
 
-def sqL2(a, b):
-    return np.sum((a-b)**2, axis=-1)
+class Metric(JSONSerializable):
+    def __call__(self, a, b):
+        raise NotImplementedError
 
-class Index:
+class sqL2(Metric):
+    def __call__(self, a, b):
+        return np.sum((a-b)**2, axis=-1)
+
+class Index(JSONSerializable):
     """base Index class.
     currently no function besides typing, warning of unimplemented features
     """
@@ -33,12 +39,12 @@ class IndexBrute(Index):
             d: optional, dimension of feature
             metric: distance metric, default to squared euclidean
         """
-        self.d = d
-
         if metric is None:
-            self.metric = sqL2
-        else:
-            self.metric = metric
+            metric = sqL2()
+        
+        super().__init__(d=d, metric=metric)
+        self.d = d
+        self.metric = metric
 
         self.reset()
 
@@ -65,13 +71,14 @@ class IndexBrute(Index):
 
     def search(self, feature:Feature, k:int=3) -> Tuple[PairIDs, Scores]:
         """get feature(s) and IDs by proximity"""
+        if not len(self.data):
+            return [], []
         dist_id = sorted((self.metric(feature, v),k) for k,v in self.data.items())
         scores, ids = zip(*dist_id[:k])
         return ids, scores
     
     def reset(self):
-        # id -> feature
-        self.data = {}
+        self.data:Dict[PairID, Feature] = {}
 
     @property
     def ids(self):
@@ -95,6 +102,7 @@ try:
                 d: dimension of feature
                 metric: 
             """
+            super().__init__(d=d, metric=metric)
             if metric==sqL2:
                 self.index = IndexFlatL2(d)
             else:
@@ -160,8 +168,8 @@ try:
         
         def reset(self):
             self.index.reset()
-            self.idx_to_id = {}
-            self.id_to_idx = {}
+            self.idx_to_id:Dict[int, PairID] = {}
+            self.id_to_idx:Dict[PairID, int] = {}
 
         @property
         def ids(self):
@@ -172,7 +180,7 @@ except ImportError:
         def __init__(self, *a, **kw):
             raise NotImplementedError("""install faiss for IndexFastL2""")
 
-class NNSearch:
+class NNSearch(JSONSerializable):
     """
     This class is the mid-level interface for neighbor search,
     providing some common utilities over the Index subclasses.
@@ -182,12 +190,13 @@ class NNSearch:
         * currently adds only complexity to the IML implementation
         * but could be useful if needing NNSearch without Feature/Interpolate?
     """
-    def __init__(self, index, k=10):
+    def __init__(self, index:Index, k=10):
         """
         Args:
             index: instance of Index
             k: default k-nearest neighbors (but can be overridden later)
         """
+        super().__init__(index=index, k=k)
         self.index = index
         self.default_k = k
 
@@ -208,9 +217,9 @@ class NNSearch:
         """compute distance between two features"""
         return self.index.metric(a, b)
 
-    def add(self, feature: Feature) -> PairID:
+    def add(self, feature: Feature, id:Optional[PairID]=None) -> PairID:
         """add a feature vector to the index and return its ID"""
-        return self.index.add(feature)
+        return self.index.add(feature, id)
     
     def get(self, id:PairID) -> Feature:
         """look up a feature by ID"""

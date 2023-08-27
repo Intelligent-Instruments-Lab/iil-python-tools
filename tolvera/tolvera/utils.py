@@ -1,12 +1,11 @@
-'''
-TODO: globals better pattern needed
-TODO: render() catch other exceptions?
-'''
 import time
 import taichi as ti
 from iipyper.state import _lock
 
-# Globals
+'''
+Globals
+TODO: better pattern needed here
+'''
 gpu = 'vulkan'
 cpu = None
 x = 1920

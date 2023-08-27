@@ -402,6 +402,7 @@ class OSCReceiveListUpdater(ReceiveListUpdater):
     def receive(self, address, *args):
         self.set(list(args[1:]))
 
+
 class OSCSend():
     '''
     Non rate-limited OSC send
