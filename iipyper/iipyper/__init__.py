@@ -8,7 +8,7 @@ import fire
 from .midi import *
 from .osc import *
 from .maxmsp import *
-from .map import *
+from .oscmap import *
 from .pd import *
 from .audio import *
 from .tui import *
