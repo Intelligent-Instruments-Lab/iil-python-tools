@@ -1,5 +1,10 @@
 import typing
 
+'''
+TODO: Bela project directory name
+TODO: Consistent send/receive terminology
+'''
+
 class PdPatcher:
     def __init__(self, osc, client_name="client", filepath="osc_controls", 
                  x=0.0, y=0.0, w=1600.0, h=900.0,
@@ -72,28 +77,38 @@ class PdPatcher:
     def connect(self, a_id, a_outlet, b_id, b_inlet):
         self.patch_connections.append(f"#X connect {a_id} {a_outlet} {b_id} {b_inlet};\n")
     
-    def add_osc_send(self, host, port, x, y):
+    def add_osc_send(self, host, port, x, y, send_rate_limit=100):
         loadbang_id = self.add_object("loadbang", x, y)
         y += self.h
         connect_id = self.add_msg(f"connect {host} {port}", x, y)
         y += self.h
         disconnect_id = self.add_msg("disconnect", x+10, y)
-        receive_id = self.add_object("r send.to.iipyper", x+100, y)
+        metro_id = self.add_object(f"metro {send_rate_limit}", x+100, y)
         y += self.h
-        packOSC_id = self.add_object("packOSC", x+100, y)
+        send_rate_id = self.add_object("s rate", x+100, y)
+        y += self.h
+        receive_id = self.add_object("r send.to.iipyper", x+10, y)
+        y += self.h
+        packOSC_id = self.add_object("packOSC", x+10, y)
         y += self.h
         send_type = "netsend -u" if self.net_or_udp == "net" else "udpsend"
         send_id = self.add_object(send_type, x, y)
         y += self.h
         status_id = self.add_number(x, y)
         print_id = self.add_object("print reply.from.netreceive", x+40, y)
+        # loadbang->connect->send->print
         self.connect(loadbang_id, 0, connect_id, 0)
         self.connect(connect_id, 0, send_id, 0)
-        self.connect(disconnect_id, 0, send_id, 0)
-        self.connect(receive_id, 0, packOSC_id, 0)
-        self.connect(packOSC_id, 0, send_id, 0)
         self.connect(send_id, 0, status_id, 0)
         self.connect(send_id, 1, print_id, 0)
+        # loadbang->metro->send_rate
+        self.connect(loadbang_id, 0, metro_id, 0)
+        self.connect(metro_id, 0, send_rate_id, 0)
+        # disconnect->send
+        self.connect(disconnect_id, 0, send_id, 0)
+        # receive->packOSC->send
+        self.connect(receive_id, 0, packOSC_id, 0)
+        self.connect(packOSC_id, 0, send_id, 0)
         return send_id
 
     def add_osc_receive(self, port, x, y):
@@ -110,7 +125,7 @@ class PdPatcher:
         self.connect(unpackOSC_id, 0, print_id, 0)
         return self.get_last_id()
 
-    def add_send_func(self, f):
+    def add_send_args_func(self, f):
         hints = typing.get_type_hints(f['f'])['return'].__args__
         f_p = f['params']
         params = []
@@ -126,8 +141,13 @@ class PdPatcher:
             self.add_osc_receive_with_controls(self.r_x, self.r_y, f['address'], params)
         self.r_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
         self.save(self.filepath)
+
+    def add_send_list_func(self, f):
+        self.add_osc_receive_list(self.r_x, self.r_y, f['address'], f['params'])
+        self.r_x += len(f['address'])*15.0 + 25.0
+        self.save(self.filepath)
     
-    def add_receive_func(self, f):
+    def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
         f_p = f['params']
         params = []
@@ -142,6 +162,11 @@ class PdPatcher:
                 })
             self.add_osc_send_with_controls(self.s_x, self.s_y, f['address'], params)
         self.s_x += max(len(params) * self.param_width + 100.0, len(f['address'])*15.0 + 25.0)
+        self.save(self.filepath)
+    
+    def add_receive_list_func(self, f):
+        self.add_osc_send_list(self.s_x, self.s_y, f['address'], f['params'])
+        self.s_x += len(f['address'])*15.0 + 25.0
         self.save(self.filepath)
 
     def add_osc_receive_msg(self, x, y, path):
@@ -188,9 +213,9 @@ class PdPatcher:
         y_off+=160
 
         # [s arg_name]
-        y_off+=_y_off+25
+        y_off+=_y_off+75
         send_ids = [
-            self.add_object("s "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+            self.add_object("s "+self.path_to_snakecase(path)+'_'+p['label'][0:3], 
                             x+i*self.param_width, 
                             y+y_off+(0 if i % 2 == 0 else 25)) 
             for i, p in enumerate(parameters)]
@@ -218,7 +243,7 @@ class PdPatcher:
         # [r path_arg_name]
         y_off+=35
         receive_ids = [
-            self.add_object("r "+path.replace('/', '_')[1:]+'_'+p['label'][0:3], 
+            self.add_object("r "+self.path_to_snakecase(path)+'_'+p['label'][0:3], 
                             x+i*self.param_width, 
                             y+y_off+(0 if i % 2 == 0 else 25)) 
             for i, p in enumerate(parameters)]
@@ -227,7 +252,7 @@ class PdPatcher:
         # sliders
         slider_ids, slider_float_ids, int_ids, tbf_ids, _y_off = self.add_sliders(x, y+y_off, parameters, "send")
         y_off+=_y_off+25
-        y_off+=180
+        y_off+=225
 
         pack_id = -1
         out_id = -1
@@ -282,11 +307,13 @@ class PdPatcher:
         int_ids = []
         tbf_ids = []
         y_off = 0
+        send_rate_id = self.add_object("r rate", x-50, y+155)
         for i, s in enumerate(sliders):
             y_off = 0
             x_i = x+(i*self.param_width)
             y_off+=self.h
             slider_id, int_id, float_id, tbf_id = self.add_slider(
+                send_rate_id,
                 x_i, 
                 y+y_off,s["min_val"], 
                 s["size"], 
@@ -298,7 +325,7 @@ class PdPatcher:
             tbf_ids.append(tbf_id)
         return slider_ids, float_ids, int_ids, tbf_ids, y_off
 
-    def add_slider(self, x, y, min_val, size, float=False, io=None):
+    def add_slider(self, send_rate_id, x, y, min_val, size, float=False, io=None):
         assert io is not None, "io must be \"send\" or \"receive\""
         slider_id = self.add_box("obj", x, y, f"vsl 20 120 {min_val} {min_val+size} 0 0 empty empty empty 0 -9 0 12 #fcfcfc #000000 #000000 0 1")
         y += 120+8
@@ -311,29 +338,57 @@ class PdPatcher:
             y+=self.h
             float_id = self.add_number(x, y)
             y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
+            y+=self.h
             tbf_id = self.add_object("t b f", x, y)
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
-            self.connect(float_id, 0, tbf_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+            self.connect(change_id, 0, tbf_id, 0)
         elif float == False and io != "send": # if int and not send
             # int -> number
             int_id = self.add_object("int", x, y)
             y+=self.h
             float_id = self.add_number(x, y)
+            y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
             self.connect(slider_id, 0, int_id, 0)
             self.connect(int_id, 0, float_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
         elif float == True and io == "send": # if float and send
             # number -> t b f
             float_id = self.add_number(x, y)
             y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
+            y+=self.h
             tbf_id = self.add_object("t b f", x, y)
             self.connect(slider_id, 0, float_id, 0)
-            self.connect(float_id, 0, tbf_id, 0)
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+            self.connect(change_id, 0, tbf_id, 0)
         elif float == True and io != "send": # if float and not send
             # number
             float_id = self.add_number(x, y)
+            y+=self.h
+            zl_id = self.add_object("zl reg", x, y)
+            y+=self.h
+            change_id = self.add_object("change", x, y)
             self.connect(slider_id, 0, float_id, 0)
-        return slider_id, int_id, float_id, tbf_id
+            self.connect(float_id, 0, zl_id, 1)
+            self.connect(send_rate_id, 0, zl_id, 0)
+            self.connect(zl_id, 0, change_id, 0)
+        return slider_id, int_id, change_id, tbf_id
 
     def add_param_comments(self, x, y, params):
         comment_ids = []
@@ -349,6 +404,57 @@ class PdPatcher:
             comment_ids.append(comment_id2)
         return comment_ids, y_off
     
+    def add_osc_send_list(self, x, y, path, params):
+        '''
+        [comment] path, list name, params
+        [r] path
+        [list prepend path]
+        [list trim]
+        [s send.to.iipyper]
+        '''
+        y_off=0
+        self.add_comment(path, x, y)
+        y_off+=15
+        l = list(params.items())[0]
+        self.add_comment(f"{l[0]}", x, y+y_off)
+        y_off+=15
+        self.add_comment(f"l {l[1][1]} {l[1][2]}", x, y+y_off)
+        y_off+=self.h
+        receive_id = self.add_object(f"r {self.path_to_snakecase(path)}", x, y+y_off)
+        y_off+=self.h
+        prepend_id = self.add_object(f"list prepend {path}", x, y+y_off)
+        y_off+=self.h
+        trim_id = self.add_object(f"list trim", x, y+y_off)
+        y_off+=self.h
+        send_id = self.add_object(f"s send.to.iipyper", x, y+y_off)
+        self.connect(receive_id, 0, prepend_id, 0)
+        self.connect(prepend_id, 0, trim_id, 0)
+        self.connect(trim_id, 0, send_id, 0)
+    
+    def add_osc_receive_list(self, x, y, path, params):
+        '''
+        [comment] path
+        [r receive.from.iipyper]
+        [routeOSC path]
+        [s path]
+        [comment] params
+        '''
+        y_off=0
+        self.add_comment(path, x, y)
+        y_off+=self.h
+        receive_id = self.add_object(f"r receive.from.iipyper", x, y+y_off)
+        y_off+=self.h
+        route_id = self.add_object(f"routeOSC {path}", x, y+y_off)
+        y_off+=self.h
+        send_id = self.add_object(f"s {self.path_to_snakecase(path)}", x, y+y_off)
+        y_off+=self.h
+        l = list(params.items())[0]
+        self.add_comment(f"{l[0]}", x, y+y_off)
+        y_off+=15
+        self.add_comment(f"l {l[1][1]} {l[1][2]}", x, y+y_off)
+        self.connect(receive_id, 0, route_id, 0)
+        self.connect(route_id, 0, send_id, 0)
+
     def _pack_args(self, args):
         arg_types = []
         for a in args:
@@ -363,6 +469,9 @@ class PdPatcher:
 
     def _msg_args(self, args):
         return " ".join(["\$"+str(i+1) for i in range(len(args))])
+
+    def path_to_snakecase(self, path):
+        return path.replace('/', '_')[1:]#+'_'+label[0:3]
 
     def save(self, name):
         with open(name+".pd", 'w') as f:

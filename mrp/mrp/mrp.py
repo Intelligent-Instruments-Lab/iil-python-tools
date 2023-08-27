@@ -61,6 +61,7 @@ class MRP(object):
 
         # OSC reference and paths
         self.osc = _osc
+        assert self.osc.get_client_by_name("mrp") is not None, f"OSC client 'mrp' not found in: {_osc.client_names}"
         self.osc_paths = {
             'midi': '/mrp/midi',
             'qualities': {
@@ -152,7 +153,7 @@ class MRP(object):
             tmp['midi']['velocity'] = velocity
             path = self.osc_paths['midi']
             self.print(path, 'Note On:', note, ', Velocity:', velocity)
-            self.osc.send(path, self.note_on_hex, note, velocity)
+            self.osc.send(path, self.note_on_hex, note, velocity, client="mrp")
             return tmp
         else:
             self.print('note_on(): invalid Note On', note)
@@ -175,7 +176,7 @@ class MRP(object):
             tmp['midi']['velocity'] = velocity
             path = self.osc_paths['midi']
             self.print(path, 'Note Off:', note)
-            self.osc.send(path, self.note_off_hex, note, velocity)
+            self.osc.send(path, self.note_off_hex, note, velocity, client="mrp")
             return tmp
         else:
             self.print('note_off(): invalid Note Off', note)
@@ -208,7 +209,7 @@ class MRP(object):
     #     )
     #     path = self.osc_paths['midi']
     #     self.print(path, 'Control Change:', *m.bytes())
-    #     self.osc.send(path, *m.bytes())
+    #     self.osc.send(path, *m.bytes(), client="mrp")
 
     # def program_change(self, program, channel=None):
     #     """
@@ -226,12 +227,12 @@ class MRP(object):
     #     )
     #     path = self.osc_paths['midi']
     #     self.print(path, 'Program Change:', *m.bytes())
-    #     self.osc.send(path, *m.bytes())
+    #     self.osc.send(path, *m.bytes(), client="mrp")
     
     """
     /mrp/qualities
     """
-    def quality_update(self, note, quality, value, relative=False, channel=None):
+    def quality_update(self, note: int, quality: str, value: float, relative=False, channel=None):
         """
         Update a note's quality to a new value.
 
@@ -265,7 +266,7 @@ class MRP(object):
                         tmp['qualities'][quality] = [self.quality_clamp(v) for v in value]
                     path = self.osc_paths['qualities'][quality]
                     self.print(path, channel, note, *tmp['qualities'][quality])
-                    self.osc.send(path, channel, note, *tmp['qualities'][quality])
+                    self.osc.send(path, channel, note, *tmp['qualities'][quality], client="mrp")
                     return tmp
                 else:
                     if relative is True:
@@ -274,7 +275,7 @@ class MRP(object):
                         tmp['qualities'][quality] = self.quality_clamp(value)
                     path = self.osc_paths['qualities'][quality]
                     self.print(path, channel, note, tmp['qualities'][quality])
-                    self.osc.send(path, channel, note, tmp['qualities'][quality])
+                    self.osc.send(path, channel, note, tmp['qualities'][quality], client="mrp")
                     return tmp
             else:
                 self.print('quality_update(): invalid message:', quality, note, value)
@@ -314,7 +315,7 @@ class MRP(object):
                             tmp['qualities'][q] = [self.quality_clamp(i) for i in v]
                         path = self.osc_paths['qualities'][q]
                         self.print(path, channel, note, *tmp['qualities'][q])
-                        self.osc.send(path, channel, note, *tmp['qualities'][q])
+                        self.osc.send(path, channel, note, *tmp['qualities'][q], client="mrp")
                     else:
                         if relative is True:
                             tmp['qualities'][q] = self.quality_clamp(v, tmp['qualities'][q])
@@ -322,7 +323,7 @@ class MRP(object):
                             tmp['qualities'][q] = self.quality_clamp(v)
                         path = self.osc_paths['qualities'][q]
                         self.print(path, channel, note, tmp['qualities'][q])
-                        self.osc.send(path, channel, note, tmp['qualities'][q])
+                        self.osc.send(path, channel, note, tmp['qualities'][q], client="mrp")
                 return tmp
             else:
                 self.print('quality_update(): invalid message:', note, qualities)
@@ -341,7 +342,7 @@ class MRP(object):
         self.pedal.sostenuto = sostenuto
         path = self.osc_paths['pedal']['sostenuto']
         self.print(path, sostenuto)
-        self.osc.send(path, sostenuto)
+        self.osc.send(path, sostenuto, client="mrp")
 
     def pedal_damper(self, damper):
         """
@@ -350,7 +351,7 @@ class MRP(object):
         self.pedal.damper = damper
         path = self.osc_paths['pedal']['damper']
         self.print(path, damper)
-        self.osc.send(path, damper)
+        self.osc.send(path, damper, client="mrp")
 
     """
     /mrp/* miscellaneous
@@ -361,7 +362,7 @@ class MRP(object):
         """
         path = self.osc_paths['misc']['allnotesoff']
         self.print(path)
-        self.osc.send(path)
+        self.osc.send(path, client="mrp")
         self.init_notes()
         self.voices_reset()
 
@@ -375,7 +376,7 @@ class MRP(object):
         self.ui.volume = value
         path = self.osc_paths['ui']['volume']
         self.print(path, value)
-        self.osc.send(path, value)
+        self.osc.send(path, value, client="mrp")
 
     def ui_volume_raw(self, value):
         """
@@ -384,7 +385,7 @@ class MRP(object):
         self.ui.volume_raw = value
         path = self.osc_paths['ui']['volume_raw']
         self.print(path, value)
-        self.osc.send(path, value)
+        self.osc.send(path, value, client="mrp")
 
     """
     note methods
@@ -430,7 +431,7 @@ class MRP(object):
             note['midi']['number'] 
             for note in self.notes 
             if note['status']==NOTE_ON]
-# 
+
     def note_on_is_valid(self, note):
         """
         check if the note is on & in range

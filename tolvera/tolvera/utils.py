@@ -1,10 +1,10 @@
-from iipyper import repeat
 import time
 import taichi as ti
 from iipyper.state import _lock
 
 '''
 Globals
+TODO: better pattern needed here
 '''
 gpu = 'vulkan'
 cpu = None
@@ -80,21 +80,45 @@ def init(**kwargs):
             case _:
                 assert False, f"Invalid GPU: {gpu}"
         print(f"Tolvera running on {gpu}")
-    if headless is False:
-        global window, canvas
-        window = ti.ui.Window(name, (x,y), fps_limit=fps)
-        canvas = window.get_canvas()
+    global window, canvas
+    window = ti.ui.Window(name, (x,y), fps_limit=fps, show_window=not headless)
+    canvas = window.get_canvas()
+
+_cleanup_fns = []
+# decorator to make a function run on KeyBoardInterrupt (before exit)
+def cleanup(f=None):
+    """
+    @cleanup decorator based on iipyper
+    cleanup functions must be defined before render is called!
+    """
+    def decorator(f):
+        _cleanup_fns.append(f)
+        return f
+
+    if f is None: # return a decorator
+        return decorator
+    else: #bare decorator case; return decorated function
+        return decorator(f)
+
+def show(px):
+    global window, canvas, headless
+    canvas.set_image(px.px.rgba)
+    if not headless: window.show()
+
+def run(f, px):
+    global window
+    # TODO: Add **kwargs to f()
+    while window.running:
+        with _lock:
+            if f is not None: f()
+            show(px)
+
+def stop():
+    print(f"\nExiting {name}...")
+    for f in _cleanup_fns:
+        f()
+    exit(0)
 
 def render(f=None, px=None):
-    global canvas, window, headless, headless_rate
-    if headless:
-        @repeat(headless_rate)
-        def _():
-            if f is not None: f()
-    else:
-        while window.running:
-            with _lock:
-                if f is not None: f()
-                canvas.set_image(px.px.rgba)
-                window.show()
-
+    try: run(f, px)
+    except KeyboardInterrupt: stop()

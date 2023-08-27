@@ -240,11 +240,11 @@ class Pixels:
         self.clear()
     def __call__(self):
         return self.get()
-    @ti.func
-    def g_to_rgba(self, g):# -> vec1:
+    @ti.kernel
+    def g_to_rgba(self):# -> vec1:
         for i, j in ti.ndrange(self.x, self.y):
             # _i, _j = self.y-j-1,self.x-i-1
-            p = g[0,i,j]
+            p = self.px.g[0,i,j]
             self.px.rgba[i,j] = ti.Vector([p,p,p,1.0])
     @ti.func
     def rgba_to_g(self, rgba):# -> vec1:

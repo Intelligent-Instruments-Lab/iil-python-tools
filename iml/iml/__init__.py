@@ -207,4 +207,3 @@ class IML(serialize.JSONSerializable):
         assert isinstance(inst, cls), type(inst)
         return inst
 
-

@@ -20,17 +20,17 @@ SHELL_SCRIPT_ARGS=$4
 CONDA_ENV=$5
 
 # If no arguments are provided for the shell script, load them from the .config file
-# if [ -z "$SHELL_SCRIPT_ARGS" ]
-# then
-#     if [ -f scripts/iipyper-bela.config ]
-#     then
-#         source scripts/iipyper-bela.config
-#     else
-#         echo "Exiting: no command line arguments given, and no iipyper-bela.config file found."
-#         echo "(This script assumes you are running from within the iil-python-tools repo)"
-#         exit 1
-#     fi
-# fi
+if [ -z "$SHELL_SCRIPT_ARGS" ]
+then
+    if [ -f scripts/iipyper-bela.config ]
+    then
+        source scripts/iipyper-bela.config
+    else
+        echo "Exiting: no command line arguments given, and no iipyper-bela.config file found."
+        echo "(This script assumes you are running from within the iil-python-tools repo)"
+        exit 1
+    fi
+fi
 
 # tmux session
 tmux new-session -d -s iipyper_bela_session # Create a new tmux session

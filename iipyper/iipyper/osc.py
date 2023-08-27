@@ -331,6 +331,39 @@ class ReceiveUpdater:
         self.counter = 0
         self.update = False
 
+class ReceiveListUpdater:
+    '''
+    Decouples event handling from updating
+    Updating is rate-limited by a counter
+    Assumes a list[float] instead of *args
+    '''
+
+    def __init__(self, f, state=None, count=5, update=False):
+        self.f = f
+        self.count = count
+        self.counter = 0
+        self.update = update
+        self.state = state
+
+    def set(self, state):
+        '''
+        Set the Updater's state
+        '''
+        self.state = state
+        self.update = True
+
+    def __call__(self):
+        '''
+        Update the target function with internal state
+        '''
+        self.counter += 1
+        if not (self.update and
+                self.counter > self.count and
+                self.state is not None):
+            return
+        self.f(self.state)
+        self.counter = 0
+        self.update = False
 
 class OSCReceiveUpdater(ReceiveUpdater):
     '''
@@ -354,6 +387,21 @@ class OSCReceiveUpdater(ReceiveUpdater):
            but that lets you respond to different senders dynamically
         '''
         self.set(args[1:])
+
+class OSCReceiveListUpdater(ReceiveListUpdater):
+    '''
+    ReceiveListUpdater with an OSC handler
+    '''
+
+    def __init__(self, osc, address: str, f, state=None, count=10, update=False):
+        super().__init__(f, state, count, update)
+        self.osc = osc
+        self.address = address
+        osc.add_handler(self.address, self.receive)
+
+    def receive(self, address, *args):
+        self.set(list(args[1:]))
+
 
 class OSCSend():
     '''
@@ -386,7 +434,6 @@ class OSCSendUpdater():
         if self.counter >= self.count:
             self.osc.send(self.address, *self.f(), client=self.client)
             self.counter = 0
-
 
 class OSCReceiveUpdaters:
     '''
