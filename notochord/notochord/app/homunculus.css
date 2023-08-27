@@ -1,0 +1,94 @@
+TUI {
+    layout: vertical;
+}
+
+NotoControl {
+    layout: horizontal;
+    background: $boost;
+    height: 5;
+    margin: 1;
+    min-width: 50;
+    padding: 1;
+    dock: bottom;
+}
+
+NotoPresets {
+    /* layout: horizontal; */
+    /* width: 1fr; */
+    layout: grid;
+    grid-size: 10 1;
+    height: 3;
+}
+
+NotoPresets Button {
+    border: outer black;
+}
+
+Mixer {
+    layout: grid;
+    /* content-align: center middle; */
+    height: 18;
+    grid-size: 8 2;
+    /* grid-rows: 1fr; */
+    /* grid-columns: 1fr; */
+    /* grid-gutter:0 1; */
+}
+MixerButtons {
+    /* layout: grid; */
+    layout: grid;
+    /* content-align: center middle; */
+    width: 1fr;
+    height: 9;
+    grid-size: 1 3;
+    grid-rows: 3 3 3;
+    /* grid-rows: 1fr; */
+    /* grid-columns: 1fr; */
+    /* grid-gutter:0 1; */
+}
+MixerButtons Button {
+    border: outer black;
+}
+
+.cmode {
+    width:7;
+    height:3;
+}
+.cinst {
+    width:7;
+    height:3;
+    border-top: none;
+    border-bottom: none;
+}
+.cmute {
+    width:7;
+    height:3;
+}
+
+/* MixerButtons Button {
+    height: 5;
+    border: solid purple;
+} */
+
+NotoPrediction {
+    content-align: center middle;
+    height: 3;
+}
+
+TextLog {
+    height: 1fr;
+    border: solid purple;
+}
+
+Button {
+    /* outline: solid red; */
+    width: 16;
+}
+
+
+#mute {
+    dock: left;
+}
+
+#reset {
+    dock: right;
+}

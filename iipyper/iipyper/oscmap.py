@@ -8,8 +8,8 @@ TODO: Add generator for ESP32
 TODO: send funcs in send_mode=broadcast mode cannot have args, but in event mode you might want args
 '''
 
-from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
-from .max import MaxPatcher
+from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater
+from .maxmsp import MaxPatcher
 from .pd import PdPatcher
 
 from typing import Any, get_type_hints

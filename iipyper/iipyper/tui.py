@@ -38,12 +38,33 @@ try:
             setattr(self, f'action_{f.__name__}', f)
             return f
         
+        def on(self, f):
+            """
+            Decorator attaching a function to a Textual event
+
+            The name of the decorated function should be an event such as:
+                mount
+                mouse_move
+                click
+            """
+            if f.__name__=='mount':
+                self._mount = f
+            else:
+                # this doesn't work for on_mount for whatever reason
+                setattr(self, f'on_{f.__name__}', f)
+            return f
+        
+        def on_mount(self):
+            # self.std_log.write('MOUNT')
+            self._mount()
+        
         def set_mouse_move(self, f):
             self.on_mouse_move = f
             return f
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             getattr(self, f'action_{event.button.id}')()
+
 
         # def _print(self, k, *v):
         #     for s in (k, *v):

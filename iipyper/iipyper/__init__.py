@@ -7,7 +7,7 @@ import fire
 
 from .midi import *
 from .osc import *
-from .max import *
+from .maxmsp import *
 from .map import *
 from .pd import *
 from .audio import *

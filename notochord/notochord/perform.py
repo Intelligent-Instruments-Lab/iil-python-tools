@@ -1,4 +1,5 @@
 from typing import Optional, Dict, List, Tuple, Any
+from collections import defaultdict, namedtuple
 import time
 
 import pandas as pd
@@ -30,7 +31,9 @@ class MIDIConfig(dict):
         raise KeyError(f"""
             instrument {inst} has no channel
             """)
-    
+
+Note = namedtuple('Note', ('chan','inst','pitch'))
+
 class NotoPerformance:
     """
     track various quantities of a Notochord performance:
@@ -50,7 +53,7 @@ class NotoPerformance:
     """
     def __init__(self):
         self.init()
-        self.notes:Dict[Tuple[int,int], Any] = {} 
+        self._notes:Dict[Tuple[int,int,int], Any] = {} 
         self.past_segments:List[pd.DataFrame] = []
 
     def init(self):
@@ -96,47 +99,60 @@ class NotoPerformance:
         self.events.loc[len(self.events)] = event
 
         chan = event.get('channel', None)
-        inst, pitch, vel = event['inst'], event['pitch'], event['vel']
-        k = (chan, inst, pitch)
+        # inst, pitch, vel = event['inst'], event['pitch'], event['vel']
+        # k = (chan, inst, pitch)
+        vel = event['vel']
+        k = Note(chan, event['inst'], event['pitch'])
+
         if vel > 0:
-            self.notes[k] = held_note_data
+            self._notes[k] = held_note_data
         else:
-            self.notes.pop(k, None)
+            self._notes.pop(k, None)
    
     def inst_counts(self, n=0, insts=None):
         """instrument counts in last n (default all) note_ons"""
         df = self.events
+        df = df.iloc[-min(128,n*4):] # in case of very long history
         df = df.loc[df.vel > 0]
         df = df.iloc[-n:]
         counts = df.inst.value_counts()
-        for inst in insts:
-            if inst not in counts.index:
-                counts[inst] = 0
+        if insts is not None:
+            for inst in insts:
+                if inst not in counts.index:
+                    counts[inst] = 0
         return counts
     
     def held_inst_pitch_map(self, insts=None):
         """held notes as {inst:[pitch]} for given instruments"""
-        if insts is None:
-            insts = self.events.inst.unique()
-        note_map = {i:[] for i in insts}
-        for c,i,p in self.notes:
-            if i in insts:
-                note_map[i].append(p)
+        note_map = defaultdict(list)
+        for note in self._notes:
+            if insts is None or note.inst in insts:
+                note_map[note.inst].append(note.pitch)
         return note_map
     
     @property
     def note_pairs(self):
-        """held notes as {(inst,pitch)}.
+        """
+        held notes as {(inst,pitch)}.
         returns a new `set`; safe to modify history while iterating
         """
-        return {(i,p) for (c,i,p) in self.notes}
+        return {(note.inst, note.pitch) for note in self._notes}
     
     @property
     def note_triples(self):
-        """held notes as {(channel,inst,pitch)}.
+        """
+        held notes as {(channel,inst,pitch)}.
         returns a new `set`; safe to modify history while iterating
         """
-        return set(self.notes)
+        return {(note.chan, note.inst, note.pitch) for note in self._notes}
+    
+    @property
+    def notes(self):
+        """
+        generic way to access notes, returns set of namedtuples 
+        returns a new `set`; safe to modify history while iterating
+        """
+        return set(self._notes)
 
     @property
     def note_data(self):
@@ -144,7 +160,7 @@ class NotoPerformance:
         mutable.
         """
         # NOTE: returned dictionary should be mutable
-        return self.notes
+        return self._notes
 
 
 class KlaisOrganManual:
