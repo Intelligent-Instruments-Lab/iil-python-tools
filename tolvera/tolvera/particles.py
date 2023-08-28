@@ -71,6 +71,7 @@ class Particles:
         self.max_n = max_n
         self.species_n = species
         self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
+        self.particles_per_species = max_n // species
         self.species_consts = {
             'size_min': 2.5,
             'size_scale': 2.5,
@@ -95,6 +96,8 @@ class Particles:
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
         self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(species)) # FIXME: hack
         self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
+        self.tmp_vel_species = ti.Vector.field(2, ti.f32, shape=(species)) # FIXME: hack
+        self.tmp_vel_stats = ti.Vector.field(1, ti.f32, shape=(7)) # FIXME: hack
         self.active_indexes = ti.field(ti.i32, shape=(self.max_n))
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
@@ -223,7 +226,7 @@ class Particles:
             if p.active > 0.0:
                 x = ti.cast(p.pos[0], ti.i32)
                 y = ti.cast(p.pos[1], ti.i32)
-                pixels.circle(x, y, p.size, p.rgba * p.active)        
+                pixels.circle(x, y, p.size, p.rgba * p.active)
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
@@ -376,6 +379,53 @@ class Particles:
             p = self.field[i]
             if self.field[j].species == i and p.active > 0.0:
                 self.tmp_pos_species[j] = p.pos / [self.x, self.y]
+    def get_vel_species_1d(self, species):
+        self._get_vel_species(species)
+        return self.tmp_vel_species.to_numpy().flatten().tolist()
+    def get_vel_species_2d(self, species):
+        self._get_vel_species(species)
+        return self.tmp_vel_species.to_numpy().tolist()
+    @ti.kernel
+    def _get_vel_species(self, i: ti.i32):
+        for j in range(self.max_n):
+            p = self.field[i]
+            if self.field[j].species == i and p.active > 0.0:
+                self.tmp_vel_species[j] = p.vel
+    def get_vel_stats_species_1d(self, species):
+        self._species_velocity_statistics(species)
+        return self.tmp_vel_stats.to_numpy().flatten().tolist()
+    @ti.kernel
+    def _species_velocity_statistics(self, i: ti.i32):
+        '''
+        Centre of Mass Velocity: This is the average velocity of all particles in the species.
+        Relative Velocity: This is the average velocity of all particles in the species relative to the centre of mass velocity.
+        Angular Momentum: This is the sum of the angular momentum of all particles, which is given by mass * velocity * radius for each particle.
+        Kinetic Energy: This is the sum of the kinetic energy of all particles, which is given by 0.5 * mass * velocity^2 for each particle.
+        Temperature: In statistical mechanics, the temperature of a system of particles is related to the average kinetic energy of the particles.
+        '''
+        centre_of_mass_velocity = ti.Vector([0.0,0.0])
+        relative_velocity = ti.Vector([0.0,0.0])
+        angular_momentum = ti.Vector([0.0])
+        kinetic_energy = ti.Vector([0.0])
+        for j in range(self.max_n):
+            if self.field[j].species == i:
+                v = self.field[j].vel
+                p = self.field[j].pos
+                m = self.field[j].mass
+                centre_of_mass_velocity += v
+                relative_velocity       += v# - centre_of_mass_velocity
+                angular_momentum        += m * ti.math.cross(v,p)
+                kinetic_energy          += 0.5 * m * v.norm_sqr()
+        centre_of_mass_velocity = centre_of_mass_velocity / self.particles_per_species
+        relative_velocity = (relative_velocity - centre_of_mass_velocity * self.particles_per_species) / self.particles_per_species
+        temperature = 2.0 * kinetic_energy / (self.particles_per_species * 1.380649e-23)
+        self.tmp_vel_stats[0] = centre_of_mass_velocity[0]
+        self.tmp_vel_stats[1] = centre_of_mass_velocity[1]
+        self.tmp_vel_stats[2] = relative_velocity[0]
+        self.tmp_vel_stats[3] = relative_velocity[1]
+        self.tmp_vel_stats[4] = angular_momentum[0]
+        self.tmp_vel_stats[5] = kinetic_energy[0]
+        self.tmp_vel_stats[6] = temperature[0]
     def reset(self):
         self.init()
     def __call__(self, pixels=None):
