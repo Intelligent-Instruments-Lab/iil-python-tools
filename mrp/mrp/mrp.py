@@ -533,6 +533,20 @@ class MRP(object):
             self.print('voices_note_age(): note', note, 'is off')
             return -1
 
+    '''
+    Getter utils
+    '''
+        
+    def get_notes_on(self):
+        return [n['midi']['number'] for n in self.notes if n['status']==NOTE_ON]
+    
+    def get_notes_status(self):
+        # return a dict of midi_number:status for all notes:
+        return {n['midi']['number']:n['status'] for n in self.notes}
+    
+    def get_notes_harmonics(self):
+        return {n['midi']['number']:n['qualities']['harmonics_raw'] for n in self.notes}
+
     """
     misc methods
     """
