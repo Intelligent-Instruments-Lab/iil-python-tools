@@ -1,4 +1,5 @@
 import functools as ft
+import time
 
 import mido
 
@@ -97,7 +98,11 @@ class MIDI:
         self.running = True
 
     def handle(self, *a, **kw):
-        """MIDI handler decorator"""
+        """MIDI handler decorator
+        
+        Decorated function receives args:
+            msg: mido message
+        """
         if len(a):
             # bare decorator
             assert len(a)==1
@@ -140,12 +145,14 @@ class MIDI:
                     for k,filt in filters.items())
                 if use_handler:
                     with _lock:
+                        print(port_name)
                         f(msg)
         return callback
 
     def _send_msg(self, port, m):
         """send on a specific port or all output ports"""
         ports = self.out_ports.values() if port is None else [self.out_ports[port]]
+        # print(ports)
         for p in ports:
             # print('iipyper send', m)
             # iiuc mido send should already be thread safe
@@ -156,6 +163,7 @@ class MIDI:
 
     def send(self, m, *a, port=None, **kw):
         """send a mido message"""
+        # print(f'SEND {time.perf_counter()}')
         if isinstance(m, mido.Message):
             self._send_msg(port, m)
             if len(a)+len(kw) > 0:

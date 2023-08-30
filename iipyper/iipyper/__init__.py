@@ -2,6 +2,7 @@ from threading import Thread
 from threading import Timer as _Timer
 import time
 from contextlib import contextmanager
+from numbers import Number
 
 import fire
 
@@ -39,27 +40,27 @@ class Lag:
     def hpf(self, val):
         return val - self(val)
 
-class Clock:
-    def __init__(self, tick=5e-4):
-        self.begin = time.perf_counter()
-        self.tick_len = tick
+# class Clock:
+#     def __init__(self, tick=5e-4):
+#         self.begin = time.perf_counter()
+#         self.tick_len = tick
 
-    def tick(self):
-        # return the number of intervals since clock was started
-        # print('tick')
-        return int((time.perf_counter() - self.begin)/self.interval)
+#     def tick(self):
+#         # return the number of intervals since clock was started
+#         # print('tick')
+#         return int((time.perf_counter() - self.begin)/self.interval)
 
-    def __call__(self, interval):
-        """sleep for requested interval"""
-        if interval<=0:
-            time.sleep()
-            return
+#     def __call__(self, interval):
+#         """sleep for requested interval"""
+#         if interval<=0:
+#             time.sleep()
+#             return
         
-        self.interval = interval
-        # sleep until it has been 1 more interval than before
-        r = self.tick() + 1
-        while self.tick() < r:
-            time.sleep(self.tick_len)
+#         self.interval = interval
+#         # sleep until it has been 1 more interval than before
+#         r = self.tick() + 1
+#         while self.tick() < r:
+#             time.sleep(self.tick_len)
 
     # def __enter__(self):
     #     self.mark = time.perf_counter()
@@ -99,9 +100,9 @@ class Stopwatch:
 def maybe_lock(f, lock):
     if lock:
         with _lock:
-            f()
+            return f()
     else:
-        f()
+        return f()
 
 class Timer:
     """a threading.Timer using the global iipyper lock around the timed function
@@ -117,11 +118,13 @@ class Timer:
         self.timer.start()
 
 _threads = []
-def repeat(interval, between_calls=False, lock=True):
+def repeat(interval=None, between_calls=False, lock=True, tick=5e-3):
     """@repeat decorator
     
     Args:
-        interval: time in seconds to repeat at
+        interval: time in seconds to repeat at.
+            If the decorated function returns a number, use that as the interval
+            to the next call
         between_calls: if True, interval is between call and next call,
             if False, between return and next call
         lock: if True, use the global iipyper lock to make calls thread-safe
@@ -129,22 +132,39 @@ def repeat(interval, between_calls=False, lock=True):
     # close the decorator over interval and lock arguments
     def decorator(f):
         def g():
-            clock = Clock(5e-3)
+            # clock = Clock(tick)
             while True:
                 t = time.perf_counter()
-                maybe_lock(f, lock)
-                if between_calls:
-                    # interval is between calls to the functions
-                    elapsed = time.perf_counter() - t
-                    wait = interval - elapsed
+                returned_interval = maybe_lock(f, lock)
+
+                if isinstance(returned_interval, Number):
+                    wait_interval = returned_interval
                 else:
-                    wait = interval
+                    wait_interval = interval
+
+                # replace False or None with 0
+                wait_interval = wait_interval or 0
+
+                if between_calls:
+                    # interval is between calls to the decorated function
+                    elapsed = time.perf_counter() - t
+                    wait = wait_interval - elapsed
+                else:
+                    t = time.perf_counter()
+                    wait = wait_interval
                 # else interval is between return of one and call and next call
+                # print(f'{wait=}')
+                # tt = time.perf_counter()
                 if wait > 0:
-                    clock(wait)
+                    sleep = wait - tick
+                    if sleep > 0:
+                        time.sleep(sleep)
+                    spin_end = t + wait_interval
+                    while time.perf_counter() < spin_end: pass
+                    # print(f'waited = {time.perf_counter() - tt}')
                 else:
                     print(
-                        f'@repeat function "{f.__name__}" is late by {-interval}')
+                        f'@repeat function "{f.__name__}" is late by {-wait}')
 
         th = Thread(target=g, daemon=True)
         th.start()

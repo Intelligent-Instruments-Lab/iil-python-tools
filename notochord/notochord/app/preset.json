@@ -49,7 +49,7 @@
         "9":{"mode":"follow", "inst":109, "source":1, 
             "transpose":[3,7], "mute":true},
         "11":{"mode":"follow", "inst":14, "source":1, 
-            "range":[60,72], "mute":true},
+            "mute":true},
         "12":{"mode":"follow", "inst":48, "source":1, 
             "range":[0,81], "mute":true},
         "13":{"mode":"follow", "inst":78, "source":1, 

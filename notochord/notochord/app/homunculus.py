@@ -688,10 +688,11 @@ def main(
         vel = msg.velocity if msg.type=='note_on' else 0
         
         dt = input_sw.punch()
+        # print(f'EVENT {dt=} {msg}')
         if len(input_dts) >= 10:
             input_dts.pop(0)
         input_dts.append(dt)
-        input_dens = sum(input_dts) / len(input_dts)
+        input_dens = len(input_dts) / sum(input_dts)
         # TODO: 
         # want to drop input when event density is high,
         # not just dt is short
@@ -700,8 +701,8 @@ def main(
             dropped.remove(k)
             print(f'WARNING: ignoring rate-limited input')
             return
-        if vel>0 and limit_input and input_dens<limit_input:
-            print(f'WARNING: ignoring rate-limited input')
+        if vel>0 and limit_input and input_dens>limit_input:
+            print(f'WARNING: ignoring rate-limited input {input_dens=}')
             dropped.add(k)
             return 
 

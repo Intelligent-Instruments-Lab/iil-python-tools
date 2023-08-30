@@ -2,6 +2,7 @@ import math
 from typing import List, Tuple, Dict, Union, Any
 from numbers import Number
 from collections import namedtuple
+import threading
 
 import numpy as np
 
@@ -345,6 +346,8 @@ class Notochord(nn.Module):
                 0 indicates a note-off event
             **kw: ignored (allows doing e.g. noto.feed(**noto.query(...)))
         """
+        # print(f'FEED from {threading.get_ident()}') 
+
         with torch.inference_mode():
             inst = torch.LongTensor([[inst]]) # 1x1 (batch, time)
             pitch = torch.LongTensor([[pitch]]) # 1x1 (batch, time)
