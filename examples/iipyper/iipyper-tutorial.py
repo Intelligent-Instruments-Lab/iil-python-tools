@@ -1,30 +1,46 @@
 import time
 import mido
+import random
 
 from iipyper import OSC, MIDI, repeat, run, cleanup
 
-def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello'):
+# arguments to main are exposed as comand line options via Fire
+# (https://github.com/google/python-fire)
+def main(
+        osc_host='127.0.0.1', osc_port=9999, 
+        midi_in=None, midi_out=None,
+        repeat_time=1, repeat_msg='hello'):
     # loop API:
     # use the @repeat decorator to define functions which run every n seconds
     @repeat(repeat_time)
     def _():
         print(f'repeating every {repeat_time} sec: "{repeat_msg}"')
 
+    # you can also return the delay (in seconds) until the next call:
+    @repeat()
+    def _():
+        delay = random.random() * 3
+        print(f'waiting {delay} seconds..."')
+        return delay
+
+    # example of a high-framerate loop,
+    # using a Callable with its own state:
     class timer():
         def __init__(self):
             self.t = time.monotonic_ns()
         def __call__(self):
             new_t = time.monotonic_ns()
-            # print(new_t)
-            print(f'{1e9/(new_t-self.t)} fps')
+            # uncomment these to see output:
+            # print(f'{1e9/(new_t-self.t)} fps')
             self.t = new_t
-    repeat(1/120)(timer())
+    repeat(1/120, between_calls=True)(timer())
 
     ### MIDI API
     # create a MIDI object
-    midi = MIDI()
-    # NOTE: you probably will want to specify the MIDI outputs and inputs:
-    # midi = MIDI(out_ports=['IAC Driver Bus 1'])
+    midi = MIDI(in_ports=midi_in, out_ports=midi_out)
+    # NOTE:iipyper creates virtual "From iipyper 1" and "To iipyper 1" ports.
+    # by default, it listens to *all* input ports,
+    # but sends on only "From iipyper".
 
     # # decorator to make a midi handler:
     # # here filtering for type='note_on', note > 0, channel = 0
@@ -54,13 +70,10 @@ def main(osc_host='127.0.0.1', osc_port=9999, repeat_time=1, repeat_msg='hello')
         # print('sending cc')
         midi.cc(control=0, value=127, channel=1)
 
-    # NOTE: by default, iipyper sends and receives on all MIDI ports -- 
-    # so here the handler prints every MIDI message the @repeat function sends
 
+    ### OSC API
     # make an OSC object
     osc = OSC(osc_host, osc_port)
-    # # OSC API:
-    # # osc.args, osc.kwargs
 
     # # use as a decorator to make an osc handler
 
