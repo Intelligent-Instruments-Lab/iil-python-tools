@@ -21,17 +21,12 @@ python -m notochord harmonizer --checkpoint ~/Downloads/notochord_lakh_50G_deep.
 try `python -m notochord harmonizer --help`
 to see more options.
 
-The Notochord improviser plays along with you:
+the ``homunculus'' gives you a UI to manage multiple input, harmonizing or autonomous notochord channels:
 ```
-python -m notochord improviser --checkpoint ~/Downloads/notochord_lakh_50G_deep.pt
-```
-
-The improviser can also play multiple instruments autonomously:
-```
-python -m notochord improviser --checkpoint ~/Downloads/notochord_lakh_50G_deep.pt --player-config '{}' --noto-config '{2:12, 3:33, 4:109, 5:14}' --n_recent 64 --initial-query --balance-sample --max-note-len 2 --max-time 1
+python -m notochord homunculus --checkpoint ~/Downloads/notochord_lakh_50G_deep.pt
 ```
 
-You can set the MIDI in and out ports with `--midi-in` and `--midi-out`. If you use a General MIDI synthesizer like fluidsynth, you can add `--send-pc` to send program change messages.
+You can set the MIDI in and out ports with `--midi-in` and `--midi-out`. If you use a General MIDI synthesizer like fluidsynth, you can add `--send-pc` to also send program change messages.
 
 ## Python API
 

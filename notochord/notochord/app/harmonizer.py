@@ -186,7 +186,6 @@ def main(
         """
         MIDI NoteOn events from the player
         """
-        # print('PLAYER:', msg)
 
         pitch = msg.note
         vel = msg.velocity

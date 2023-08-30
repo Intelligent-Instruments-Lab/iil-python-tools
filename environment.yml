@@ -20,3 +20,4 @@ dependencies:
     - python-osc
     - taichi
     - sounddevice
+    - sf2utils

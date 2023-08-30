@@ -35,7 +35,7 @@ from collections import defaultdict
 import numpy as np
 
 import iipyper, notochord
-from notochord import Notochord, MIDIConfig, NotoPerformance
+from notochord import Notochord, NotoPerformance
 from iipyper import OSC, MIDI, run, Stopwatch, repeat, cleanup, TUI, profile, lock
 
 from rich.panel import Panel
@@ -79,14 +79,6 @@ def main(
     """
     Args:
         checkpoint: path to notochord model checkpoint.
-
-        player_config: mapping from MIDI channels to MIDI instruments controlled
-            by the player.
-        noto_config: mapping from MIDI channels to MIDI instruments controlled
-            by notochord. Both indexed from 1.
-            instruments should be different from the player instruments.
-            channels should be different unless different ports are used.
-
 
         config: mapping from MIDI channels to voice specs.
             MIDI channels and General MIDI instruments are indexed from 1.
@@ -150,9 +142,10 @@ def main(
             leave this as empty string to get all traffic on the port
 
         use_tui: run textual UI.
-        predict_input: forecasted next events can be for 'input' or 'follow' voices.
-            generally should be true, use balance_sample to force 'auto' voices to
-            play.
+        predict_input: forecasted next events can be for 'input' voices.
+            generally should be True for manual input;
+            use balance_sample to force 'auto' voices to play. 
+            you might want it False if you have a very busy input.
         debug_query=False, # don't query notochord when there is no pending event.
     """
     if osc_port is not None:

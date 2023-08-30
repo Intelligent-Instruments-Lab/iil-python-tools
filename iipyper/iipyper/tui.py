@@ -56,7 +56,11 @@ try:
         
         def on_mount(self):
             # self.std_log.write('MOUNT')
-            self._mount()
+            try:
+                self._mount()
+            except Exception as e:
+                print(e)
+                pass
         
         def set_mouse_move(self, f):
             self.on_mouse_move = f
