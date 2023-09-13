@@ -62,7 +62,7 @@ class ProjectAndSort(Embedding):
             self.input_size = None
 
     def init(self, input_size):
-        self.input_size = input_size
+        self.input_size = tuple(input_size)
 
         self.size = input_size[0] * self.n
 
@@ -76,7 +76,7 @@ class ProjectAndSort(Embedding):
             # lazy init
             self.init(source.shape[-2:])
         else:
-            assert source.shape[-2:] == tuple(self.input_size), (source.shape, self.input_size)
+            assert source.shape[-2:] == self.input_size, (source.shape, self.input_size)
 
         # project coordinate dimension to n lines
         feat = source @ self.proj
