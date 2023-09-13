@@ -20,7 +20,7 @@ class Identity(Embedding):
     def __call__(self, source):
         source, = np_coerce(source)
         if self.size is not None:
-            assert source.shape[-1] == self.size
+            assert source.shape[-1] == self.size, (source.shape, self.size)
         return source
     
 class ProjectAndSort(Embedding):
@@ -76,7 +76,7 @@ class ProjectAndSort(Embedding):
             # lazy init
             self.init(source.shape[-2:])
         else:
-            assert source.shape[-2:] == self.input_size
+            assert source.shape[-2:] == tuple(self.input_size), (source.shape, self.input_size)
 
         # project coordinate dimension to n lines
         feat = source @ self.proj
