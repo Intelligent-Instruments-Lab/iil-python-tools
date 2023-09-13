@@ -20,9 +20,9 @@ Authors:
 # TODO: grey out predictions when player or muted notochord
 
 # TODO: controls display panel
-# TODO: MIDI learn
-
 # TODO: held notes display panel
+# TODO: counts / weights display panel
+# TODO: MIDI learn
 
 from typing import Optional, Dict, Any
 from numbers import Number
@@ -74,7 +74,8 @@ def main(
     testing=False,
     estimated_latency=1e-2,
     soundfont=None,
-    limit_input=None
+    limit_input=None,
+    thru_vel_offset=None
     ):
     """
     Args:
@@ -591,7 +592,7 @@ def main(
                 no_steer=mode_insts(('input','follow'), allow_muted=False),
             )
         except Exception:
-            print(f'WARNING: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
+            # print(f'WARNING: query failed. {allowed_insts=} {note_on_map=} {note_off_map=}')
             pending.event = None
 
         # display the predicted event
@@ -674,7 +675,11 @@ def main(
             return
         
         if thru:
-            midi.send(msg)
+            if msg.velocity>0 and msg.type=='note_on' and thru_vel_offset is not None:
+                vel = max(1, int(msg.velocity*thru_vel_offset))
+                midi.send(msg.type, note=msg.note, channel=msg.channel, velocity=vel)
+            else:
+                midi.send(msg)
 
         inst = channel_inst(channel)
         pitch = msg.note
