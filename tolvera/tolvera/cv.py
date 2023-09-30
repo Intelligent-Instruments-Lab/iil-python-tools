@@ -147,8 +147,8 @@ class CV:
             contours = self.cv2_find_contours(thresh)
             polygons = self.cv2_approx_poly_dp(contours)
             img      = self.cv2_draw_contours(contours)
-            img      = self.cv2_gaussian_blur(img)
-            img      = self.cv2_resize(img, dsize=(int(1920/4), int(1080/4)))
+            # img      = self.cv2_gaussian_blur(img)
+            # img      = self.cv2_resize(img, dsize=(int(1920/4), int(1080/4)))
             if self.colormode == 'rgba':
                 self.frame2px_rgba(frame)
             elif self.colormode == 'rgb':
@@ -179,7 +179,7 @@ class CV:
 
 def main(x=1920,y=1080,n=128,species=2,fps=120, evaporate=0.99, device=0):
     init(x=x,y=y,n=n,species=species,evaporate=evaporate,fps=fps)
-    particles = Particles(x, y, n, species, wall_margin=0)
+    particles = Particles(x, y, n, species)
     pixels = Pixels(x, y, evaporate=evaporate, fps=fps)
     physarum = Physarum(x, y, species, evaporate)
     cv = CV(x,y,fps,device=device)

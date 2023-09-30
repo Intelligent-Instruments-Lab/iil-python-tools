@@ -1,10 +1,12 @@
+'''
+TODO: fire CL args each main() func
+TODO: default app with OSC etc.
+'''
+
 import sys
 import taichi as ti
 
 from iipyper import run
-
-# TODO: fire CL args for ti.arch, iipyper
-# TODO: default app with OSC etc.
 
 from tolvera.vera.simple import main as simple
 from tolvera.vera.boids import main as boids
