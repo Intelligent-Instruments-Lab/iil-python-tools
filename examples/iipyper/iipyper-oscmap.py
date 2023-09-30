@@ -53,9 +53,9 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     def test_receive_args(arg: float):
         print(f"Receiving args: {arg}")
 
-    @osc_map.receive_list(arg=(0.0,0.0,100.0), length=10, count=update_rate)
-    def test_receive_list(arg: list[float]):
-        print(f"Receiving list: {arg}")
+    @osc_map.receive_list(vector=(0.0,0.0,100.0), length=10, count=update_rate)
+    def test_receive_list(vector: list[float]):
+        print(f"Receiving list: {vector}")
 
     # @osc_map.receive_kwargs()
     # def test3(arg: float, arg2: float):
@@ -74,7 +74,7 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
         print(f"Sending args: {0.0}")
         return [0.0]
     
-    @osc_map.send_list(arg=(0.0,0.0,100.0), length=10, count=update_rate, send_mode=send_mode)
+    @osc_map.send_list(vector=(0.0,0.0,100.0), length=10, count=update_rate, send_mode=send_mode)
     def test_send_list() -> list[float]:
         print(f"Sending list: {[0]*10}")
         return [0]*10
