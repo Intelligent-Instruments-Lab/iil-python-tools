@@ -46,7 +46,6 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     Patcher → Python
     '''
     update_rate = 5
-    receive_counter = 0
 
     # add -> args
     @osc_map.receive_args(arg=(0,0,100), count=update_rate)
@@ -66,7 +65,6 @@ def main(host="127.0.0.1", client="127.0.0.1", receive_port=5001, send_port=5000
     '''
     update_rate = 7
     send_mode = 'broadcast' # | 'event'
-    send_counter = 0
 
     # TODO: Why does this need an arg...?
     @osc_map.send_args(arg=(0,0,100), count=update_rate, send_mode=send_mode)

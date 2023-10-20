@@ -38,13 +38,13 @@ def main(x=1920, y=1080, n=64, species=5, fps=120,
     iml_update = Updater(iml_map, 24)
 
     def send_tgt():
-        return d_tgt.tolist()
+        return z.tolist()
     osc_send_tgt = OSCSendUpdater(osc, "/tolvera/tgt", send_tgt, fps)
  
     # Render loop
     def render():
         iml_update()
-        # osc_send_tgt()
+        osc_send_tgt()
         pixels.diffuse()
         pixels.decay()
         boids(particles)
