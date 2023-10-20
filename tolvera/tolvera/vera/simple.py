@@ -1,12 +1,12 @@
-from tolvera.utils import *
+from tolvera.utils import init, render
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
 from iipyper import run
 
-def main():
-    init()
-    particles = Particles(x,y,n,species)
-    pixels = Pixels(x,y)
+def main(**kwargs):
+    o = init(**kwargs)
+    particles = Particles(o.x,o.y,o.n,o.species)
+    pixels = Pixels(o.x,o.y)
 
     def _():
         pixels.clear()

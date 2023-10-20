@@ -1,88 +1,86 @@
-import time
+'''
+TODO: Naming: State? Options? Config? Settings?
+'''
+
 import taichi as ti
+import time
 from iipyper.state import _lock
 
-'''
-Globals
-TODO: better pattern needed here
-'''
-gpu = 'vulkan'
-cpu = None
-x = 1920
-y = 1080
-fps = 120
-name = 'tolvera'
-window = None
-canvas = None
-headless = False
-headless_rate = 1/60
-seed = int(time.time())
-n = 1024
-species = 4
-evaporate = 0.95
-host = "127.0.0.1"
-client = "127.0.0.1"
-client_name = name
-receive_port = 5001
-send_port = 5000
+class Options:
+    def __init__(self, **kwargs):
+        self.reset(**kwargs)
+    
+    def reset(self, **kwargs):
+        self.x             = kwargs.get('x', 1920)
+        self.y             = kwargs.get('y', 1080)
+        self.n             = kwargs.get('n', 1024)
+        self.species       = kwargs.get('species', 4)
+        self.gpu           = kwargs.get('gpu', 'vulkan')
+        self.cpu           = kwargs.get('cpu', None)
+        self.fps           = kwargs.get('fps', 120)
+        self.evaporate     = kwargs.get('evaporate', 0.95)
+        self.seed          = kwargs.get('seed', int(time.time()))
+        self.name          = kwargs.get('name', 'Tolvera')
+        self.headless      = kwargs.get('headless', False)
+        self.headless_rate = kwargs.get('headless_rate', 1/60)
+        self.host          = kwargs.get('host', "127.0.0.1")
+        self.client        = kwargs.get('client', "127.0.0.1")
+        self.client_name   = kwargs.get('client_name', self.name)
+        self.receive_port  = kwargs.get('receive_port', 5001)
+        self.send_port     = kwargs.get('send_port', 5000)
+        self.window = None
+        self.canvas = None
+
+    def init(self):
+        print(f"[Tölvera] Initialising with: {vars(self)}")
+        if self.cpu:
+            ti.init(arch=ti.cpu, random_seed=self.seed)
+            print("[Tölvera] Running on CPU")
+        else:
+            if self.gpu == "vulkan":
+                ti.init(arch=ti.vulkan, random_seed=self.seed)
+            elif self.gpu == "cuda":
+                ti.init(arch=ti.cuda, random_seed=self.seed)
+            else:
+                print(f"[Tölvera] Invalid GPU: {self.gpu}")
+                return False
+            print(f"[Tölvera] Running on {self.gpu}")
+
+        self.window = ti.ui.Window(self.name, (self.x, self.y), fps_limit=self.fps, show_window=not self.headless)
+        self.canvas = self.window.get_canvas()
+        return True
+
+options = Options()
+
+def _run(f, px, **kwargs):
+    o = options
+    while o.window.running:
+        with _lock:
+            if f is not None: f(**kwargs)
+            _show(px)
+
+def _show(px):
+    o = options
+    o.canvas.set_image(px.px.rgba)
+    if not o.headless: o.window.show()
+
+def _stop():
+    o = options
+    print(f"\n[Tölvera] Exiting {o.name}...")
+    for f in _cleanup_fns:
+        f()
+    exit(0)
 
 def init(**kwargs):
-    global gpu, cpu, x, y, fps, name, headless, headless_rate, seed, n, species, evaporate, host, client, client_name, receive_port, send_port
-    print(f"kwargs: {kwargs}")
+    o = options
+    o.reset(**kwargs)
+    if o.init():
+        print(f"[Tölvera] Initialised with name '{o.name}'.")
+        return o
 
-    for key, value in kwargs.items():
-        match key:
-            case 'gpu':
-                gpu = value
-            case 'cpu':
-                cpu = value
-            case 'x':
-                x = value
-            case 'y':
-                y = value
-            case 'fps':
-                fps = value
-            case 'name':
-                name = value
-            case 'headless':
-                headless = value
-            case 'headless_rate':
-                headless_rate = value
-            case 'seed':
-                seed = value
-            case 'n':
-                n = value
-            case 'species':
-                species = value
-            case 'evaporate':
-                evaporate = value
-            case 'host':
-                host = value
-            case 'client':
-                client = value
-            case 'client_name':
-                client_name = value
-            case 'receive_port':
-                receive_port = value
-            case 'send_port':
-                send_port = value
-            case _:
-                assert False, f"Invalid key: {key}"
-    if cpu:
-        ti.init(arch=ti.cpu, random_seed=seed)
-        print("Tolvera running on cpu")
-    else: 
-        match gpu:
-            case "vulkan":
-                ti.init(arch=ti.vulkan, random_seed=seed)
-            case "cuda":
-                ti.init(arch=ti.cuda, random_seed=seed)
-            case _:
-                assert False, f"Invalid GPU: {gpu}"
-        print(f"Tolvera running on {gpu}")
-    global window, canvas
-    window = ti.ui.Window(name, (x,y), fps_limit=fps, show_window=not headless)
-    canvas = window.get_canvas()
+def render(f=None, px=None, **kwargs):
+    try: _run(f, px, **kwargs)
+    except KeyboardInterrupt: _stop()
 
 _cleanup_fns = []
 # decorator to make a function run on KeyBoardInterrupt (before exit)
@@ -99,26 +97,3 @@ def cleanup(f=None):
         return decorator
     else: #bare decorator case; return decorated function
         return decorator(f)
-
-def show(px):
-    global window, canvas, headless
-    canvas.set_image(px.px.rgba)
-    if not headless: window.show()
-
-def run(f, px):
-    global window
-    # TODO: Add **kwargs to f()
-    while window.running:
-        with _lock:
-            if f is not None: f()
-            show(px)
-
-def stop():
-    print(f"\nExiting {name}...")
-    for f in _cleanup_fns:
-        f()
-    exit(0)
-
-def render(f=None, px=None):
-    try: run(f, px)
-    except KeyboardInterrupt: stop()

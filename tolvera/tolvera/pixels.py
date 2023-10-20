@@ -1,9 +1,11 @@
+'''
+TODO: convert all ints to floats
+FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
+TODO: add convex hull algorithm
+TODO: add algobets-style shape analysis (to CV?)
+'''
+
 import taichi as ti
-from iipyper.state import _lock
-
-# TODO: convert all ints to floats
-
-# FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
@@ -69,9 +71,7 @@ class Pixels:
                  mode='rgba',
                  evaporate=0.99,
                  fps=120,
-                 name='Tolvera',
                  polygon_mode='crossing'):
-        self.lock = _lock
         self.x = x
         self.y = y
         self.fps = fps
@@ -91,6 +91,7 @@ class Pixels:
     def diffuse(self):
         for i, j in ti.ndrange(self.x, self.y):
             d = ti.Vector([0.0,0.0,0.0,0.0])
+            # TODO: parallelise ?
             for di in ti.static(range(-1, 2)):
                 for dj in ti.static(range(-1, 2)):
                     dx = (i + di) % self.x
@@ -151,6 +152,7 @@ class Pixels:
         for i in range(r + 1):
             d = ti.sqrt(r ** 2 - i ** 2)
             d_int = ti.cast(d, ti.i32)
+            # TODO: parallelise ?
             for j in range(d_int):
                 self.px.rgba[x + i, y + j] = rgba
                 self.px.rgba[x + i, y - j] = rgba

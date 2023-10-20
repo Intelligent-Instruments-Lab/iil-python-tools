@@ -1,5 +1,4 @@
 '''
-TODO: fire CL args each main() func
 TODO: default app with OSC etc.
 '''
 
@@ -12,7 +11,7 @@ from tolvera.vera.simple import main as simple
 from tolvera.vera.boids import main as boids
 from tolvera.vera.physarum import main as physarum
 from tolvera.vera.particle_life import main as particle_life
-from tolvera.cv import main as CV
+from tolvera.cv import main as cv
 
 # from tolvera.vera._lenia import main as lenia
 # from tolvera.vera._reaction_diffusion import main as rea_diff
@@ -32,20 +31,20 @@ def help():
         obstacles: run Obstacles exmaple
     """)
 
-def main():
+def main(**kwargs):
     print(sys.argv)
     try:
         match sys.argv[1]:
             case 'simple':
-                simple()
+                simple(**kwargs)
             case 'boids':
-                boids()
+                boids(**kwargs)
             case 'physarum':
-                physarum()
+                physarum(**kwargs)
             case 'particle_life':
-                particle_life()
+                particle_life(**kwargs)
             case 'cv':
-                CV()
+                cv(**kwargs)
             # case 'reaction_diffusion':
             #     rea_diff()
             # case 'lenia':
@@ -62,7 +61,6 @@ def main():
                 help()
     except IndexError:
         help()
-
 
 if __name__=='__main__':
     run(main)

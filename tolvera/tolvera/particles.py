@@ -6,28 +6,16 @@ TODO: walls
     default wrap vs avoid flags per wall
     then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
-TODO: Fix tmp_pos / tmp_vel
+FIXME: Fix tmp_pos / tmp_vel
 '''
 
 import taichi as ti
 import numpy as np
 
-
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
 vec3 = ti.math.vec3
 vec4 = ti.math.vec4
-
-# TODO: Decouple Species from Particle?
-# @ti.dataclass
-# class Species:
-#     i:         ti.i32
-#     size:      ti.f32
-#     speed:     ti.f32
-#     max_speed: ti.f32
-#     mass:      ti.f32
-#     rgba:      vec4
-#     diffusion: ti.f32 # for pixels
 
 @ti.dataclass
 class Particle:
@@ -73,8 +61,8 @@ class Particles:
         self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
         self.particles_per_species = max_n // species
         self.species_consts = {
-            'size_min': 2.5,
-            'size_scale': 2.5,
+            'size_min': 2,
+            'size_scale': 2,
             'speed_min': 0.1,
             'speed_scale': 1.0,
             'max_speed_min': 1.0,
@@ -238,7 +226,8 @@ class Particles:
         for i in range(attractors.n):
             a = attractors.field[i]
             self._seek(a.p.pos, a.p.mass, a.radius)
-    def seek(self, attractor): # attractor: Attractor
+    @ti.kernel
+    def seek(self, attractor: ti.template()): # attractor: Attractor
         self._seek(attractor.p.pos, attractor.p.mass, attractor.radius)
     @ti.func
     def _seek(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):

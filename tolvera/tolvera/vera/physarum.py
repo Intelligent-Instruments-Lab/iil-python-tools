@@ -6,13 +6,15 @@ TODO: Rendering brightness (?)
 
 import taichi as ti
 
-from tolvera.utils import *
+from tolvera.utils import init, render
 from tolvera.particles import Particles
 from tolvera.pixels import Pixels
+from tolvera.consts import PHYSARUM as PHYSARUM_CONSTS
+
 from iipyper import run, Updater
 
 @ti.dataclass
-class PhysarumParams:
+class PhysarumRules:
     sense_angle: ti.f32
     sense_dist:  ti.f32
     move_angle:  ti.f32
@@ -27,14 +29,8 @@ class Physarum():
                  evaporate: ti.f32 = 0.95,
                  substep: ti.i32 = 1) -> None:
         self.species_n = species
-        self.rules = PhysarumParams.field(shape=(species))
-        self.rule_consts = {
-            'sense_angle': 0.3 * ti.math.pi,
-            'move_angle':  0.3 * ti.math.pi,
-            'sense_dist':  50.0,
-            'move_dist':   1.0,
-            'dist_min':    0.1,
-        }
+        self.rules = PhysarumRules.field(shape=(species))
+        self.consts = PHYSARUM_CONSTS()
         self.x = trail_x
         self.y = trail_y
         self.substep = substep
@@ -47,13 +43,12 @@ class Physarum():
         self.init_rules()
     @ti.func
     def init_rules(self):
-        c = self.rule_consts
         for i in range(self.species_n):
-            self.rules[i] = PhysarumParams(
-                sense_angle = ti.random(ti.f32) * c['sense_angle'],
-                move_angle  = ti.random(ti.f32) * c['move_angle'],
-                sense_dist  = ti.random(ti.f32) * c['sense_dist'] + c['dist_min'],
-                move_dist   = ti.random(ti.f32) * c['move_dist'] + c['dist_min'])
+            self.rules[i] = PhysarumRules(
+                ti.random(ti.f32) * self.consts.SENSE_ANGLE,
+                ti.random(ti.f32) * self.consts.SENSE_DIST + self.consts.DIST_MIN,
+                ti.random(ti.f32) * self.consts.MOVE_ANGLE,
+                ti.random(ti.f32) * self.consts.MOVE_DIST + self.consts.DIST_MIN)
     @ti.kernel
     def move(self, field: ti.template()):
         for i in range(field.shape[0]):
@@ -111,47 +106,47 @@ class Physarum():
         self.trail.evaporate[None] = evaporate
     @ti.kernel
     def set_rule(self, i: ti.i32, sense_angle: ti.f32, sense_dist: ti.f32, move_angle: ti.f32, move_dist: ti.f32):
-        c = self.rule_consts
-        self.rules[i] = PhysarumParams(
-            sense_angle * c['sense_angle'],
-            sense_dist  * c['sense_dist'] + c['dist_min'],
-            move_angle  * c['move_angle'],
-            move_dist   * c['move_dist'] + c['dist_min'])
+        c = self.consts
+        self.rules[i] = PhysarumRules(
+            sense_angle * c.SENSE_ANGLE,
+            sense_dist  * (c.SENSE_DIST + c.DIST_MIN),
+            move_angle  * c.MOVE_ANGLE,
+            move_dist   * (c.MOVE_DIST + c.DIST_MIN))
     @ti.kernel
     def set_all_rules(self, sense_angle: ti.template(), sense_dist: ti.template(), move_angle: ti.template(), move_dist: ti.template()):
-        c = self.rule_consts
+        c = self.consts
         for i in range(self.species_n):
-            self.rules[i] = PhysarumParams(
-                sense_angle[i] * c['sense_angle'],
-                sense_dist[i]  * c['sense_dist'] + c['dist_min'],
-                move_angle[i]  * c['move_angle'],
-                move_dist[i]   * c['move_dist'] + c['dist_min'])
+            self.rules[i] = PhysarumRules(
+                sense_angle[i] * c.SENSE_ANGLE,
+                sense_dist[i]  * (c.SENSE_DIST + c.DIST_MIN),
+                move_angle[i]  * c.MOVE_ANGLE,
+                move_dist[i]   * (c.MOVE_DIST + c.DIST_MIN))
     @ti.kernel
     def set_all_rules_from_list(self, rules: ti.types.ndarray()):
-        c = self.rule_consts
+        c = self.consts
         for i in range(self.species_n):
-            self.rules[i] = PhysarumParams(
-                rules[i*4+0] * c['sense_angle'],
-                rules[i*4+1] * c['sense_dist'] + c['dist_min'],
-                rules[i*4+2] * c['move_angle'],
-                rules[i*4+3] * c['move_dist'] + c['dist_min'])
+            self.rules[i] = PhysarumRules(
+                rules[i*4+0] * c.SENSE_ANGLE,
+                rules[i*4+1] * (c.SENSE_DIST + c.DIST_MIN),
+                rules[i*4+2] * c.MOVE_ANGLE,
+                rules[i*4+3] * (c.MOVE_DIST + c.DIST_MIN))
     def get_rule(self, i, j):
         return self.rules[i,j].to_numpy().tolist()
     def __call__(self, particles):
         self.process(particles)
         return self.trail.px.rgba
 
-def main():
-    init()
-    particles = Particles(x, y, n, species)
-    pixels = Pixels(x,y)
-    physarum = Physarum(x, y, species)
+def main(**kwargs):
+    o = init(**kwargs)
+    particles = Particles(o.x, o.y, o.n, o.species)
+    pixels = Pixels(o.x,o.y)
+    physarum = Physarum(o.x, o.y, o.species)
 
     def reset():
         particles.reset()
         pixels.reset()
         physarum.reset()
-    update = Updater(reset, fps*4)
+    update = Updater(reset, o.fps*4)
 
     def _():
         update()
