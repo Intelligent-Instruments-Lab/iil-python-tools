@@ -70,3 +70,27 @@ class Vera:
             self._rules[i,j] = self._rules_struct(rules[i*4+j+0])
 
 
+# class MYVERA:
+#     TEST_MIN: 0.2
+
+# @ti.dataclass
+# class MyVeraRules:
+#     test: ti.f32
+
+# @ti.data_oriented # inherited?
+# class MyVera(Vera):
+#     def __init__(self,
+#                  x: ti.i32,
+#                  y: ti.i32,
+#                  species: ti.i32,
+#                  rules = None) -> None:
+#         super().__init__(x, y, species, rules)
+#     @ti.kernel
+#     def init(self):
+#         pass
+#     @ti.kernel
+#     def step(self, field: ti.template()):
+#         for i, j in ti.ndrange(field.shape[0], field.shape[0]):
+#             p1 = field[i]
+#             p2 = field[j]
+#             pass

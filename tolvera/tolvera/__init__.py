@@ -24,4 +24,3 @@ class Tolvera:
         pass
     def render(self, func=None, **kwargs):
         render(func, self.px, **kwargs)
-

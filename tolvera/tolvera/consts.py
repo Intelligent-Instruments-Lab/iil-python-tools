@@ -4,17 +4,26 @@
 
 import taichi as ti
 
-class SPECIES:
-    SIZE_MIN        = 2.5
-    SIZE_SCALE      = 2.5
-    SPEED_MIN       = 0.1
-    SPEED_SCALE     = 1.0
-    MAX_SPEED_MIN   = 1.0
-    MAX_SPEED_SCALE = 3.0
-    MASS_MIN        = 1.0
-    MASS_SCALE      = 5.0
-    DECAY_MIN       = 0.9
-    DECAY_SCALE     = 0.099
+@ti.dataclass
+class _SPECIES:
+    SIZE_MIN:        ti.f32
+    SIZE_SCALE:      ti.f32
+    MAX_SPEED_MIN:   ti.f32
+    MAX_SPEED_SCALE: ti.f32
+    MASS_MIN:        ti.f32
+    MASS_SCALE:      ti.f32
+    DECAY_MIN:       ti.f32
+    DECAY_SCALE:     ti.f32
+
+SPECIES = _SPECIES(
+    SIZE_MIN=2.5,
+    SIZE_SCALE=2.5,
+    MAX_SPEED_MIN=1.0,
+    MAX_SPEED_SCALE=3.0,
+    MASS_MIN=1.0,
+    MASS_SCALE=5.0,
+    DECAY_MIN=0.9,
+    DECAY_SCALE=0.099)
 
 class VERA:
     TEST = 0.1

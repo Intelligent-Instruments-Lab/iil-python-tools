@@ -2,7 +2,7 @@
 TODO: color palette
 TODO: global speed scalar
 TODO: walls
-    default behaviour in particles
+    move default behaviour to Vera base class
     default wrap vs avoid flags per wall
     then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
@@ -10,34 +10,25 @@ FIXME: Fix tmp_pos / tmp_vel
 '''
 
 import taichi as ti
-import numpy as np
+from .utils import Options
+from .species import Species
+from .pixels import Pixels
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
 vec3 = ti.math.vec3
 vec4 = ti.math.vec4
 
+# Physical properties and attributes of a particle
 @ti.dataclass
 class Particle:
-    # g:    vec1
-    # rgb:  vec3
-    rgba: vec4
-    pos:  vec2
-    vel:  vec2
-    ang:  ti.f32
-    # acc:  vec2
-    mass:      ti.f32
-    size:      ti.f32
-    speed:     ti.f32
-    max_speed: ti.f32
-    active:    ti.f32
-    species:   ti.i32
-    decay:     ti.f32
-    inertia:   ti.f32
-    nearby:    ti.i32 # boids/NN
-    left:      ti.f32 # physarum/sense
-    centre:    ti.f32 # physarum/sense
-    right:     ti.f32 # physarum/sense
+    species: ti.i32
+    active:  ti.f32
+    pos:     vec2
+    vel:     vec2
+    mass:    ti.f32
+    size:    ti.f32
+    speed:   ti.f32
     @ti.func
     def dist(self, other):
         # FIXME: wrap around walls
@@ -52,51 +43,36 @@ class Particle:
 @ti.data_oriented
 class Particles:
     def __init__(self,
-                 x: ti.i32, y: ti.i32,
-                 max_n: ti.i32,
-                 species: ti.i32 = 1,
-                 substep: ti.i32 = 1):
-        self.max_n = max_n
-        self.species_n = species
-        self.species_c = ti.Vector.field(4, ti.f32, shape=(species))
-        self.particles_per_species = max_n // species
-        self.species_consts = {
-            'size_min': 2,
-            'size_scale': 2,
-            'speed_min': 0.1,
-            'speed_scale': 1.0,
-            'max_speed_min': 1.0,
-            'max_speed_scale': 3.0,
-            'mass_min': 1.0,
-            'mass_scale': 5.0,
-            'decay_min': 0.9,
-            'decay_scale': 0.099,
-        }
-        self.x = x
-        self.y = y
+                 options: Options,
+                 species: Species,
+                 pixels: Pixels):
+        self.o = options
+        self.s = species
+        self.px = pixels
+        self.x = self.o.x
+        self.y = self.o.y
+        self.substep = self.o.substep
+        self.field = Particle.field(shape=(self.o.n))
         # Wall behaviours: top, right, bottom, left (clockwise, a la CSS margin)
         self.wall_margins = ti.field(ti.f32, shape=(4))
         self.turn_factors = ti.field(ti.f32, shape=(4))
         self.wall_margins.fill(50.0)
         self.turn_factors.fill(0.8)
-        self.field = Particle.field(shape=(self.max_n))
-        self.substep = substep
-        self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
-        self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(species)) # FIXME: hack
-        self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(max_n)) # FIXME: hack
-        self.tmp_vel_species = ti.Vector.field(2, ti.f32, shape=(species)) # FIXME: hack
+        self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(self.o.n)) # FIXME: hack
+        self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
+        self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(self.o.n)) # FIXME: hack
+        self.tmp_vel_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
         self.tmp_vel_stats = ti.Vector.field(1, ti.f32, shape=(7)) # FIXME: hack
-        self.active_indexes = ti.field(ti.i32, shape=(self.max_n))
+        self.active_indexes = ti.field(ti.i32, shape=(self.o.n))
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
     @ti.kernel
     def init(self):
         self.randomise()
-        self.speciate()
     @ti.kernel
     def update_active(self):
         j = 0
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             p = self.field[i]
             if p.active > 0.0:
                 self.active_indexes[j] = i
@@ -104,35 +80,20 @@ class Particles:
         self.active_count[None] = j
     @ti.func
     def randomise(self):
-        for i in range(self.max_n):
-            self.field[i] = Particle(
-                pos=[self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)],
-                vel=[2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)],
-                ang=2.0 * ti.math.pi * ti.random(ti.f32),
-                active=1)
-    @ti.func
-    def speciate(self):
-        for i in range(self.species_n):
-            self.species_c[i] = [ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
-        c = self.species_consts
-        size      = c['size_min']      + c['size_scale']      * ti.random(ti.f32)
-        speed     = c['speed_min']     + c['speed_scale']     * ti.random(ti.f32)
-        max_speed = c['max_speed_min'] + c['max_speed_scale'] * ti.random(ti.f32)
-        mass      = c['mass_min']      + c['mass_scale']      * ti.random(ti.f32)
-        decay     = c['decay_min']     + c['decay_scale']     * ti.random(ti.f32)
-        for i in range(self.max_n):
-            s = i % self.species_n
-            self.field[i].species   = s
-            self.field[i].rgba      = self.species_c[s]
-            self.field[i].size      = size
-            self.field[i].speed     = speed
-            self.field[i].max_speed = max_speed
-            self.field[i].mass      = mass
-            self.field[i].decay     = decay
+        for i in range(self.o.n):
+            species = self.s.field[i % self.o.species].id
+            active  = 1.0
+            pos     = [self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)]
+            vel     = [2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)]
+            # TODO: init based on self.s.consts
+            mass    = 1.0
+            size    = 2.0
+            speed   = 1.0
+            self.field[i] = Particle(species=species, pos=pos, vel=vel, active=active, mass=mass, size=size, speed=speed)
     @ti.kernel
     def move(self):
         # TOOD: collisions
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             p = self.field[i]
             if p.active > 0.0:
                 self.wall_repel(i)
@@ -188,8 +149,9 @@ class Particles:
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
-        if p.vel.norm() > p.max_speed:
-            self.field[i].vel = p.vel.normalized() * p.max_speed
+        ps = self.s.field[p.species]
+        if p.vel.norm() > ps.max_speed:
+            self.field[i].vel = p.vel.normalized() * ps.max_speed
     @ti.kernel
     def activity_decay(self):
         for i in range(self.active_count[None]):
@@ -204,17 +166,18 @@ class Particles:
             self.step()
             self.move()
     @ti.kernel
-    def render(self, pixels: ti.template()):
+    def render(self):
         # FIXME: low activity particles rendering...
         # TODO: support g, rgb, rgba
         # TODO: render shapes
         # l = len(px[0,0])
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             p = self.field[i]
+            ps = self.s.field[p.species]
             if p.active > 0.0:
                 x = ti.cast(p.pos[0], ti.i32)
                 y = ti.cast(p.pos[1], ti.i32)
-                pixels.circle(x, y, p.size, p.rgba * p.active)
+                self.px.circle(x, y, p.size, ps.rgba * p.active)
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
@@ -252,7 +215,7 @@ class Particles:
     @ti.kernel
     def set_species(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32, size: ti.f32, speed: ti.f32, max_speed: ti.f32):
         c = self.species_consts
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             if self.field[j].species == i:
                 self.field[j].rgba = [r,g,b,1]
                 self.field[j].size = c['size_min'] + c['size_scale'] * size
@@ -261,7 +224,7 @@ class Particles:
     @ti.kernel
     def set_all_species(self, r: ti.template(), g: ti.template(), b: ti.template(), size: ti.template(), speed: ti.template(), max_speed: ti.template()):
         c = self.species_consts
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             s = i % self.species_n
             self.field[i].rgba = [r[s],g[s],b[s],1]
             self.field[i].size = c['size_min'] + c['size_scale'] * size[s]
@@ -270,7 +233,7 @@ class Particles:
     @ti.kernel
     def set_all_species_from_list(self, species: ti.types.ndarray()):
         c = self.species_consts
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             s = i % self.species_n
             self.field[i].rgba = [species[s+0],species[s+1],species[s+2],1]
             self.field[i].size = c['size_min'] + c['size_scale'] * species[s+3]
@@ -279,19 +242,19 @@ class Particles:
     @ti.kernel
     def set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
         c = self.species_consts
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             if self.field[j].species == i:
                 self.field[j].speed = c['speed_min'] + c['speed_scale'] * speed
                 self.field[j].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed
     @ti.kernel
     def set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             if self.field[j].species == i:
                 self.field[j].rgba = [r,g,b,1]
     @ti.kernel
     def set_species_size(self, i: ti.i32, size: ti.f32):
         c = self.species_consts
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             if self.field[j].species == i:
                 self.field[j].size = c['size_min'] + c['size_scale'] * size
     @ti.kernel
@@ -313,9 +276,8 @@ class Particles:
         self.field[i].pos = [x, y]
     def set_vel(self, i, x, y):
         self.field[i].vel = [x, y]
-    def set_speed(self, i, s, m):
+    def set_speed(self, i, s):
         self.field[i].speed = s
-        self.field[i].max_speed = m
     def set_size(self, i, s):
         self.field[i].size = s
     def set_wall_repel(self, m, t):
@@ -344,7 +306,7 @@ class Particles:
         #     p = self.field[idx]
         #     self.tmp_pos[i] = p.pos / [self.x, self.y]
         # TODO: Only send active particle positions...? Or inactive=-1?
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             p = self.field[i]
             if p.active > 0.0:
                 self.tmp_pos[i] = p.pos / [self.x, self.y]
@@ -352,7 +314,7 @@ class Particles:
             #     self.tmp_pos[i] = [0.0,0.0] # ???
     @ti.kernel
     def _get_vel_all(self):
-        for i in range(self.max_n):
+        for i in range(self.o.n):
             p = self.field[i]
             if p.active > 0.0:
                 self.tmp_vel[i] = p.vel
@@ -364,7 +326,7 @@ class Particles:
         return self.tmp_pos_species.to_numpy().tolist()
     @ti.kernel
     def _get_pos_species(self, i: ti.i32):
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             p = self.field[i]
             if self.field[j].species == i and p.active > 0.0:
                 self.tmp_pos_species[j] = p.pos / [self.x, self.y]
@@ -376,7 +338,7 @@ class Particles:
         return self.tmp_vel_species.to_numpy().tolist()
     @ti.kernel
     def _get_vel_species(self, i: ti.i32):
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             p = self.field[i]
             if self.field[j].species == i and p.active > 0.0:
                 self.tmp_vel_species[j] = p.vel
@@ -396,7 +358,7 @@ class Particles:
         relative_velocity = ti.Vector([0.0,0.0])
         angular_momentum = ti.Vector([0.0])
         kinetic_energy = ti.Vector([0.0])
-        for j in range(self.max_n):
+        for j in range(self.o.n):
             if self.field[j].species == i:
                 v = self.field[j].vel
                 p = self.field[j].pos
@@ -405,8 +367,8 @@ class Particles:
                 relative_velocity       += v# - centre_of_mass_velocity
                 angular_momentum        += m * ti.math.cross(v,p)
                 kinetic_energy          += 0.5 * m * v.norm_sqr()
-        centre_of_mass_velocity = centre_of_mass_velocity / self.particles_per_species
-        relative_velocity = (relative_velocity - centre_of_mass_velocity * self.particles_per_species) / self.particles_per_species
+        centre_of_mass_velocity = centre_of_mass_velocity / self.o.particles_per_species
+        relative_velocity = (relative_velocity - centre_of_mass_velocity * self.o.particles_per_species) / self.o.particles_per_species
         temperature = 2.0 * kinetic_energy / (self.particles_per_species * 1.380649e-23)
         self.tmp_vel_stats[0] = centre_of_mass_velocity[0]
         self.tmp_vel_stats[1] = centre_of_mass_velocity[1]
@@ -417,7 +379,6 @@ class Particles:
         self.tmp_vel_stats[6] = temperature[0]
     def reset(self):
         self.init()
-    def __call__(self, pixels=None):
+    def __call__(self):
         self.process()
-        if pixels is not None:
-            self.render(pixels)
+        self.render()

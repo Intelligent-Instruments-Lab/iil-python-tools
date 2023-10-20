@@ -6,6 +6,8 @@ TODO: add algobets-style shape analysis (to CV?)
 '''
 
 import taichi as ti
+from .utils import Options
+from .species import Species
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
@@ -66,19 +68,19 @@ class Polygon:
 @ti.data_oriented
 class Pixels:
     def __init__(self,
-                 x: ti.i32,
-                 y: ti.i32,
+                 options: Options,
+                 species: Species,
                  mode='rgba',
-                 evaporate=0.99,
-                 fps=120,
                  polygon_mode='crossing'):
-        self.x = x
-        self.y = y
-        self.fps = fps
-        self.px = Pixel.field(shape=(x,y))
+        self.o = options
+        self.s = species
+        self.x = self.o.x
+        self.y = self.o.y
+        self.fps = self.o.fps
+        self.px = Pixel.field(shape=(self.x, self.y))
         self.mode = mode
         self.evaporate = ti.field(ti.f32, shape=())
-        self.evaporate[None] = evaporate
+        self.evaporate[None] = self.o.evaporate
         self._polygon_mode = polygon_mode
     def set(self, px):
         self.px.rgba = px.rgba
