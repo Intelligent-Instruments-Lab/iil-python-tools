@@ -10,6 +10,43 @@ TODO: should be a particle field itself? to use move functions etc
 import taichi as ti
 from tolvera.particles import Particle, Particles
 
+
+'''
+@ti.kernel
+def attract(tv: ti.template(), pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
+    for i in range(tv.o.n):
+        p = tv.p.field[i]
+        if p.active == 0: continue
+        target_distance = (pos-p.pos).norm()
+        if target_distance < radius:
+            factor = (radius-target_distance)/radius
+            tv.p.field[i].vel += (pos-p.pos).normalized() * mass * factor
+attract_kernel = attract
+
+@ti.kernel
+def attract_species(tv: ti.template(), pos: ti.math.vec2, mass: ti.f32, radius: ti.f32, species: ti.i32):
+    for i in range(tv.o.n):
+        p = tv.p.field[i]
+        if p.active == 0: continue
+        if p.species != species: continue
+        target_distance = (pos-p.pos).norm()
+        if target_distance < radius:
+            factor = (radius-target_distance)/radius
+            tv.p.field[i].vel += (pos-p.pos).normalized() * mass * factor
+attract_species_kernel = attract_species
+
+@ti.kernel
+def repel(tv: ti.template(), pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
+   for i in range(tv.o.n):
+        p = tv.p.field[i]
+        if p.active == 0: continue
+        target_distance = (pos-p.pos).norm()
+        if target_distance < radius:
+            factor = (target_distance-radius)/radius
+            tv.p.field[i].vel += (pos-p.pos).normalized() * mass * factor
+repel_kernel = repel
+'''
+
 @ti.dataclass
 class Attractor:
     p: Particle

@@ -1,10 +1,12 @@
 '''
 TODO: Naming: State? Options? Config? Settings?
+TODO: async runner based on sardine @swim?
 '''
 
 import taichi as ti
 import time
 from iipyper.state import _lock
+from sys import exit
 
 class Options:
     def __init__(self, **kwargs):
@@ -82,7 +84,7 @@ def init(**kwargs):
         return o
     else:
         print("[Tölvera] Error: failed to initialise")
-        exit()
+        exit(0)
 
 def render(f=None, px=None, **kwargs):
     try: _run(f, px, **kwargs)
@@ -103,3 +105,6 @@ def cleanup(f=None):
         return decorator
     else: #bare decorator case; return decorated function
         return decorator(f)
+
+def get_field_attr(field: ti.field, attr: str, index: tuple):
+    return field.field_dict[attr][index]

@@ -2,7 +2,7 @@
 TODO: color palette
 TODO: global speed scalar
 TODO: walls
-    move default behaviour to Vera base class
+    move default behaviour to Vera base class?
     default wrap vs avoid flags per wall
     then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
@@ -31,7 +31,6 @@ class Particle:
     speed:   ti.f32
     @ti.func
     def dist(self, other):
-        # FIXME: wrap around walls
         return self.pos - other.pos
     @ti.func
     def dist_norm(self, other):
@@ -39,6 +38,24 @@ class Particle:
     @ti.func
     def dist_normalized(self, other):
         return self.dist(self.pos - other.pos).normalized()
+    @ti.func
+    def dist_wrap(self, other, x, y):
+        # TODO: test
+        dx = self.pos[0] - other.pos[0]
+        dy = self.pos[1] - other.pos[1]
+        dx = min(dx, x - abs(dx)) if abs(dx) > y / 2 else dx
+        dy = min(dy, x - abs(dy)) if abs(dy) > y / 2 else dy
+        return ti.Vector([dx, dy])
+    @ti.func
+    def randomise(self, x, y):
+        self.randomise_pos(x, y)
+        self.randomise_vel()
+    @ti.func
+    def randomise_pos(self, x, y):
+        self.pos = [x*ti.random(ti.f32),y*ti.random(ti.f32)]
+    @ti.func
+    def randomise_vel(self):
+        self.vel = [2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)]
 
 @ti.data_oriented
 class Particles:
@@ -66,7 +83,6 @@ class Particles:
         self.active_indexes = ti.field(ti.i32, shape=(self.o.n))
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
-    @ti.kernel
     def init(self):
         self.randomise()
     @ti.kernel
@@ -78,7 +94,7 @@ class Particles:
                 self.active_indexes[j] = i
                 j += 1
         self.active_count[None] = j
-    @ti.func
+    @ti.kernel
     def randomise(self):
         for i in range(self.o.n):
             species = self.s.field[i % self.o.species].id

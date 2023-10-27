@@ -1,5 +1,5 @@
 '''
-TODO: prototype
+TODO: Why do particle positions change when (re-)randomising species?
 '''
 
 import taichi as ti
@@ -34,14 +34,18 @@ class Species:
         self.consts = SPECIES_CONSTS
         self.init()
     def init(self):
+        self.assign_species()
         self.randomise()
+    @ti.kernel
+    def assign_species(self):
+        for i in range(self.o.n):
+            self.field[i].id = i % self.o.species
     @ti.kernel
     def randomise(self):
         for i in range(self.o.species):
             self.field[i].rgba = [ti.random(ti.f32),ti.random(ti.f32),ti.random(ti.f32),1]
         c = self.consts
         for i in range(self.o.n):
-            self.field[i].id        = i % self.o.species
             self.field[i].active    = 1.0
             self.field[i].max_size  = c.SIZE_MIN      + c.SIZE_SCALE      * ti.random(ti.f32)
             self.field[i].max_speed = c.MAX_SPEED_MIN + c.MAX_SPEED_SCALE * ti.random(ti.f32)
