@@ -30,14 +30,14 @@ class Flock:
                 r = self.rules.field[p1.species, p2.species]
                 dis = p1.dist(p2)
                 if dis.norm() < r.radius:
-                    nearby   += 1
                     separate += dis
                     align    += p2.vel
                     cohere   += p2.pos
+                    nearby   += 1
             if nearby > 0:
-                separate = separate/nearby * p1.active * r.separate
-                align    = align/nearby    * p1.active * r.align
-                cohere   = (cohere/nearby - p1.pos).normalized() * p1.active * r.cohere
-                field[i].vel  += (separate+align+cohere).normalized()
+                separate = separate/nearby        * p1.active * r.separate
+                align    = align/nearby           * p1.active * r.align
+                cohere   = (cohere/nearby-p1.pos) * p1.active * r.cohere
+                field[i].vel += (separate+align+cohere).normalized()
     def __call__(self, field: ti.template()):
         self.step(field)
