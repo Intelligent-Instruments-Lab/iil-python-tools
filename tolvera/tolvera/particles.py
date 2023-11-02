@@ -1,4 +1,5 @@
 '''
+TODO: move rendering outside of particles/make it optional/overrideable
 TODO: color palette
 TODO: global speed scalar
 TODO: walls
@@ -11,8 +12,8 @@ FIXME: Fix tmp_pos / tmp_vel
 
 import taichi as ti
 from .utils import Options
-from .species import Species
 from .pixels import Pixels
+from .rules import Rules
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
@@ -61,10 +62,19 @@ class Particle:
 class Particles:
     def __init__(self,
                  options: Options,
-                 species: Species,
                  pixels: Pixels):
         self.o = options
-        self.s = species
+        # self.s = species
+        self.rules = Rules({
+            'size':   (3., 8.),
+            'speed':  (0., 5.),
+            'mass':   (0., 1.),
+            'decay':  (.9, .999),
+            'r':      (0., 1.),
+            'b':      (0., 1.),
+            'g':      (0., 1.),
+            'a':      (1., 1.),
+        }, self.o.species)
         self.px = pixels
         self.x = self.o.x
         self.y = self.o.y
@@ -84,6 +94,7 @@ class Particles:
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
     def init(self):
+        self.assign_species()
         self.randomise()
     @ti.kernel
     def update_active(self):
@@ -95,9 +106,13 @@ class Particles:
                 j += 1
         self.active_count[None] = j
     @ti.kernel
+    def assign_species(self):
+        for i in range(self.o.n):
+            self.field[i].species = i % self.o.species
+    @ti.kernel
     def randomise(self):
         for i in range(self.o.n):
-            species = self.s.field[i % self.o.species].id
+            species = self.field[i].species
             active  = 1.0
             pos     = [self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)]
             vel     = [2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)]
@@ -165,9 +180,9 @@ class Particles:
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
-        ps = self.s.field[p.species]
-        if p.vel.norm() > ps.max_speed:
-            self.field[i].vel = p.vel.normalized() * ps.max_speed
+        r = self.rules.field[p.species, p.species] # diagonal index
+        if p.vel.norm() > r.speed:
+            self.field[i].vel = p.vel.normalized() * r.speed
     @ti.kernel
     def activity_decay(self):
         for i in range(self.active_count[None]):
@@ -189,72 +204,18 @@ class Particles:
         # l = len(px[0,0])
         for i in range(self.o.n):
             p = self.field[i]
-            ps = self.s.field[p.species]
+            r = self.rules.field[p.species, p.species] # diagonal index
             if p.active > 0.0:
                 x = ti.cast(p.pos[0], ti.i32)
                 y = ti.cast(p.pos[1], ti.i32)
-                self.px.circle(x, y, p.size, ps.rgba * p.active)
+                rgba = ti.Vector([r.r, r.g, r.b, r.a])
+                self.px.circle(x, y, p.size, rgba * p.active)
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
         #     x = ti.cast(p.pos[0], ti.i32)
         #     y = ti.cast(p.pos[1], ti.i32)
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
-    @ti.kernel
-    def seeks(self, attractors: ti.template()):
-        for i in range(attractors.n):
-            a = attractors.field[i]
-            self._seek(a.p.pos, a.p.mass, a.radius)
-    @ti.kernel
-    def seek(self, attractor: ti.template()): # attractor: Attractor
-        self._seek(attractor.p.pos, attractor.p.mass, attractor.radius)
-    @ti.func
-    def _seek(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
-        for i in range(self.field.shape[0]):
-            if self.field[i].active > 0.0:
-                target_distance = (pos-self.field[i].pos).norm()
-                if target_distance < radius:
-                    factor = (radius-target_distance)/radius
-                    self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
-    def avoids(self, attractors):
-        [self.avoid(a) for a in attractors]
-    def avoid(self, attractor):
-        self._avoid(attractor.p.pos, attractor.p.mass, attractor.radius)
-    @ti.kernel
-    def _avoid(self, pos: ti.math.vec2, mass: ti.f32, radius: ti.f32):
-        for i in range(self.field.shape[0]):
-            if self.field[i].active > 0.0:
-                target_distance = (pos-self.field[i].pos).norm()
-                if target_distance < radius:
-                    factor = (target_distance-radius)/radius
-                    self.field[i].vel += (pos-self.field[i].pos).normalized() * mass * factor
-    @ti.kernel
-    def set_species(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32, size: ti.f32, speed: ti.f32, max_speed: ti.f32):
-        c = self.species_consts
-        for j in range(self.o.n):
-            if self.field[j].species == i:
-                self.field[j].rgba = [r,g,b,1]
-                self.field[j].size = c['size_min'] + c['size_scale'] * size
-                self.field[j].speed = c['speed_min'] + c['speed_scale'] * speed
-                self.field[j].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed
-    @ti.kernel
-    def set_all_species(self, r: ti.template(), g: ti.template(), b: ti.template(), size: ti.template(), speed: ti.template(), max_speed: ti.template()):
-        c = self.species_consts
-        for i in range(self.o.n):
-            s = i % self.species_n
-            self.field[i].rgba = [r[s],g[s],b[s],1]
-            self.field[i].size = c['size_min'] + c['size_scale'] * size[s]
-            self.field[i].speed = c['speed_min'] + c['speed_scale'] * speed[s]
-            self.field[i].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed[s]
-    @ti.kernel
-    def set_all_species_from_list(self, species: ti.types.ndarray()):
-        c = self.species_consts
-        for i in range(self.o.n):
-            s = i % self.species_n
-            self.field[i].rgba = [species[s+0],species[s+1],species[s+2],1]
-            self.field[i].size = c['size_min'] + c['size_scale'] * species[s+3]
-            self.field[i].speed = c['speed_min'] + c['speed_scale'] * species[s+4]
-            self.field[i].max_speed = c['max_speed_min'] + c['max_speed_scale'] * species[s+5]
     @ti.kernel
     def set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
         c = self.species_consts

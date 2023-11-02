@@ -1,6 +1,9 @@
 '''
+TODO: 1D, 2D, ND versions of rules?
 TODO: add setters for args, kwargs, list
 TODO: should setters be normalised and scaled via self.dict?
+TODO: randomise_by_key() (randomise individual rules)
+TODO: types support for more than just ti.f32, e.g ti.math.vec2?
 TODO: should setters be @ti.func struct methods? https://docs.taichi-lang.org/docs/dataclass#notes
 TODO: add endpoints to OSCMap when passed
 TODO: add IML mapping?
@@ -15,13 +18,13 @@ from .utils import get_field_attr
 
 @ti.data_oriented
 class Rules:
-    def __init__(self, rules, species):
+    def __init__(self, rules: dict[str, tuple[ti.f32, ti.f32]], species: int):
         self.dict = rules
         self.species = species
         self.len = len(rules)
         self.len_ndarr_all = len(rules)*self.species*self.species
         self.len_ndarr_species = len(rules)*self.species
-        self.struct = ti.types.struct(**{k: v['type'] for k,v in self.dict.items()})
+        self.struct = ti.types.struct(**{k: ti.f32 for k,v in self.dict.items()})
         self.field = self.struct.field(shape=(self.species, self.species))
         self.init()
 
@@ -31,7 +34,7 @@ class Rules:
     @ti.kernel
     def randomise(self):
         for i, j in ti.ndrange(self.species, self.species):
-            rules = {k: v['min'] + (v['max'] - v['min']) * ti.random(ti.f32) 
+            rules = {k: v[0] + (v[1] - v[0]) * ti.random(ti.f32)
                      for k, v in self.dict.items()}
             self.field[i, j] = self.struct(**rules)
 

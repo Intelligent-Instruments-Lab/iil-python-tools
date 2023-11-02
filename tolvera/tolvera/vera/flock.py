@@ -6,10 +6,10 @@ class Flock:
     def __init__(self, species):
         self.species = species
         self.rules = Rules({
-            'separate': {'type': ti.f32, 'min': 0., 'max': 1.},
-            'align':    {'type': ti.f32, 'min': 0., 'max': 1.},
-            'cohere':   {'type': ti.f32, 'min': 0., 'max': 1.},
-            'radius':   {'type': ti.f32, 'min': 0., 'max': 300.0}
+            'separate': (0,1.),
+            'align':    (0,1.),
+            'cohere':   (0,1.),
+            'radius':   (0,300.)
         }, self.species)
     def randomise(self):
         self.rules.randomise()
