@@ -1,42 +1,60 @@
 '''
-TODO: Naming: State? Options? Config? Settings?
 TODO: async runner based on sardine @swim?
+TODO: OSC entry point, inside Options?
+TODO: implement reset()
 '''
 
+from typing import Any
 import taichi as ti
+from taichi._lib.core.taichi_python import DataType
 import time
+from iipyper import OSC, OSCMap
 from iipyper.state import _lock
 from sys import exit
 
 class Options:
     def __init__(self, **kwargs):
-        self.reset(**kwargs)
-    
-    def reset(self, **kwargs):
-        self.x             = kwargs.get('x', 1920)
-        self.y             = kwargs.get('y', 1080)
-        self.n             = kwargs.get('n', 1024)
-        self.species       = kwargs.get('species', 4)
-        self.gpu           = kwargs.get('gpu', 'vulkan')
-        self.cpu           = kwargs.get('cpu', None)
-        self.fps           = kwargs.get('fps', 120)
-        self.substep       = kwargs.get('substep', 1)
-        self.evaporate     = kwargs.get('evaporate', 0.95)
-        self.seed          = kwargs.get('seed', int(time.time()))
-        self.name          = kwargs.get('name', 'Tölvera')
-        self.headless      = kwargs.get('headless', False)
-        self.headless_rate = kwargs.get('headless_rate', 1/60)
-        self.host          = kwargs.get('host', "127.0.0.1")
-        self.client        = kwargs.get('client', "127.0.0.1")
-        self.client_name   = kwargs.get('client_name', self.name)
-        self.receive_port  = kwargs.get('receive_port', 5001)
-        self.send_port     = kwargs.get('send_port', 5000)
+        # Tölvera
+        self.x         = kwargs.get('x', 1920)
+        self.y         = kwargs.get('y', 1080)
+        self.n         = kwargs.get('n', 1024)
+        self.species   = kwargs.get('species', 4)
+        self.substep   = kwargs.get('substep', 1)
+        self.evaporate = kwargs.get('evaporate', 0.95)
         # TODO: Redundant, only due to way species are allocated to particles
         self.particles_per_species = self.n // self.species
-        self.window = None
-        self.canvas = None
+        # Taichi
+        self.gpu      = kwargs.get('gpu', 'vulkan')
+        self.cpu      = kwargs.get('cpu', None)
+        self.fps      = kwargs.get('fps', 120)
+        self.seed     = kwargs.get('seed', int(time.time()))
+        self.name     = kwargs.get('name', 'Tölvera')
+        self.headless = kwargs.get('headless', False)
+        # OSC
+        self.osc          = kwargs.get('osc', False)
+        self.host         = kwargs.get('host', "127.0.0.1")
+        self.client       = kwargs.get('client', "127.0.0.1")
+        self.client_name  = kwargs.get('client_name', self.name)
+        self.receive_port = kwargs.get('receive_port', 5001)
+        self.send_port    = kwargs.get('send_port', 5000)
+        # OSCMap
+        self.create_patch   = kwargs.get('create_patch', False)
+        self.patch_type     = kwargs.get('patch_type', "Pd")
+        self.patch_filepath = kwargs.get('patch_filepath', "tolvera_osc")
 
     def init(self):
+        if self.osc: self.init_osc()
+        self.init_ti()
+        self.init_ui()
+        print(f"[Tölvera] Initialised with: {vars(self)}")
+        return True
+    
+    def init_osc(self):
+        self.osc = OSC(self.host, self.receive_port, verbose=True, concurrent=True)
+        self.osc.create_client(self.client_name, self.client, self.send_port)
+        self.osc_map = OSCMap(self.osc, self.client_name, self.patch_type, self.patch_filepath, self.create_patch)
+
+    def init_ti(self):
         if self.cpu:
             ti.init(arch=ti.cpu, random_seed=self.seed)
             self.gpu = None
@@ -50,11 +68,10 @@ class Options:
                 print(f"[Tölvera] Invalid GPU: {self.gpu}")
                 return False
             print(f"[Tölvera] Running on {self.gpu}")
-
+    
+    def init_ui(self):
         self.window = ti.ui.Window(self.name, (self.x, self.y), fps_limit=self.fps, show_window=not self.headless)
         self.canvas = self.window.get_canvas()
-        print(f"[Tölvera] Initialised with: {vars(self)}")
-        return True
 
 options = Options()
 
@@ -106,5 +123,24 @@ def cleanup(f=None):
     else: #bare decorator case; return decorated function
         return decorator(f)
 
-def get_field_attr(field: ti.field, attr: str, index: tuple):
+def ti_field_getattr(field: ti.field, index: tuple, attr: str):
     return field.field_dict[attr][index]
+
+# @ti.data_oriented
+class CONSTS:
+    '''
+    Dict of CONSTS that can be used in Taichi scope
+    '''
+    def __init__(self, dict: dict[str, (DataType, Any)]):
+        self.struct = ti.types.struct(**{k: v[0] for k, v in dict.items()})
+        self.consts = self.struct(**{k: v[1] for k, v in dict.items()})
+    def __getattr__(self, name):
+        try:
+            return self.consts[name]
+        except:
+            raise AttributeError(f"CONSTS has no attribute {name}")
+    def __getitem__(self, name):
+        try:
+            return self.consts[name]
+        except:
+            raise AttributeError(f"CONSTS has no attribute {name}")

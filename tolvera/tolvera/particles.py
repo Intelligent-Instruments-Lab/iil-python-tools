@@ -1,7 +1,7 @@
 '''
 TODO: move rendering outside of particles/make it optional/overrideable
 TODO: color palette
-TODO: global speed scalar
+TODO: global speed scalar inside self.o
 TODO: walls
     move default behaviour to Vera base class?
     default wrap vs avoid flags per wall
@@ -13,7 +13,7 @@ FIXME: Fix tmp_pos / tmp_vel
 import taichi as ti
 from .utils import Options
 from .pixels import Pixels
-from .rules import Rules
+from .state import State
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
@@ -64,15 +64,14 @@ class Particles:
                  options: Options,
                  pixels: Pixels):
         self.o = options
-        # self.s = species
-        self.rules = Rules({
+        self.state = State(self.o, {
             'size':   (3., 8.),
             'speed':  (0., 5.),
             'mass':   (0., 1.),
             'decay':  (.9, .999),
             'r':      (0., 1.),
-            'b':      (0., 1.),
             'g':      (0., 1.),
+            'b':      (0., 1.),
             'a':      (1., 1.),
         }, self.o.species)
         self.px = pixels
@@ -80,16 +79,19 @@ class Particles:
         self.y = self.o.y
         self.substep = self.o.substep
         self.field = Particle.field(shape=(self.o.n))
+        # TODO: These should be possible with State
         # Wall behaviours: top, right, bottom, left (clockwise, a la CSS margin)
         self.wall_margins = ti.field(ti.f32, shape=(4))
         self.turn_factors = ti.field(ti.f32, shape=(4))
         self.wall_margins.fill(50.0)
         self.turn_factors.fill(0.8)
+        # TODO: These should be possible with State
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(self.o.n)) # FIXME: hack
         self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
         self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(self.o.n)) # FIXME: hack
         self.tmp_vel_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
         self.tmp_vel_stats = ti.Vector.field(1, ti.f32, shape=(7)) # FIXME: hack
+        # TODO: These should be possible with State
         self.active_indexes = ti.field(ti.i32, shape=(self.o.n))
         self.active_count = ti.field(ti.i32, shape=())
         self.init()
@@ -180,9 +182,9 @@ class Particles:
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
-        r = self.rules.field[p.species, p.species] # diagonal index
-        if p.vel.norm() > r.speed:
-            self.field[i].vel = p.vel.normalized() * r.speed
+        s = self.state.field[p.species, 0]
+        if p.vel.norm() > s.speed:
+            self.field[i].vel = p.vel.normalized() * s.speed
     @ti.kernel
     def activity_decay(self):
         for i in range(self.active_count[None]):
@@ -204,11 +206,11 @@ class Particles:
         # l = len(px[0,0])
         for i in range(self.o.n):
             p = self.field[i]
-            r = self.rules.field[p.species, p.species] # diagonal index
+            s = self.state.field[p.species, 0]
             if p.active > 0.0:
                 x = ti.cast(p.pos[0], ti.i32)
                 y = ti.cast(p.pos[1], ti.i32)
-                rgba = ti.Vector([r.r, r.g, r.b, r.a])
+                rgba = ti.Vector([s.r, s.g, s.b, s.a])
                 self.px.circle(x, y, p.size, rgba * p.active)
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]

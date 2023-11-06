@@ -76,8 +76,6 @@ class Pixels:
         self.fps = self.o.fps
         self.px = Pixel.field(shape=(self.x, self.y))
         self.mode = mode
-        self.evaporate = ti.field(ti.f32, shape=())
-        self.evaporate[None] = self.o.evaporate
         self._polygon_mode = polygon_mode
     def set(self, px):
         self.px.rgba = px.rgba
@@ -87,16 +85,15 @@ class Pixels:
     def clear(self):
         self.px.rgba.fill(0)
     @ti.kernel
-    def diffuse(self):
+    def diffuse(self, evaporate: ti.f32):
         for i, j in ti.ndrange(self.x, self.y):
             d = ti.Vector([0.0,0.0,0.0,0.0])
-            # TODO: parallelise ?
             for di in ti.static(range(-1, 2)):
                 for dj in ti.static(range(-1, 2)):
                     dx = (i + di) % self.x
                     dy = (j + dj) % self.y
                     d += self.px.rgba[dx, dy]
-            d *= self.evaporate[None]/9.0
+            d *= evaporate/9.0
             self.px.rgba[i,j] = d
     @ti.func
     def background(self,r,g,b):
@@ -231,9 +228,9 @@ class Pixels:
         for i, j in ti.ndrange(self.x, self.y):
             self.px.rgba_inv[i,j] = self.px.rgba[i,self.y-1-j]
     @ti.kernel
-    def decay(self):
+    def decay(self, evaporate: ti.f32):
         for i, j in ti.ndrange(self.x, self.y):
-            self.px.rgba[i,j] *= self.evaporate[None]
+            self.px.rgba[i,j] *= evaporate
     @ti.kernel
     def update(self):
         pass

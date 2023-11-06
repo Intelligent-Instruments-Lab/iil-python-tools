@@ -1,4 +1,5 @@
 '''
+TODO: why is mass so sensitive?
 TODO: render()
 TODO: more neighbour funcs/stats
 TODO: move particles.seek|avoid here? (attract|repel)

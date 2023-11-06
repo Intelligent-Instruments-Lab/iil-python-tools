@@ -1,3 +1,7 @@
+'''
+TODO: segfaults, how do Taichi run their tests?
+'''
+
 import pytest
 import taichi as ti
 import numpy as np
@@ -7,7 +11,7 @@ from tolvera import Rules
 
 @pytest.fixture
 def tolvera_setup():
-    return Tolvera(n=1024, species=2, evaporate=0.99)
+    return Tolvera(n=1024, species=2, evaporate=0.99, headless=True)
 
 # Test cases
 def test_set_kwargs(tolvera_setup):
