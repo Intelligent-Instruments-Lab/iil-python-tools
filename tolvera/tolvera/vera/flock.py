@@ -14,15 +14,15 @@ class Flock:
             # 'separate': (0., 1.), # ti.math.vec2
             # 'align':    (0., 1.), # ti.math.vec2
             # 'cohere':   (0., 1.), # ti.math.vec2
-            'nearby':   (0., self.o.n-1),   # ti.i32
+            'nearby':   (0., self.o.p-1),   # ti.i32
             'dist':     (0., self.o.x*2), # ti.f32
-        }, self.o.n, randomise=False)
+        }, self.o.p, randomise=False)
         self.species = State(self.o, {
             'separate': (.01, 1.),
             'align':    (.01, 1.),
             'cohere':   (.01, 1.),
             'radius':   (.01, 300.)
-        }, self.o.species)
+        }, self.o.s)
     def randomise(self):
         self.species.randomise()
     @ti.kernel

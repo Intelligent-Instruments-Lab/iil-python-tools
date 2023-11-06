@@ -5,7 +5,7 @@ from iipyper import run
 
 def main(**kwargs):
     o = init(**kwargs)
-    particles = Particles(o.x,o.y,o.n,o.species)
+    particles = Particles(o.x,o.y,o.particles,o.species)
     pixels = Pixels(o.x,o.y)
 
     def _():

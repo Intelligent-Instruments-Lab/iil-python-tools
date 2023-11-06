@@ -2,6 +2,7 @@
 TODO: async runner based on sardine @swim?
 TODO: OSC entry point, inside Options?
 TODO: implement reset()
+TODO: particles_per_species only due to way species are allocated to particles
 '''
 
 from typing import Any
@@ -17,12 +18,13 @@ class Options:
         # Tölvera
         self.x         = kwargs.get('x', 1920)
         self.y         = kwargs.get('y', 1080)
-        self.n         = kwargs.get('n', 1024)
+        self.particles = kwargs.get('particles', 1024)
         self.species   = kwargs.get('species', 4)
         self.substep   = kwargs.get('substep', 1)
         self.evaporate = kwargs.get('evaporate', 0.95)
-        # TODO: Redundant, only due to way species are allocated to particles
-        self.particles_per_species = self.n // self.species
+        self.particles_per_species = self.particles // self.species
+        self.s = self.species
+        self.p = self.particles
         # Taichi
         self.gpu      = kwargs.get('gpu', 'vulkan')
         self.cpu      = kwargs.get('cpu', None)
