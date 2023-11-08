@@ -6,6 +6,11 @@ TODO: Better handling of directories when saving/exporting (separate dir for xml
 TODO: Update Max and Pd patch generation to use the new OSCMap send/receive list functions
 TODO: Add generator for ESP32
 TODO: send funcs in send_mode=broadcast mode cannot have args, but in event mode you might want args
+TODO: wildcard matching
+TODO: mixing of lists and non-lists
+TODO: variable length lists?
+TODO: randomisation flag?
+TODO: Support class methods as send/receive funcs (handle 'self' arg)
 '''
 
 from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
@@ -68,13 +73,21 @@ class OSCMap:
         exit()
     
     def map_func_to_dict(self, func, kwargs):
-        n = func.__name__
-        address = '/'+n.replace('_', '/')
+        if 'name' not in kwargs:
+            n = func.__name__
+            address = '/'+n.replace('_', '/')
+        else:
+            if isinstance(kwargs['name'], str):
+                n = kwargs['name']
+                address = '/'+kwargs['name'].replace('_', '/')
+            else:
+                raise TypeError(f"OSC func name must be string, found {str(type(kwargs['name']))}")
         # TODO: Move this into specific send/receive functions
         params = {k: v for k, v in kwargs.items() if \
                     k != 'count' and \
                     k != 'send_mode' and \
-                    k != 'length'}
+                    k != 'length' and \
+                    k != 'name'}
         # TODO: turn params into dict with type hints (see export_dict)
         hints = get_type_hints(func)
         f = {'f': func, 'name': n, 'address': address, 'params': params, 'hints': hints}
@@ -87,15 +100,20 @@ class OSCMap:
     def send_args(self, **kwargs):
         def decorator(func):
             def wrapper(*args):
-                self.add_send_args_to_osc_map(func, kwargs)
-                if self.create_patch is True:
-                    self.add_send_args_to_patcher(func)
+                self.add_send_args(func, kwargs)
                 return func()
             default_args = [kwargs[a][0] for a in kwargs \
-                            if a != 'count' and a != 'send_mode']
+                            if a != 'count' and \
+                               a != 'send_mode' and \
+                               a != 'name']
             wrapper(*default_args)
             return wrapper
         return decorator
+    
+    def add_send_args(self, func, kwargs):
+        self.add_send_args_to_osc_map(func, kwargs)
+        if self.create_patch is True:
+            self.add_send_args_to_patcher(func)
 
     def add_send_args_to_osc_map(self, func, kwargs):
         f = self.map_func_to_dict(func, kwargs)
@@ -119,16 +137,22 @@ class OSCMap:
     def send_list(self, **kwargs):
         def decorator(func):
             def wrapper(*args):
-                self.add_send_list_to_osc_map(func, kwargs)
-                if self.create_patch is True:
-                    self.add_send_list_to_patcher(func)
+                self.add_send_list(func, kwargs)
                 return func()
             default_arg = [kwargs[a][0] for a in kwargs \
-                            if a != 'count' and a != 'send_mode' and a != 'length']
+                            if a != 'count' and \
+                               a != 'send_mode' and \
+                               a != 'length' and \
+                               a != 'name']
             default_arg = default_arg#*kwargs['length']
             wrapper(default_arg)
             return wrapper
         return decorator
+
+    def add_send_list(self, func, kwargs):
+        self.add_send_list_to_osc_map(func, kwargs)
+        if self.create_patch is True:
+            self.add_send_list_to_patcher(func)
 
     def add_send_list_to_osc_map(self, func, kwargs):
         f = self.map_func_to_dict(func, kwargs)
@@ -162,23 +186,28 @@ class OSCMap:
     def receive_args(self, **kwargs):
         def decorator(func):
             def wrapper(*args):
-                self.add_receive_args_to_osc_map(func, kwargs)
-                if self.create_patch is True:
-                    self.add_receive_args_to_patcher(func)
+                self.add_receive_args(func, kwargs)
                 return func(*args)
-            default_args = [kwargs[a][0] for a in kwargs if a != 'count']
+            default_args = [kwargs[a][0] for a in kwargs \
+                            if a != 'count' and a != 'name']
             wrapper(*default_args)
             return wrapper
         return decorator
+
+    def add_receive_args(self, func, kwargs):
+        f = self.add_receive_args_to_osc_map(func, kwargs)
+        if self.create_patch is True:
+            self.add_receive_args_to_patcher(f)
     
     def add_receive_args_to_osc_map(self, func, kwargs):
         f = self.map_func_to_dict(func, kwargs)
         f['updater'] = OSCReceiveUpdater(self.osc, f['address'], f=func, count=kwargs['count'])
         f['type'] = 'args'
         self.dict['receive'][f['name']] = f
+        return f
 
     def add_receive_args_to_patcher(self, func):
-        f = self.dict['receive'][func.__name__]
+        f = self.dict['receive'][func['name']]
         self.patcher.add_receive_args_func(f)
 
     '''
@@ -188,16 +217,21 @@ class OSCMap:
     def receive_list(self, **kwargs):
         def decorator(func):
             def wrapper(*args):
-                self.add_receive_list_to_osc_map(func, kwargs)
-                if self.create_patch is True:
-                    self.add_receive_list_to_patcher(func)
+                self.add_receive_list(func, kwargs)
                 return func(*args)
             # TODO: This probably shouldn't be here...
-            v_len, v_min, v_max = kwargs['length'], kwargs['vector'][1], kwargs['vector'][2]
-            randomise_list = v_min + (np.random.rand(v_len).astype(np.float32) * (v_max - v_min))
-            wrapper(randomise_list)
+            randomised_list = self.randomise_list(kwargs['length'], kwargs['vector'][1], kwargs['vector'][2])
+            wrapper(randomised_list)
             return wrapper
         return decorator
+    
+    def randomise_list(self, length, min, max):
+        return min + (np.random.rand(length).astype(np.float32) * (max - min))
+
+    def add_receive_list(self, func, kwargs):
+        f = self.add_receive_list_to_osc_map(func, kwargs)
+        if self.create_patch is True:
+            self.add_receive_list_to_patcher(f)
     
     def add_receive_list_to_osc_map(self, func, kwargs):
         '''
@@ -213,10 +247,30 @@ class OSCMap:
         self.dict['receive'][f['name']] = f
         if self.export is not None:
             self.export_dict()
+        return f
     
     def add_receive_list_to_patcher(self, func):
-        f = self.dict['receive'][func.__name__]
+        f = self.dict['receive'][func['name']]
         self.patcher.add_receive_list_func(f)
+    
+    def receive_list_with_idx(self, name, setter, idx_len, vec_len):
+        '''
+        Create an OSC list handler that assumes that the first `idx_len` values are indices into some struct being modified by a setter function, and the rest are args as a list, i.e.
+            /name idx0 idx1 ... idxN arg0 arg1 ... argM
+            ...
+            setter((idx0 idx1 ... idxN), args)
+        Intended as a utility function to be used by external classes where it's not possible to use a decorator like `receive_list`.
+        '''
+        def handler(vector: list[float]):
+            arg_len = len(vector[idx_len:])
+            assert arg_len == vec_len, f"len(args) != len(list) ({arg_len} != {vec_len})"
+            if idx_len:
+                indices = tuple([int(v) for v in vector[:idx_len]])
+                setter(indices, vector[idx_len:])
+            else:
+                setter(vector)
+        kwargs = {'vector': (0,0,1), 'length': vec_len + idx_len, 'count': 1, 'name': name}
+        self.receive_list(**kwargs)(handler)
 
     '''
     receive kwargs
@@ -362,11 +416,14 @@ class OSCMap:
     def xml_to_json(self, xml_str):
         e = ET.ElementTree(ET.fromstring(xml_str))
         return json.dumps(self.etree_to_dict(e.getroot()), indent=4)
-
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    
+    def update(self):
         for k, v in self.dict['send'].items():
             if 'updater' in v:
                 v['updater']()
             # v['updater']()
         for k, v in self.dict['receive'].items():
             v['updater']()
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        self.update()

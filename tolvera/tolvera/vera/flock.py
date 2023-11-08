@@ -22,7 +22,7 @@ class Flock:
             'align':    (.01, 1.),
             'cohere':   (.01, 1.),
             'radius':   (.01, 300.)
-        }, self.o.s)
+        }, self.o.s, osc=True, name='flock_species')
     def randomise(self):
         self.species.randomise()
     @ti.kernel

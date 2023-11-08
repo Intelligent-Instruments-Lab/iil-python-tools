@@ -150,6 +150,7 @@ class PdPatcher:
     def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
         f_p = f['params']
+        print(f_p)
         params = []
         if len(f_p) == 0:
             self.add_osc_send_msg(self.s_x, self.s_y, f['address'])

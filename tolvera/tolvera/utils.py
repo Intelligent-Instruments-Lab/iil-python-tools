@@ -3,6 +3,8 @@ TODO: async runner based on sardine @swim?
 TODO: OSC entry point, inside Options?
 TODO: implement reset()
 TODO: particles_per_species only due to way species are allocated to particles
+TODO: turn Options into a Singleton?
+    decouple tolvera globals from taichi globals first?
 '''
 
 from typing import Any
@@ -12,9 +14,17 @@ import time
 from iipyper import OSC, OSCMap
 from iipyper.state import _lock
 from sys import exit
+import unicodedata
+
+def remove_accents(input_str):
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
 class Options:
     def __init__(self, **kwargs):
+        self.reset(**kwargs)
+
+    def reset(self, **kwargs):
         # Tölvera
         self.x         = kwargs.get('x', 1920)
         self.y         = kwargs.get('y', 1080)
@@ -31,18 +41,21 @@ class Options:
         self.fps      = kwargs.get('fps', 120)
         self.seed     = kwargs.get('seed', int(time.time()))
         self.name     = kwargs.get('name', 'Tölvera')
+        self.name_clean = remove_accents(self.name).strip().lower()
         self.headless = kwargs.get('headless', False)
         # OSC
         self.osc          = kwargs.get('osc', False)
         self.host         = kwargs.get('host', "127.0.0.1")
         self.client       = kwargs.get('client', "127.0.0.1")
-        self.client_name  = kwargs.get('client_name', self.name)
+        self.client_name  = kwargs.get('client_name', self.name_clean)
         self.receive_port = kwargs.get('receive_port', 5001)
         self.send_port    = kwargs.get('send_port', 5000)
+        self.osc_debug    = kwargs.get('osc_debug', False)
         # OSCMap
         self.create_patch   = kwargs.get('create_patch', False)
         self.patch_type     = kwargs.get('patch_type', "Pd")
         self.patch_filepath = kwargs.get('patch_filepath', "tolvera_osc")
+        self.export_patch   = kwargs.get('export_patch', None)
 
     def init(self):
         if self.osc: self.init_osc()
@@ -54,7 +67,11 @@ class Options:
     def init_osc(self):
         self.osc = OSC(self.host, self.receive_port, verbose=True, concurrent=True)
         self.osc.create_client(self.client_name, self.client, self.send_port)
-        self.osc_map = OSCMap(self.osc, self.client_name, self.patch_type, self.patch_filepath, self.create_patch)
+        self.osc_map = OSCMap(self.osc, self.client_name, self.patch_type, self.patch_filepath, self.create_patch, export=self.export_patch)
+        if self.osc_debug:
+            def debug_osc(address, *args):
+                print(f"[Tolvera.Options.debug_osc] {address} {args}")
+            self.osc.args('/*')(debug_osc)
 
     def init_ti(self):
         if self.cpu:
@@ -82,6 +99,7 @@ def _run(f, px, **kwargs):
     while o.window.running:
         with _lock:
             if f is not None: f(**kwargs)
+            if o.osc is not False: o.osc_map()
             _show(px)
 
 def _show(px):
