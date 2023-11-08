@@ -253,7 +253,7 @@ class OSCMap:
         f = self.dict['receive'][func['name']]
         self.patcher.add_receive_list_func(f)
     
-    def receive_list_with_idx(self, name, setter, idx_len, vec_len):
+    def receive_list_with_idx(self, name, setter, idx_len, vec_len, attr=None):
         '''
         Create an OSC list handler that assumes that the first `idx_len` values are indices into some struct being modified by a setter function, and the rest are args as a list, i.e.
             /name idx0 idx1 ... idxN arg0 arg1 ... argM
@@ -266,9 +266,11 @@ class OSCMap:
             assert arg_len == vec_len, f"len(args) != len(list) ({arg_len} != {vec_len})"
             if idx_len:
                 indices = tuple([int(v) for v in vector[:idx_len]])
-                setter(indices, vector[idx_len:])
+                if attr is None: setter(indices, vector[idx_len:])
+                else: setter(indices, attr, vector[idx_len:])
             else:
-                setter(vector)
+                if attr is None: setter(vector)
+                else: setter(attr, vector)
         kwargs = {'vector': (0,0,1), 'length': vec_len + idx_len, 'count': 1, 'name': name}
         self.receive_list(**kwargs)(handler)
 

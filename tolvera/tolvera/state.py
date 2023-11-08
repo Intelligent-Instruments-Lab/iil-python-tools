@@ -27,12 +27,8 @@ TODO: setters:
     indexing with variable shape?
     self.len* with variable shape?
     finish writing test
-TODO: OSCMap
-    osc receive -> setters
-    args
-        ...
-    list
-        ...
+TODO: OSCMap getters
+TODO: tidy up `osc_receive_randomise`, move into iipyper.map.py?
 TODO: state analysers -> OSC senders
 TODO: IML: add default mapping?
 TODO: Sardine: pattern utils?
@@ -40,7 +36,7 @@ TODO: Sardine: pattern utils?
 
 from typing import Any
 import taichi as ti
-from .utils import ti_field_getattr, Options
+from .utils import Options
 from taichi._lib.core.taichi_python import DataType
 import numpy as np
 
@@ -76,7 +72,7 @@ class State:
         if self.osc:  self.add_to_osc_map()
 
     def get(self, index: tuple, attribute: str):
-        return ti_field_getattr(self.field, index, attribute)
+        return self.field[index][attribute]
 
     @ti.kernel
     def randomise(self):
@@ -95,7 +91,7 @@ class State:
     def set_state_idx_from_kwargs(self, index: tuple, **state: Any):
         for k, v in self.dict.items():
             if k not in state:
-                state[k] = ti_field_getattr(self.field, index, k)
+                state[k] = self.field[index][k]
         self.field[index] = self.struct(**state)
 
     def set_state_idx_from_list(self, index: tuple, state: list):
@@ -170,13 +166,25 @@ class State:
     
     def set_dim_from_list(self, dim: ti.i32, state: list):
         raise NotImplementedError("set_dim_from_list() not implemented")
-
-    '''
-    /tolvera/set/flock/species/separate/idx i j set_state_idx_from_list
-    /tolvera/set/flock/species/separate/row i   set_state_row_from_list
-    /tolvera/set/flock/species/separate/col j   set_state_col_from_list
-    /tolvera/set/flock/species/separate/all     set_state_all_from_list
-    '''
+    
+    def set_attr_idx(self, index: tuple, attr: str, value: Any):
+        print('set_attr_idx',index, attr, value)
+        value = value[0] if isinstance(value, list) else value
+        self.field[index][attr] = value
+    
+    def set_attr_row(self, i: int|tuple[int], attr: str, values: list):
+        i = i[0] if isinstance(i, tuple) else i
+        for j in range(self.shape):
+            self.field[i,j][attr] = values[i]
+        
+    def set_attr_col(self, j: int|tuple[int], attr: str, values: list):
+        j = j[0] if isinstance(j, tuple) else j
+        for i in range(self.shape):
+            self.field[i,j][attr] = values[j]
+    
+    def set_attr_all(self, attr: str, values: list):
+        for i, j in ti.ndrange(self.shape, self.shape):
+            self.field[i,j][attr] = values[i*self.shape+j]
     
     def osc_receive_randomise(self):
         def randomise():
@@ -194,8 +202,12 @@ class State:
         f(name+'_row', self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
         f(name+'_col', self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
         f(name+'_all', self.set_state_all_from_list, 0, getattr(self,'len_state_all'))
-        # Add attribute setters to OSCMap
-        
+        # Add state attribute setters to OSCMap
+        for k,v in self.dict.items():
+            f(name+'_'+k+'_idx', self.set_attr_idx, 2, 1, k)
+            f(name+'_'+k+'_row', self.set_attr_row, 1, getattr(self,'len_attr_row'), k)
+            f(name+'_'+k+'_col', self.set_attr_col, 1, getattr(self,'len_attr_col'), k)
+            f(name+'_'+k+'_all', self.set_attr_all, 0, getattr(self,'len_attr_all'), k)
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         if isinstance(args[0], tuple) and isinstance(args[1], str):

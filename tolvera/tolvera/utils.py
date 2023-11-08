@@ -143,9 +143,6 @@ def cleanup(f=None):
     else: #bare decorator case; return decorated function
         return decorator(f)
 
-def ti_field_getattr(field: ti.field, index: tuple, attr: str):
-    return field.field_dict[attr][index]
-
 # @ti.data_oriented
 class CONSTS:
     '''
