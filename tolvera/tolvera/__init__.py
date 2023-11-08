@@ -24,7 +24,7 @@ class Tolvera:
         self.slime = vera.Slime(self.o)
     def randomise(self):
         self.p.randomise()
-        self.p.state.randomise()
+        self.p.species.randomise()
         self.flock.randomise()
         self.slime.randomise()
     def reset(self, **kwargs):

@@ -32,7 +32,7 @@ class Slime:
             'move_angle':  (0., 1.),
             'move_dist':   (0., 4.),
             'evaporate':   (0., 1.)
-        }, self.o.s)
+        }, self.o.s, osc=True, name='slime_species')
         self.trail = Pixels(self.o)
         self.evaporate = ti.field(dtype=ti.f32, shape=())
         self.evaporate[None] = evaporate
@@ -98,7 +98,7 @@ class Slime:
     def step(self, particles):
         for i in range(self.CONSTS.SUBSTEP):
             self.move(particles.field)
-            self.deposit(particles.field, particles.state.field)
+            self.deposit(particles.field, particles.species.field)
             self.trail.diffuse(self.evaporate[None])
     def __call__(self, particles):
         self.step(particles)

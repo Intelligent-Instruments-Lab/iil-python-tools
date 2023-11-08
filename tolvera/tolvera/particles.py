@@ -1,13 +1,14 @@
 '''
 TODO: move rendering outside of particles/make it optional/overrideable
-TODO: color palette
+TODO: color palette - implement using State
 TODO: global speed scalar inside self.o
-TODO: walls
+TODO: walls - refactor using State?
     move default behaviour to Vera base class?
     default wrap vs avoid flags per wall
     then per algorithm override (e.g. boids)
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
-FIXME: Fix tmp_pos / tmp_vel
+FIXME: refactor tmp_* fields to use State
+TODO: shouldn't randomise() be superfluous if we're using State?
 '''
 
 import taichi as ti
@@ -64,7 +65,7 @@ class Particles:
                  options: Options,
                  pixels: Pixels):
         self.o = options
-        self.state = State(self.o, {
+        self.species = State(self.o, {
             'size':   (3., 8.),
             'speed':  (0., 5.),
             'mass':   (0., 1.),
@@ -73,7 +74,7 @@ class Particles:
             'g':      (0., 1.),
             'b':      (0., 1.),
             'a':      (1., 1.),
-        }, self.o.species)
+        }, self.o.species, osc=True, name='particles_species')
         self.px = pixels
         self.x = self.o.x
         self.y = self.o.y
@@ -182,7 +183,7 @@ class Particles:
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
-        s = self.state.field[p.species, 0]
+        s = self.species.field[p.species, 0]
         if p.vel.norm() > s.speed:
             self.field[i].vel = p.vel.normalized() * s.speed
     @ti.kernel
@@ -206,7 +207,7 @@ class Particles:
         # l = len(px[0,0])
         for i in range(self.o.particles):
             p = self.field[i]
-            s = self.state.field[p.species, 0]
+            s = self.species.field[p.species, 0]
             if p.active > 0.0:
                 x = ti.cast(p.pos[0], ti.i32)
                 y = ti.cast(p.pos[1], ti.i32)

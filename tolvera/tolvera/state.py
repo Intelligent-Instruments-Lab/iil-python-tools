@@ -21,15 +21,16 @@ TODO: shape
     update shape when Tolvera is re-initialised?
     `shape: int | tuple[int]`
 TODO: randomise
-    randomise_by_key() (randomise individual state using ti_field_getattr)
+    randomise_state_idx|row|col|all
+    randomise_attr_idx|row|col|all
     how to randomise arbitrary shapes with ti.ndrange(**shape), field[...]?
 TODO: setters:
     indexing with variable shape?
     self.len* with variable shape?
     finish writing test
 TODO: OSCMap getters
+    state analysers -> OSC senders
 TODO: tidy up `osc_receive_randomise`, move into iipyper.map.py?
-TODO: state analysers -> OSC senders
 TODO: IML: add default mapping?
 TODO: Sardine: pattern utils?
 '''
@@ -168,7 +169,6 @@ class State:
         raise NotImplementedError("set_dim_from_list() not implemented")
     
     def set_attr_idx(self, index: tuple, attr: str, value: Any):
-        print('set_attr_idx',index, attr, value)
         value = value[0] if isinstance(value, list) else value
         self.field[index][attr] = value
     
@@ -193,21 +193,24 @@ class State:
 
     def add_to_osc_map(self):
         name = f"{self.o.name_clean}_{self.name}"
-        # Add randomise to OSCMap
+        # OSCMap receivers
+        ## Add randomise to OSCMap
         kwargs = {'count': 1, 'name': name+'_randomise'}
         self.o.osc_map.receive_args(**kwargs)(self.osc_receive_randomise())
-        # Add state setters to OSCMap
+        ## Add state setters to OSCMap
         f = self.o.osc_map.receive_list_with_idx
         f(name+'_idx', self.set_state_idx_from_list, 2, getattr(self,'len_state_idx'))
         f(name+'_row', self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
         f(name+'_col', self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
         f(name+'_all', self.set_state_all_from_list, 0, getattr(self,'len_state_all'))
-        # Add state attribute setters to OSCMap
+        ## Add state attribute setters to OSCMap
         for k,v in self.dict.items():
             f(name+'_'+k+'_idx', self.set_attr_idx, 2, 1, k)
             f(name+'_'+k+'_row', self.set_attr_row, 1, getattr(self,'len_attr_row'), k)
             f(name+'_'+k+'_col', self.set_attr_col, 1, getattr(self,'len_attr_col'), k)
             f(name+'_'+k+'_all', self.set_attr_all, 0, getattr(self,'len_attr_all'), k)
+        # OSCMap getters
+        # ...
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         if isinstance(args[0], tuple) and isinstance(args[1], str):
