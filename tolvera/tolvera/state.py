@@ -30,9 +30,13 @@ TODO: setters:
     finish writing test
 TODO: OSCMap getters
     state analysers -> OSC senders
+    iipyper osc returns?
 TODO: tidy up `osc_receive_randomise`, move into iipyper.map.py?
 TODO: IML: add default mapping?
 TODO: Sardine: pattern utils?
+TODO: @ti.func struct methods - can these be monkey patched?
+    if not add to constructor as a dict
+    use case would be Particles.Particle
 '''
 
 from typing import Any
@@ -43,11 +47,20 @@ import numpy as np
 
 @ti.data_oriented
 class State:
+    '''
+    Args
+        options: global tolvera options object
+        state: a dictionary of attributes in `'attr': (min, max)` format
+        shape: the shape of the state field (currently only `int->(int,int)` supported)
+        osc: one/both of `('get', 'set')` to create OSC getters and/or setters
+        name: becomes the OSC path prefix for the state
+        randomise: randomise the state on initialisation
+    '''
     def __init__(self, 
                  options: Options,
                  state: dict[str, tuple[ti.f32, ti.f32]], # tuple[DataType, Any, Any]
                  shape: int,# | tuple[int], 
-                 osc: bool = False,
+                 osc: tuple = None,
                  name: str = 'state',
                  randomise: bool = True):
         self.o = options
@@ -64,16 +77,29 @@ class State:
         self.len_attr_row = self.shape#[0]
         self.len_attr_col = self.shape#[1]
         self.len_attr_all = self.shape * self.shape
-        self.osc = osc
+        self.osc = True if osc is not None else False
+        self.osc_get = 'get' in osc if osc is not None else False
+        self.osc_set = 'set' in osc if osc is not None else False
         self.name = name
         self.init(randomise)
 
     def init(self, randomise: bool = False):
         if randomise: self.randomise()
-        if self.osc:  self.add_to_osc_map()
+        if self.o.osc is not False and self.osc:
+            self.add_to_osc_map()
 
     def get(self, index: tuple, attribute: str):
-        return self.field[index][attribute]
+        try:
+            return self.field[index][attribute]
+        except:
+            print(f"[tolvera.state] {self.name} has no {attribute} in {self.dict}")
+
+    def osc_getter(self, i: int, j: int, attribute: str):
+        ret = self.get((i,j), attribute)
+        if ret is not None:
+            route = self.o.osc_map.pascal_to_path(self.getter_name)#+'/'+attribute
+            self.o.osc.return_to_sender_by_name((route, attribute,ret), self.o.client_name)
+        return ret
 
     @ti.kernel
     def randomise(self):
@@ -85,6 +111,10 @@ class State:
         # for i in ti.ndrange(**self.shape):
         #     state = ti.random()
         #     self.field[i] = self.struct()
+    
+    def _randomise(self):
+        '''Python scope wrapper for OSCMap'''
+        self.randomise()
 
     def set_state_idx_from_args(self, index: tuple, *state: Any):
         self.field[index] = self.struct(*state)
@@ -185,32 +215,42 @@ class State:
     def set_attr_all(self, attr: str, values: list):
         for i, j in ti.ndrange(self.shape, self.shape):
             self.field[i,j][attr] = values[i*self.shape+j]
-    
-    def osc_receive_randomise(self):
-        def randomise():
-            self.randomise()
-        return randomise
 
     def add_to_osc_map(self):
-        name = f"{self.o.name_clean}_{self.name}"
-        # OSCMap receivers
-        ## Add randomise to OSCMap
-        kwargs = {'count': 1, 'name': name+'_randomise'}
-        self.o.osc_map.receive_args(**kwargs)(self.osc_receive_randomise())
-        ## Add state setters to OSCMap
+        if self.osc_set:
+            self.setter_name = f"{self.o.name_clean}_set_{self.name}"
+            self.add_osc_setters(self.setter_name)
+        if self.osc_get:
+            self.getter_name = f"{self.o.name_clean}_get_{self.name}"
+            self.add_osc_getters(self.getter_name)
+
+    def add_osc_setters(self, name):
+        # randomise
+        self.o.osc_map.receive_args_inline(name+'_randomise', self._randomise)
+        # state
         f = self.o.osc_map.receive_list_with_idx
-        f(name+'_idx', self.set_state_idx_from_list, 2, getattr(self,'len_state_idx'))
-        f(name+'_row', self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
-        f(name+'_col', self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
-        f(name+'_all', self.set_state_all_from_list, 0, getattr(self,'len_state_all'))
-        ## Add state attribute setters to OSCMap
+        f(f"{name}_idx", self.set_state_idx_from_list, 2, getattr(self,'len_state_idx'))
+        f(f"{name}_row", self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
+        f(f"{name}_col", self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
+        f(f"{name}_all", self.set_state_all_from_list, 0, getattr(self,'len_state_all'))
+        # state attributes
         for k,v in self.dict.items():
-            f(name+'_'+k+'_idx', self.set_attr_idx, 2, 1, k)
-            f(name+'_'+k+'_row', self.set_attr_row, 1, getattr(self,'len_attr_row'), k)
-            f(name+'_'+k+'_col', self.set_attr_col, 1, getattr(self,'len_attr_col'), k)
-            f(name+'_'+k+'_all', self.set_attr_all, 0, getattr(self,'len_attr_all'), k)
-        # OSCMap getters
-        # ...
+            f(f"{name}_{k}_idx", self.set_attr_idx, 2, 1, k)
+            f(f"{name}_{k}_row", self.set_attr_row, 1, getattr(self,'len_attr_row'), k)
+            f(f"{name}_{k}_col", self.set_attr_col, 1, getattr(self,'len_attr_col'), k)
+            f(f"{name}_{k}_all", self.set_attr_all, 0, getattr(self,'len_attr_all'), k)
+
+    def add_osc_getters(self, name):
+        for k,v in self.dict.items():
+            ranges = (int(v[0]), int(v[0]), int(v[1]))
+            kwargs = {'i': ranges, 'j': ranges, 'attr': (k,k,k)}
+            self.o.osc_map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
+
+    '''
+    def add_osc_streams(self, name):
+        add in broadcast mode
+        pass
+    '''
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         if isinstance(args[0], tuple) and isinstance(args[1], str):

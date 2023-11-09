@@ -3,6 +3,7 @@ TODO: convert all ints to floats
 FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
 TODO: add convex hull algorithm
 TODO: add algobets-style shape analysis (to CV?)
+TODO: add draw funcs to OSCMap? how to handle state/repainting?
 '''
 
 import taichi as ti

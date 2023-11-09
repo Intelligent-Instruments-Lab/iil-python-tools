@@ -1,14 +1,8 @@
 '''
 TODO: move rendering outside of particles/make it optional/overrideable
 TODO: color palette - implement using State
-TODO: global speed scalar inside self.o
-TODO: walls - refactor using State?
-    move default behaviour to Vera base class?
-    default wrap vs avoid flags per wall
-    then per algorithm override (e.g. boids)
-FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/7422
-FIXME: refactor tmp_* fields to use State
-TODO: shouldn't randomise() be superfluous if we're using State?
+TODO: Particle.dist debug toroidal distance wrap function
+FIXME: refactor tmp_* fields and setters to use State
 '''
 
 import taichi as ti
@@ -40,14 +34,49 @@ class Particle:
     @ti.func
     def dist_normalized(self, other):
         return self.dist(self.pos - other.pos).normalized()
+    # @ti.func
+    # def dist_wrap(self, other, x, y):
+    #     dx = self.pos[0] - other.pos[0]
+    #     dy = self.pos[1] - other.pos[1]
+    #     if abs(dx) > x / 2: # x-axis
+    #         dx = x - abs(dx)
+    #         if self.pos[0] > other.pos[0]: dx = -dx
+    #     if abs(dy) > y / 2: # y-axis
+    #         dy = y - abs(dy)
+    #         if self.pos[1] > other.pos[1]: dy = -dy
+    #     return ti.Vector([dx, dy])
     @ti.func
     def dist_wrap(self, other, x, y):
-        # TODO: test
         dx = self.pos[0] - other.pos[0]
         dy = self.pos[1] - other.pos[1]
-        dx = min(dx, x - abs(dx)) if abs(dx) > y / 2 else dx
-        dy = min(dy, x - abs(dy)) if abs(dy) > y / 2 else dy
+        # Wrap around for the x-axis
+        if abs(dx) > x / 2:
+            dx = x - abs(dx)
+            if self.pos[0] < other.pos[0]:
+                dx = -dx
+        # Wrap around for the y-axis
+        if abs(dy) > y / 2:
+            dy = y - abs(dy)
+            if self.pos[1] < other.pos[1]:
+                dy = -dy
         return ti.Vector([dx, dy])
+    # @ti.func
+    # def dist_wrap(self, other, width, height):
+    #     # Compute the element-wise absolute difference
+    #     self_abs = ti.abs(self.pos)
+    #     other_abs = ti.abs(other.pos)
+    #     delta = self_abs - other_abs
+    #     # Check if wrapping around is shorter for both the x and y components
+    #     if delta[0] > width / 2:
+    #         delta[0] = width - delta[0]
+    #     if delta[1] > height / 2:
+    #         delta[1] = height - delta[1]
+    #     # Correct the signs if necessary
+    #     if self.pos[0] > other.pos[0] and delta[0] > 0:
+    #         delta[0] = -delta[0]
+    #     if self.pos[1] > other.pos[1] and delta[1] > 0:
+    #         delta[1] = -delta[1]
+    #     return delta
     @ti.func
     def randomise(self, x, y):
         self.randomise_pos(x, y)
@@ -66,26 +95,20 @@ class Particles:
                  pixels: Pixels):
         self.o = options
         self.species = State(self.o, {
-            'size':   (3., 8.),
-            'speed':  (0., 5.),
+            'size':   (2., 5.),
+            'speed':  (0., 4.),
             'mass':   (0., 1.),
             'decay':  (.9, .999),
             'r':      (0., 1.),
             'g':      (0., 1.),
             'b':      (0., 1.),
             'a':      (1., 1.),
-        }, self.o.species, osc=True, name='particles_species')
+        }, self.o.species, osc=('set'), name='particles_species')
         self.px = pixels
         self.x = self.o.x
         self.y = self.o.y
         self.substep = self.o.substep
         self.field = Particle.field(shape=(self.o.particles))
-        # TODO: These should be possible with State
-        # Wall behaviours: top, right, bottom, left (clockwise, a la CSS margin)
-        self.wall_margins = ti.field(ti.f32, shape=(4))
-        self.turn_factors = ti.field(ti.f32, shape=(4))
-        self.wall_margins.fill(50.0)
-        self.turn_factors.fill(0.8)
         # TODO: These should be possible with State
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(self.o.particles)) # FIXME: hack
         self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
@@ -112,80 +135,46 @@ class Particles:
     def assign_species(self):
         for i in range(self.o.particles):
             self.field[i].species = i % self.o.species
+    def _randomise(self):
+        self.randomise()
     @ti.kernel
     def randomise(self):
         for i in range(self.o.particles):
-            species = self.field[i].species
+            si = self.field[i].species
+            s = self.species.field[si, 0]
+            species = si
             active  = 1.0
             pos     = [self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)]
             vel     = [2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)]
-            # TODO: init based on self.s.consts
-            mass    = 1.0
-            size    = 2.0
-            speed   = 1.0
+            mass    = ti.random(ti.f32) * s.mass
+            size    = ti.random(ti.f32) * s.size
+            speed   = ti.random(ti.f32) * s.speed
             self.field[i] = Particle(species=species, pos=pos, vel=vel, active=active, mass=mass, size=size, speed=speed)
     @ti.kernel
     def move(self):
-        # TOOD: collisions
+        # TODO: collisions
         for i in range(self.o.particles):
-            p = self.field[i]
-            if p.active > 0.0:
-                self.wall_repel(i)
-                self.limit_speed(i)
-                self.update_position(i)
-        # for i in range(self.active_count[None]):
-        #     idx = self.active_indexes[i]
-        #     self.wall_repel(idx)
-        #     self.limit_speed(idx)
-        #     self.update_position(idx)
+            if self.field[i] == 0.0: continue
+            self.toroidal_wrap(i)
+            self.limit_speed(i)
+            self.update_position(i)
     @ti.func
-    def update_position(self, i):
+    def toroidal_wrap(self, i):
         p = self.field[i]
-        self.field[i].pos += p.vel * p.speed * p.active
-    @ti.func
-    def wall_repel(self, i):
-        p = self.field[i]
-        wt, wr, wb, wl = self.wall_margins[0], self.wall_margins[1], self.wall_margins[2], self.wall_margins[3]
-        tt, tr, tb, tl = self.turn_factors[0], self.turn_factors[1], self.turn_factors[2], self.turn_factors[3]
-        x, y = p.pos[0], p.pos[1]
-        if  (y > self.y-wt): # top
-            # self.field.vel[i][1] *= -0.9
-            self.field.vel[i][1] -= tt
-            self.field.pos[i][1] -= ti.random(ti.f32)*5.0
-        elif(x < wr):        # right
-            # self.field.vel[i][0] *= -0.9
-            self.field.vel[i][0] += tr
-            self.field.pos[i][0] += ti.random(ti.f32)*5.0
-        elif(y < wb):        # bottom
-            # self.field.vel[i][1] *= -0.9
-            self.field.vel[i][1] += tb
-            self.field.pos[i][1] += ti.random(ti.f32)*5.0
-        elif(x > self.x-wl): # left
-            # self.field.vel[i][0] *= -0.9
-            self.field.vel[i][0] -= tl
-            self.field.pos[i][0] -= ti.random(ti.f32)*5.0
-    @ti.kernel
-    def set_wall_margins(self, top: ti.f32, right: ti.f32, bottom: ti.f32, left: ti.f32):
-        self.wall_margins[0] = top
-        self.wall_margins[1] = right
-        self.wall_margins[2] = bottom
-        self.wall_margins[3] = left
-    @ti.kernel
-    def set_turn_factors(self, top: ti.f32, right: ti.f32, bottom: ti.f32, left: ti.f32):
-        self.turn_factors[0] = top
-        self.turn_factors[1] = right
-        self.turn_factors[2] = bottom
-        self.turn_factors[3] = left
-    @ti.kernel
-    def set_wall(self, wall: ti.i32, margin: ti.f32, turn: ti.f32):
-        self.wall_margins[wall] = margin
-        self.turn_factors[wall] = turn
+        if p.pos[0] > self.x: self.field[i].pos[0] = 0.0
+        if p.pos[0] < 0.0:    self.field[i].pos[0] = self.x
+        if p.pos[1] > self.y: self.field[i].pos[1] = 0.0
+        if p.pos[1] < 0.0:    self.field[i].pos[1] = self.y
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
         s = self.species.field[p.species, 0]
         if p.vel.norm() > s.speed:
             self.field[i].vel = p.vel.normalized() * s.speed
+    @ti.func
+    def update_position(self, i):
+        p = self.field[i]
+        self.field[i].pos += p.vel * p.speed * p.active
     @ti.kernel
     def activity_decay(self):
         for i in range(self.active_count[None]):
@@ -220,24 +209,6 @@ class Particles:
         #     y = ti.cast(p.pos[1], ti.i32)
         #     pixels.circle(x, y, p.size, p.rgba * p.active)
     @ti.kernel
-    def set_species_speed(self, i: ti.i32, speed: ti.f32, max_speed: ti.f32):
-        c = self.species_consts
-        for j in range(self.o.particles):
-            if self.field[j].species == i:
-                self.field[j].speed = c['speed_min'] + c['speed_scale'] * speed
-                self.field[j].max_speed = c['max_speed_min'] + c['max_speed_scale'] * max_speed
-    @ti.kernel
-    def set_species_color(self, i: ti.i32, r: ti.f32, g: ti.f32, b: ti.f32):
-        for j in range(self.o.particles):
-            if self.field[j].species == i:
-                self.field[j].rgba = [r,g,b,1]
-    @ti.kernel
-    def set_species_size(self, i: ti.i32, size: ti.f32):
-        c = self.species_consts
-        for j in range(self.o.particles):
-            if self.field[j].species == i:
-                self.field[j].size = c['size_min'] + c['size_scale'] * size
-    @ti.kernel
     def set_active(self, a: ti.i32):
         for i in range(self.field.shape[0]):
             if i > a:
@@ -260,9 +231,6 @@ class Particles:
         self.field[i].speed = s
     def set_size(self, i, s):
         self.field[i].size = s
-    def set_wall_repel(self, m, t):
-        self.wall_margin[None] = m
-        self.turn_factor[None] = t
     def get_pos(self, i):
         return self.field[i].pos.to_numpy().tolist()
     def get_vel(self, i):

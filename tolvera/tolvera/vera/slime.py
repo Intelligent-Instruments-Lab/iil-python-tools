@@ -25,14 +25,14 @@ class Slime:
             'sense_left':   (0.,10.),
             'sense_centre': (0.,10.),
             'sense_right':  (0.,10.),
-        }, self.o.p, randomise=False)
+        }, self.o.p, osc=('get'), name='slime_particles', randomise=False)
         self.species = State(self.o, {
             'sense_angle': (0., 1.),
             'sense_dist':  (0., 50.),
             'move_angle':  (0., 1.),
             'move_dist':   (0., 4.),
             'evaporate':   (0., 1.)
-        }, self.o.s, osc=True, name='slime_species')
+        }, self.o.s, osc=('set'), name='slime_species')
         self.trail = Pixels(self.o)
         self.evaporate = ti.field(dtype=ti.f32, shape=())
         self.evaporate[None] = evaporate

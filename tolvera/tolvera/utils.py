@@ -1,6 +1,6 @@
 '''
-TODO: async runner based on sardine @swim?
-TODO: OSC entry point, inside Options?
+TODO: global scalars for speed, i: global frame index???
+TODO: async runner based on sardine @s[wim?
 TODO: implement reset()
 TODO: particles_per_species only due to way species are allocated to particles
 TODO: turn Options into a Singleton?

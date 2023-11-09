@@ -1,6 +1,5 @@
 '''
 TODO: test reset
-TODO: OSC entry point
 '''
 
 from typing import Any
@@ -22,6 +21,8 @@ class Tolvera:
         self.p  = Particles(self.o, self.px)
         self.flock = vera.Flock(self.o)
         self.slime = vera.Slime(self.o)
+        if self.o.osc is not False:
+            self.add_to_osc_map()
     def randomise(self):
         self.p.randomise()
         self.p.species.randomise()
@@ -31,7 +32,12 @@ class Tolvera:
         if kwargs is not None:
             self.kwargs = kwargs
         self.init()
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
-        pass
+    def add_to_osc_map(self):
+        setter_name = f"{self.o.name_clean}_set"
+        getter_name = f"{self.o.name_clean}_get"
+        self.o.osc_map.receive_args_inline(setter_name+'_randomise', self.randomise)
+        self.o.osc_map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise)
     def render(self, func=None, **kwargs):
         render(func, self.px, **kwargs)
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        pass

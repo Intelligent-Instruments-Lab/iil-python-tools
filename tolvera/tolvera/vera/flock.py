@@ -1,5 +1,7 @@
 '''
 FIXME: still some NaNs happening?
+TODO: particle state analysis/applications?
+TODO: is half of self.state.dist redundant? print with low n
 '''
 
 import taichi as ti
@@ -16,13 +18,13 @@ class Flock:
             # 'cohere':   (0., 1.), # ti.math.vec2
             'nearby':   (0., self.o.p-1),   # ti.i32
             'dist':     (0., self.o.x*2), # ti.f32
-        }, self.o.p, randomise=False)
+        }, self.o.p, osc=('get'), name='flock_particles', randomise=False)
         self.species = State(self.o, {
             'separate': (.01, 1.),
             'align':    (.01, 1.),
             'cohere':   (.01, 1.),
             'radius':   (.01, 300.)
-        }, self.o.s, osc=True, name='flock_species')
+        }, self.o.s, osc=('set'), name='flock_species')
     def randomise(self):
         self.species.randomise()
     @ti.kernel
@@ -42,7 +44,8 @@ class Flock:
                 if i==j and particles[j].active == 0: continue
                 p2 = particles[j]
                 species = self.species.field[p1.species, p2.species]
-                dis = p1.dist(p2)
+                dis = p1.dist_wrap(p2, self.o.x, self.o.y)
+                # dis = p1.dist(p2)
                 dis_norm = dis.norm()
                 if dis_norm < species.radius:
                     separate += dis
