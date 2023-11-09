@@ -150,12 +150,13 @@ class PdPatcher:
     def add_receive_args_func(self, f):
         hints = typing.get_type_hints(f['f'])
         f_p = f['params']
-        print(f_p)
         params = []
         if len(f_p) == 0:
             self.add_osc_send_msg(self.s_x, self.s_y, f['address'])
         else:
             for p in f_p:
+                # TODO: handle strings
+                if isinstance(p, str): continue
                 p_def, p_min, p_max = f_p[p][0], f_p[p][1], f_p[p][2]
                 params.append({
                     "label":   p,     "data": hints[p].__name__, 

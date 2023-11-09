@@ -1,5 +1,6 @@
 '''
 TODO: Add send_kwargs and receive_kwargs
+TODO: Updater functions should handle return to sender cases
 TODO: Refactor self.dict[io][name][params] to a labelled dictionary & add type hints
 TODO: Load OSCMap from XML or JSON (probably involves refactoring, for the better)
 TODO: Better handling of directories when saving/exporting (separate dir for xml/json?)
@@ -13,7 +14,7 @@ TODO: randomisation flag?
 TODO: Support class methods as send/receive funcs (handle 'self' arg)
 '''
 
-from .osc import OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
+from .osc import OSC, OSCSendUpdater, OSCSend, OSCReceiveUpdater, OSCReceiveListUpdater
 from .max import MaxPatcher
 from .pd import PdPatcher
 
@@ -29,7 +30,9 @@ class OSCMap:
     It creates a Max/MSP patcher that can be used to control the OSCMap
     It uses OSCSendUpdater and OSCReceiveUpdater to decouple incoming messages
     '''
-    def __init__(self, osc, client_name="client", 
+    def __init__(self, 
+                 osc: OSC, 
+                 client_name="client", 
                  patch_type="Max", # | "Pd"
                  patch_filepath="osc_controls",
                  create_patch=True,
@@ -210,6 +213,10 @@ class OSCMap:
         f = self.dict['receive'][func['name']]
         self.patcher.add_receive_args_func(f)
 
+    def receive_args_inline(self, name: str, receiver_func, **kwargs):
+        kwargs = {**kwargs, **{'count': 1, 'name': name}}
+        self.receive_args(**kwargs)(receiver_func)
+
     '''
     receive list
     '''
@@ -253,12 +260,12 @@ class OSCMap:
         f = self.dict['receive'][func['name']]
         self.patcher.add_receive_list_func(f)
     
-    def receive_list_with_idx(self, name, setter, idx_len, vec_len, attr=None):
+    def receive_list_with_idx(self, name: str, receiver, idx_len: int, vec_len: int, attr=None):
         '''
-        Create an OSC list handler that assumes that the first `idx_len` values are indices into some struct being modified by a setter function, and the rest are args as a list, i.e.
+        Create an OSC list handler that assumes that the first `idx_len` values are indices into some struct being modified by a receiver function, and the rest are args as a list, i.e.
             /name idx0 idx1 ... idxN arg0 arg1 ... argM
             ...
-            setter((idx0 idx1 ... idxN), args)
+            receiver((idx0 idx1 ... idxN), args)
         Intended as a utility function to be used by external classes where it's not possible to use a decorator like `receive_list`.
         '''
         def handler(vector: list[float]):
@@ -266,11 +273,11 @@ class OSCMap:
             assert arg_len == vec_len, f"len(args) != len(list) ({arg_len} != {vec_len})"
             if idx_len:
                 indices = tuple([int(v) for v in vector[:idx_len]])
-                if attr is None: setter(indices, vector[idx_len:])
-                else: setter(indices, attr, vector[idx_len:])
+                if attr is None: receiver(indices, vector[idx_len:])
+                else: receiver(indices, attr, vector[idx_len:])
             else:
-                if attr is None: setter(vector)
-                else: setter(attr, vector)
+                if attr is None: receiver(vector)
+                else: receiver(attr, vector)
         kwargs = {'vector': (0,0,1), 'length': vec_len + idx_len, 'count': 1, 'name': name}
         self.receive_list(**kwargs)(handler)
 
@@ -388,7 +395,16 @@ class OSCMap:
             f.write(json_dict)
         print(f"Exported OSCMap to {self.patch_filepath}.json")
 
-    def pascal_to_camel(self, pascal_str):
+    @staticmethod
+    def pascal_to_path(pascal_str):
+        return '/'+pascal_str.replace('_', '/')
+
+    @staticmethod
+    def path_to_pascal(path_str):
+        return path_str[1:].replace('/', '_')
+
+    @staticmethod
+    def pascal_to_camel(pascal_str):
         return pascal_str[0].lower() + pascal_str[1:]
 
     def etree_to_dict(self, t):
@@ -422,7 +438,7 @@ class OSCMap:
     def update(self):
         for k, v in self.dict['send'].items():
             if 'updater' in v:
-                v['updater']()
+                ret = v['updater']()
             # v['updater']()
         for k, v in self.dict['receive'].items():
             v['updater']()

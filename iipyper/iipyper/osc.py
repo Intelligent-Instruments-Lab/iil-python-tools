@@ -227,21 +227,9 @@ class OSC():
                     kwargs = {}
 
                 with _lock:
-                    r = f(address, *args, **kwargs)
-                # if there was a return value,
-                # send it as a message back to the sender
-                if r is not None:
-                    if not hasattr(r, '__len__'):
-                        print("""
-                        value returned from OSC handler should start with route
-                        """)
-                    else:
-                        client = (
-                            client[0] if return_host is None else return_host,
-                            client[1] if return_port is None else return_port
-                        )
-                        print(client, r)
-                        self.get_client_by_sender(client).send_message(r[0], r[1:])
+                    ret = f(address, *args, **kwargs)
+                if ret is not None:
+                    self.return_to_sender_by_sender(ret, client, return_host, return_port)
 
             self.add_handler(route, handler)
 
@@ -249,6 +237,42 @@ class OSC():
 
         return decorator if f is None else decorator(f)
     
+    def return_to_sender_by_sender(self, return_to: tuple, sender: tuple, return_host=None, return_port=None):
+        '''
+        Args:
+            return_to: tuple of (route, *args) to send back to sender
+            client: (host,port) of sender
+            return_host: host to send back to, defaults to sender
+            return_port: port to send back to, defaults to sender
+        
+        Send return value as message back to sender by client(host,port).
+        '''
+        if not hasattr(return_to, '__len__'):
+            print(f"""
+            value returned from OSC handler should start with route, got: {return_to}
+            """)
+        else:
+            sender = (
+                sender[0] if return_host is None else return_host,
+                sender[1] if return_port is None else return_port
+            )
+            self.get_client_by_sender(sender).send_message(return_to[0], return_to[1:])
+
+    def return_to_sender_by_name(self, return_to: tuple, client_name: str):
+        '''
+        Args:
+            return_to: tuple of (route, *args) to send back to sender
+            client_name: name of client
+        
+        Send return value as message back to sender by name.
+        '''
+        if not hasattr(return_to, '__len__'):
+            print(f"""
+            value returned from OSC handler should start with route, got: {return_to}
+            """)
+        else:
+            self.get_client_by_name(client_name).send_message(return_to[0], return_to[1:])
+
     def args(self, route=None, return_host=None, return_port=None):
         """decorate a function as an args-style OSC handler.
 
@@ -302,6 +326,7 @@ class ReceiveUpdater:
     '''
     Decouples event handling from updating
     Updating is rate-limited by a counter
+    TODO: Handle return to sender
     '''
 
     def __init__(self, f, state=None, count=5, update=False):
@@ -310,6 +335,7 @@ class ReceiveUpdater:
         self.counter = 0
         self.update = update
         self.state = state
+        self.ret = None
 
     def set(self, state):
         '''
@@ -327,9 +353,16 @@ class ReceiveUpdater:
                 self.counter > self.count and
                 self.state is not None):
             return
-        self.f(*self.state)
+        self.ret = self.f(*self.state)
+        '''
+        if ret is not None:
+            route = self.pascal_to_path(kwargs['name'])
+            print('wrapper', route, ret, self.client_name)
+            self.osc.return_to_sender_by_name((route, ret), self.client_name)
+        '''
         self.counter = 0
         self.update = False
+        return self.ret
 
 class ReceiveListUpdater:
     '''
