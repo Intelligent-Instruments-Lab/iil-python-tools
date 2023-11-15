@@ -1,0 +1,100 @@
+# https://github.com/taichi-dev/faster-python-with-taichi/blob/main/reaction_diffusion_taichi.py
+'''
+TODO: why does substep > 20 crash?
+TODO: make toroidal
+TODO: improve stability
+TODO: make reset() work
+'''
+
+import numpy as np
+import taichi as ti
+
+from ..pixels import Pixels
+from ..state import State
+from ..utils import Options, CONSTS
+
+@ti.data_oriented
+class ReactionDiffusion():
+    def __init__(self,
+                 options: Options,
+                 Du=0.160,
+                 Dv=0.080,
+                 feed=0.060,
+                 kill=0.062,
+                 substep=18):
+        self.o = options
+        self.i = 0
+        self.uv     = ti.Vector.field(2, ti.f32, shape=(2, self.o.x, self.o.y))
+        self.colors = ti.Vector.field(4, ti.f32, shape=(5, ))
+        self.field  = Pixels(self.o)
+        self.params = State(self.o, {
+            'Du':     (0., 1.),
+            'Dv':     (0., 1.),
+            'feed':   (0., 1.),
+            'kill':   (0., 1.),
+            'substep':(0, 100),
+        }, 1, osc=('set'), name='reaction_diffusion', randomise=False)
+        self.params.set_state_all_from_list([Du, Dv, feed, kill, substep])
+        self.init()
+    def init(self):
+        self.randomise()
+        self.make_palette()
+        if self.o.osc is not False:
+            self.add_to_osc_map()
+    def reset(self):
+        self.uv.fill(0.0)
+    def randomise(self):
+        self.uv_grid = np.zeros((2, self.o.x, self.o.y, 2), dtype=np.float32)
+        self.uv_grid[0, :, :, 0] = 1.0
+        rand_rows = np.random.choice(range(self.o.x), 50)
+        rand_cols = np.random.choice(range(self.o.y), 50)
+        self.uv_grid[0, rand_rows, rand_cols, 1] = 1.0
+        self.uv.from_numpy(self.uv_grid)
+    def add_to_osc_map(self):
+        self.o.osc_map.receive_args_inline(self.params.setter_name+'_reset', self.reset)
+        self.o.osc_map.receive_args_inline(self.params.setter_name+'_randomise_uv', self.randomise)
+    def make_palette(self):
+        self.colors[0] = [0.0, 0.0, 0.0, 0.3137]
+        self.colors[1] = [1.0, 0.1843, 0.53333, 0.37647]
+        self.colors[2] = [0.8549, 1.0, 0.53333, 0.388]
+        self.colors[3] = [0.376, 1.0, 0.478, 0.392]
+        self.colors[4] = [1.0, 1.0, 1.0, 1]
+    @ti.kernel
+    def deposit_particles(self, particles: ti.template()):
+        for i in range(particles.field.shape[0]):
+            p = particles.field[i]
+            if p.active == 0.0: continue
+            self.uv[0, int(p.pos.x), int(p.pos.y)] += [0.1, 0.0]
+    @ti.kernel
+    def compute(self, phase: int):
+        p = self.params.field[0,0]
+        for i, j in ti.ndrange(self.o.x, self.o.y):
+            cen = self.uv[phase, i, j]
+            lapl = self.uv[phase, i + 1, j] + self.uv[phase, i, j + 1] + self.uv[
+                phase, i - 1, j] + self.uv[phase, i, j - 1] - 4.0 * cen
+            du = p.Du * lapl[0] - cen[0] * cen[1] * cen[1] + p.feed * (1 - cen[0])
+            dv = p.Dv * lapl[1] + cen[0] * cen[1] * cen[1] - (p.feed + p.kill) * cen[1]
+            val = cen + 0.5 * ti.math.vec2(du, dv)
+            self.uv[1 - phase, i, j] = val
+    @ti.kernel
+    def render(self):
+        for i, j in ti.ndrange(self.o.x, self.o.y):
+            value = self.uv[0, i, j].y
+            color = ti.math.vec3(0)
+            # if value <= self.colors[0].w:
+            #     color = self.colors[0].xyz
+            for k in range(4):
+                c0 = self.colors[k]
+                c1 = self.colors[k + 1]
+                if c0.w < value < c1.w:
+                    a = (value - c0.w) / (c1.w - c0.w)
+                    color = ti.math.mix(c0.xyz, c1.xyz, a)
+            self.field.px.rgba[i, j] = [color.x, color.y, color.z, 1.0]
+    def process(self):
+        for _ in range(self.substep[None]):
+            self.compute(self.i % 2)
+            self.i += 1
+    def __call__(self):
+        self.process()
+        self.render()
+        return self.field.px

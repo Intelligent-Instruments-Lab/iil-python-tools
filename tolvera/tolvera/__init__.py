@@ -1,5 +1,7 @@
 '''
 TODO: test reset
+TODO: add attractors
+TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
 '''
 
 from typing import Any
@@ -21,6 +23,8 @@ class Tolvera:
         self.p  = Particles(self.o, self.px)
         self.flock = vera.Flock(self.o)
         self.slime = vera.Slime(self.o)
+        self.move = vera.Move(self.o)
+        self.rd = vera.ReactionDiffusion(self.o)
         if self.o.osc is not False:
             self.add_to_osc_map()
     def randomise(self):
@@ -28,6 +32,7 @@ class Tolvera:
         self.p.species.randomise()
         self.flock.randomise()
         self.slime.randomise()
+        self.rd.randomise()
     def reset(self, **kwargs):
         if kwargs is not None:
             self.kwargs = kwargs

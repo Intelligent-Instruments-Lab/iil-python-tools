@@ -1,6 +1,8 @@
 
 from .slime import Slime
 from .flock import Flock
+from .move import Move
+from .reaction_diffusion import ReactionDiffusion
 # from .attractor import *
 
 # from tolvera.vera.physarum import *
