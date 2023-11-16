@@ -2,73 +2,79 @@
 TODO: test reset
 TODO: add attractors
 TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
-TODO: global scalars for speed, i: global frame index???
-TODO: async runner based on sardine @s[wim?
-TODO: implement reset()
-TODO: particles_per_species only due to way species are allocated to particles
-TODO: turn Options into a Singleton?
-    decouple tolvera globals from taichi globals first?
-TODO: move init funcs to __init__.py? re namespace/decorators
-        `@tv.cleanup` `@tv.render`
+TODO: async runner based on sardine @swim?
+TODO: should _packages be singletons?
 '''
 
-from typing import Any
+# External packages
 from iipyper.state import _lock
+import fire
 from sys import exit
 
+# Wrapped external packages
+from ._taichi import Taichi
+from ._osc import OSC
+from ._iml import IML
+# from ._cv import CV
+
+# Tölvera components
 from .patches import *
 from .utils import *
 from .particles import *
 from .pixels import *
 from .vera import Vera
-from ._taichi import Taichi
-from ._osc import OSC
-from ._iml import IML
-from ._cv import CV
 
 class Tolvera:
     def __init__(self, **kwargs) -> None:
         """
-        Initialize Tolvera with given keyword arguments.
+        Initialize and setup Tölvera with given keyword arguments.
 
         Args:
             **kwargs: Keyword arguments for setup and initialization.
         """
-        self.setup(**kwargs)
+        self.kwargs = kwargs
         self.init(**kwargs)
+        self.setup(**kwargs)
+        print(f"[Tölvera] Initialization and setup complete.")
     def init(self, **kwargs):
         """
-        Initialize Tolvera components with given keyword arguments.
+        Initialize external packages with given keyword arguments.
+        This only happens once when Tölvera is first initialized.
 
         Args:
             **kwargs: Keyword arguments for component initialization.
         """
+        self.i = 0
+        self.x = kwargs.get('x', 1920)
+        self.y = kwargs.get('y', 1080)
+        self.name = kwargs.get('name', 'Tölvera')
+        self.name_clean = clean_name(self.name)
         self.ti = Taichi(self, **kwargs)
         self.osc = OSC(self, **kwargs)
         self.iml = IML(self, **kwargs)
         # self.cv = CV(self, **kwargs)
+        if self.osc.osc is not False: # TODO: check
+            self.add_to_osc_map()
+        print(f"[Tölvera] Initialization complete.")
     def setup(self, **kwargs):
         """
-        Setup Tolvera with given keyword arguments.
+        Setup Tölvera with given keyword arguments.
+        This can be called multiple throughout the lifetime of Tölvera.
 
         Args:
             **kwargs: Keyword arguments for setup.
         """
-        self.kwargs    = kwargs
-        self.x         = kwargs.get('x', 1920)
-        self.y         = kwargs.get('y', 1080)
         self.particles = kwargs.get('particles', 1024)
         self.species   = kwargs.get('species', 4)
+        self.p_per_s   = self.particles // self.species
         self.substep   = kwargs.get('substep', 1)
         self.evaporate = kwargs.get('evaporate', 0.95)
-        self.p_per_s = self.particles // self.species
-        self.p = Particles(self)
-        self.s = self.p.species
-        self.v = Vera(self)
-        self.px = Pixels(self)
+        self.px = Pixels(self, **kwargs)
+        self.s = Species(self, **kwargs)
+        self.p = Particles(self, self.s, **kwargs)
+        self.v = Vera(self, **kwargs)
         self._cleanup_fns = []
-        if self.osc is not None:
-            self.add_to_osc_map()
+        print(f"[Tölvera] Setup complete.")
     def randomise(self):
         """
         Randomize particles, species, and Vera.
@@ -78,7 +84,8 @@ class Tolvera:
         self.v.randomise()
     def reset(self, **kwargs):
         """
-        Reset Tolvera with given keyword arguments.
+        Reset Tölvera with given keyword arguments.
+        This will call setup() with given keyword arguments, but not init().
 
         Args:
             **kwargs: Keyword arguments for reset.
@@ -88,15 +95,16 @@ class Tolvera:
         self.setup()
     def add_to_osc_map(self):
         """
-        Add Tolvera to OSC map.
+        Add top-level Tölvera functions to OSC map.
         """
         setter_name = f"{self.o.name_clean}_set"
         getter_name = f"{self.o.name_clean}_get"
         self.osc.map.receive_args_inline(setter_name+'_randomise', self.randomise)
-        self.osc.map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise)
+        self.osc.map.receive_args_inline(setter_name+'_reset', self.reset) # TODO: kwargs?
+        self.osc.map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise) # TODO: move inside Particles
     def run(self, f, px, **kwargs):
         """
-        Run Tolvera with given function, pixels, and keyword arguments.
+        Run Tölvera with given function, pixels, and keyword arguments.
 
         Args:
             f: Function to run.
@@ -108,16 +116,17 @@ class Tolvera:
                 if f is not None: f(**kwargs)
                 if self.osc is not False: self.osc.osc_map()
                 self.ti.show(px)
+                self.i += 1
     def stop(self):
         """
-        Stop Tolvera and exit.
+        Stop Tölvera and exit.
         """
         print(f"\n[Tölvera] Exiting {self.name}...")
         for f in self._cleanup_fns: f()
         exit(0)
     def render(self, px=None, **kwargs):
         """
-        Decorator for rendering Tolvera with given pixels and keyword arguments.
+        Decorator for rendering Tölvera with given pixels and keyword arguments.
 
         Args:
             px: Pixels to render.
@@ -133,6 +142,7 @@ class Tolvera:
                 except KeyboardInterrupt:
                     self.stop()
             return wrapper
+        print('render', decorator, px, kwargs)
         return decorator
     def cleanup(self, f=None):
         """
@@ -153,12 +163,14 @@ class Tolvera:
             return decorator
         else: #bare decorator case; return decorated function
             return decorator(f)
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
-        """
-        Call Tolvera with given arguments and keyword arguments.
 
-        Args:
-            *args: Arguments for render.
-            **kwds: Keyword arguments for render.
-        """
-        self.render(*args, **kwds)
+
+def main(**kwargs):
+    tv = Tolvera(**kwargs)
+
+    @tv.render
+    def _():
+        tv.p()
+
+if __name__ == '__main__':
+    fire.Fire(main)
