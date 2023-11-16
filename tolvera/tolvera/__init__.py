@@ -28,14 +28,32 @@ from ._cv import CV
 
 class Tolvera:
     def __init__(self, **kwargs) -> None:
+        """
+        Initialize Tolvera with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for setup and initialization.
+        """
         self.setup(**kwargs)
         self.init(**kwargs)
     def init(self, **kwargs):
+        """
+        Initialize Tolvera components with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for component initialization.
+        """
         self.ti = Taichi(self, **kwargs)
         self.osc = OSC(self, **kwargs)
         self.iml = IML(self, **kwargs)
         # self.cv = CV(self, **kwargs)
     def setup(self, **kwargs):
+        """
+        Setup Tolvera with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for setup.
+        """
         self.kwargs    = kwargs
         self.x         = kwargs.get('x', 1920)
         self.y         = kwargs.get('y', 1080)
@@ -52,29 +70,62 @@ class Tolvera:
         if self.osc is not None:
             self.add_to_osc_map()
     def randomise(self):
+        """
+        Randomize particles, species, and Vera.
+        """
         self.p.randomise()
         self.s.randomise()
         self.v.randomise()
     def reset(self, **kwargs):
+        """
+        Reset Tolvera with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for reset.
+        """
         if kwargs is not None:
             self.kwargs = kwargs
         self.setup()
     def add_to_osc_map(self):
+        """
+        Add Tolvera to OSC map.
+        """
         setter_name = f"{self.o.name_clean}_set"
         getter_name = f"{self.o.name_clean}_get"
         self.osc.map.receive_args_inline(setter_name+'_randomise', self.randomise)
         self.osc.map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise)
     def run(self, f, px, **kwargs):
+        """
+        Run Tolvera with given function, pixels, and keyword arguments.
+
+        Args:
+            f: Function to run.
+            px: Pixels to show.
+            **kwargs: Keyword arguments for function.
+        """
         while self.ti.window.running:
             with _lock:
                 if f is not None: f(**kwargs)
                 if self.osc is not False: self.osc.osc_map()
                 self.ti.show(px)
     def stop(self):
+        """
+        Stop Tolvera and exit.
+        """
         print(f"\n[Tölvera] Exiting {self.name}...")
         for f in self._cleanup_fns: f()
         exit(0)
     def render(self, px=None, **kwargs):
+        """
+        Decorator for rendering Tolvera with given pixels and keyword arguments.
+
+        Args:
+            px: Pixels to render.
+            **kwargs: Keyword arguments for rendering.
+
+        Returns:
+            Decorator function.
+        """
         def decorator(func):
             def wrapper(*args, **func_kwargs):
                 try:
@@ -85,9 +136,15 @@ class Tolvera:
         return decorator
     def cleanup(self, f=None):
         """
-        @cleanup decorator based on iipyper
-        make functions run on KeyBoardInterrupt (before exit)
-        cleanup functions must be defined before render is called!
+        Decorator for cleanup functions based on iipyper.
+        Make functions run on KeyBoardInterrupt (before exit).
+        Cleanup functions must be defined before render is called!
+
+        Args:
+            f: Function to cleanup.
+
+        Returns:
+            Decorator function if f is None, else decorated function.
         """
         def decorator(f):
             self._cleanup_fns.append(f)
@@ -97,4 +154,11 @@ class Tolvera:
         else: #bare decorator case; return decorated function
             return decorator(f)
     def __call__(self, *args: Any, **kwds: Any) -> Any:
+        """
+        Call Tolvera with given arguments and keyword arguments.
+
+        Args:
+            *args: Arguments for render.
+            **kwds: Keyword arguments for render.
+        """
         self.render(*args, **kwds)
