@@ -4,7 +4,7 @@ TODO: 'sketchbook' run/export scripts?
 
 import fire
 
-from .__init__ import Tolvera
+from tolvera.tolvera import Tolvera
 
 def help():
     print('')
