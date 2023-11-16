@@ -1,3 +1,9 @@
+'''
+Workaround for:
+
+'dill.source.findsource fails when in asyncio REPL' https://github.com/uqfoundation/dill/issues/627
+'''
+
 import dill
 
 # __all__ = ['findsource', 'getsourcelines', 'getsource', 'indent', 'outdent', \

@@ -1,5 +1,4 @@
 '''
-TODO: move rendering outside of particles/make it optional/overrideable
 TODO: color palette - implement using State
 TODO: Particle.dist debug toroidal distance wrap function
 FIXME: refactor tmp_* fields and setters to use State
@@ -7,7 +6,6 @@ FIXME: refactor tmp_* fields and setters to use State
 
 import taichi as ti
 from .utils import Options
-from .pixels import Pixels
 from .state import State
 
 vec1 = ti.types.vector(1, ti.f32)
@@ -34,32 +32,32 @@ class Particle:
     @ti.func
     def dist_normalized(self, other):
         return self.dist(self.pos - other.pos).normalized()
-    # @ti.func
-    # def dist_wrap(self, other, x, y):
-    #     dx = self.pos[0] - other.pos[0]
-    #     dy = self.pos[1] - other.pos[1]
-    #     if abs(dx) > x / 2: # x-axis
-    #         dx = x - abs(dx)
-    #         if self.pos[0] > other.pos[0]: dx = -dx
-    #     if abs(dy) > y / 2: # y-axis
-    #         dy = y - abs(dy)
-    #         if self.pos[1] > other.pos[1]: dy = -dy
-    #     return ti.Vector([dx, dy])
     @ti.func
     def dist_wrap(self, other, x, y):
         dx = self.pos[0] - other.pos[0]
         dy = self.pos[1] - other.pos[1]
-        # Wrap around for the x-axis
-        if abs(dx) > x / 2:
+        if abs(dx) > x / 2: # x-axis
             dx = x - abs(dx)
-            if self.pos[0] < other.pos[0]:
-                dx = -dx
-        # Wrap around for the y-axis
-        if abs(dy) > y / 2:
+            if self.pos[0] > other.pos[0]: dx = -dx
+        if abs(dy) > y / 2: # y-axis
             dy = y - abs(dy)
-            if self.pos[1] < other.pos[1]:
-                dy = -dy
+            if self.pos[1] > other.pos[1]: dy = -dy
         return ti.Vector([dx, dy])
+    # @ti.func
+    # def dist_wrap(self, other, x, y):
+    #     dx = self.pos[0] - other.pos[0]
+    #     dy = self.pos[1] - other.pos[1]
+    #     # Wrap around for the x-axis
+    #     if abs(dx) > x / 2:
+    #         dx = x - abs(dx)
+    #         if self.pos[0] < other.pos[0]:
+    #             dx = -dx
+    #     # Wrap around for the y-axis
+    #     if abs(dy) > y / 2:
+    #         dy = y - abs(dy)
+    #         if self.pos[1] < other.pos[1]:
+    #             dy = -dy
+    #     return ti.Vector([dx, dy])
     # @ti.func
     # def dist_wrap(self, other, width, height):
     #     # Compute the element-wise absolute difference
@@ -91,11 +89,10 @@ class Particle:
 @ti.data_oriented
 class Particles:
     def __init__(self,
-                 options: Options,
-                 pixels: Pixels):
+                 options: Options):
         self.o = options
         self.species = State(self.o, {
-            'size':   (2., 5.),
+            'size':   (1., 4.),
             'speed':  (0., 4.),
             'mass':   (0., 1.),
             'decay':  (.9, .999),
@@ -103,13 +100,14 @@ class Particles:
             'g':      (0., 1.),
             'b':      (0., 1.),
             'a':      (1., 1.),
-        }, self.o.species, osc=('set'), name='particles_species')
-        self.px = pixels
-        self.x = self.o.x
-        self.y = self.o.y
+        }, self.o.species, osc=('set'), name='species')
         self.substep = self.o.substep
         self.field = Particle.field(shape=(self.o.particles))
         # TODO: These should be possible with State
+        self.pos = State(self.o, {
+            'x': (0., self.o.x),
+            'y': (0., self.o.y),
+        }, self.o.particles, osc=('get'), name='particles_pos')
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(self.o.particles)) # FIXME: hack
         self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(self.o.species)) # FIXME: hack
         self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(self.o.particles)) # FIXME: hack
@@ -123,15 +121,6 @@ class Particles:
         self.assign_species()
         self.randomise()
     @ti.kernel
-    def update_active(self):
-        j = 0
-        for i in range(self.o.particles):
-            p = self.field[i]
-            if p.active > 0.0:
-                self.active_indexes[j] = i
-                j += 1
-        self.active_count[None] = j
-    @ti.kernel
     def assign_species(self):
         for i in range(self.o.particles):
             self.field[i].species = i % self.o.species
@@ -144,70 +133,50 @@ class Particles:
             s = self.species.field[si, 0]
             species = si
             active  = 1.0
-            pos     = [self.x*ti.random(ti.f32),self.y*ti.random(ti.f32)]
+            pos     = [self.o.x*ti.random(ti.f32),self.o.y*ti.random(ti.f32)]
             vel     = [2*(ti.random(ti.f32)-0.5), 2*(ti.random(ti.f32)-0.5)]
             mass    = ti.random(ti.f32) * s.mass
             size    = ti.random(ti.f32) * s.size
             speed   = ti.random(ti.f32) * s.speed
             self.field[i] = Particle(species=species, pos=pos, vel=vel, active=active, mass=mass, size=size, speed=speed)
     @ti.kernel
-    def move(self):
+    def update(self):
         # TODO: collisions
         for i in range(self.o.particles):
             if self.field[i] == 0.0: continue
             self.toroidal_wrap(i)
             self.limit_speed(i)
-            self.update_position(i)
+    @ti.kernel
+    def update_active(self):
+        j = 0
+        for i in range(self.o.particles):
+            p = self.field[i]
+            if p.active > 0.0:
+                self.active_indexes[j] = i
+                j += 1
+        self.active_count[None] = j
     @ti.func
     def toroidal_wrap(self, i):
         p = self.field[i]
-        if p.pos[0] > self.x: self.field[i].pos[0] = 0.0
-        if p.pos[0] < 0.0:    self.field[i].pos[0] = self.x
-        if p.pos[1] > self.y: self.field[i].pos[1] = 0.0
-        if p.pos[1] < 0.0:    self.field[i].pos[1] = self.y
+        if p.pos[0] > self.o.x: self.field[i].pos[0] = 0.0
+        if p.pos[0] < 0.0:    self.field[i].pos[0] = self.o.x
+        if p.pos[1] > self.o.y: self.field[i].pos[1] = 0.0
+        if p.pos[1] < 0.0:    self.field[i].pos[1] = self.o.y
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
         s = self.species.field[p.species, 0]
         if p.vel.norm() > s.speed:
             self.field[i].vel = p.vel.normalized() * s.speed
-    @ti.func
-    def update_position(self, i):
-        p = self.field[i]
-        self.field[i].pos += p.vel * p.speed * p.active
     @ti.kernel
     def activity_decay(self):
         for i in range(self.active_count[None]):
             idx = self.active_indexes[i]
             self.field[idx].active *= self.field[i].decay
-    def step(self):
-        # self.activity_decay()
-        pass
     def process(self):
         for i in range(self.substep):
             self.update_active()
-            self.step()
-            self.move()
-    @ti.kernel
-    def render(self):
-        # FIXME: low activity particles rendering...
-        # TODO: support g, rgb, rgba
-        # TODO: render shapes
-        # l = len(px[0,0])
-        for i in range(self.o.particles):
-            p = self.field[i]
-            s = self.species.field[p.species, 0]
-            if p.active > 0.0:
-                x = ti.cast(p.pos[0], ti.i32)
-                y = ti.cast(p.pos[1], ti.i32)
-                rgba = ti.Vector([s.r, s.g, s.b, s.a])
-                self.px.circle(x, y, p.size, rgba * p.active)
-        # for i in range(self.active_count[None]):
-        #     idx = self.active_indexes[i]
-        #     p = self.field[idx]
-        #     x = ti.cast(p.pos[0], ti.i32)
-        #     y = ti.cast(p.pos[1], ti.i32)
-        #     pixels.circle(x, y, p.size, p.rgba * p.active)
+            self.update()
     @ti.kernel
     def set_active(self, a: ti.i32):
         for i in range(self.field.shape[0]):
@@ -252,12 +221,12 @@ class Particles:
         # for i in range(self.active_count[None]):
         #     idx = self.active_indexes[i]
         #     p = self.field[idx]
-        #     self.tmp_pos[i] = p.pos / [self.x, self.y]
+        #     self.tmp_pos[i] = p.pos / [self.o.x, self.o.y]
         # TODO: Only send active particle positions...? Or inactive=-1?
         for i in range(self.o.particles):
             p = self.field[i]
             if p.active > 0.0:
-                self.tmp_pos[i] = p.pos / [self.x, self.y]
+                self.tmp_pos[i] = p.pos / [self.o.x, self.o.y]
             # else:
             #     self.tmp_pos[i] = [0.0,0.0] # ???
     @ti.kernel
@@ -277,7 +246,7 @@ class Particles:
         for j in range(self.o.particles):
             p = self.field[i]
             if self.field[j].species == i and p.active > 0.0:
-                self.tmp_pos_species[j] = p.pos / [self.x, self.y]
+                self.tmp_pos_species[j] = p.pos / [self.o.x, self.o.y]
     def get_vel_species_1d(self, species):
         self._get_vel_species(species)
         return self.tmp_vel_species.to_numpy().flatten().tolist()
@@ -329,4 +298,3 @@ class Particles:
         self.init()
     def __call__(self):
         self.process()
-        self.render()

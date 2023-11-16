@@ -5,6 +5,10 @@ TODO: implement reset()
 TODO: particles_per_species only due to way species are allocated to particles
 TODO: turn Options into a Singleton?
     decouple tolvera globals from taichi globals first?
+TODO: allow passing in iipyper.osc instance?
+TODO: move init funcs to __init__.py? re namespace/decorators
+        `@tv.cleanup` `@tv.render`
+TODO: _show() -> show(), for Sardine usage?
 '''
 
 from typing import Any
@@ -16,9 +20,12 @@ from iipyper.state import _lock
 from sys import exit
 import unicodedata
 
-def remove_accents(input_str):
-    nfkd_form = unicodedata.normalize('NFKD', input_str)
+def remove_accents(input: str):
+    nfkd_form = unicodedata.normalize('NFKD', input)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
+def clean_name(name: str):
+    return remove_accents(name).strip().lower()
 
 class Options:
     def __init__(self, **kwargs):
@@ -41,7 +48,7 @@ class Options:
         self.fps      = kwargs.get('fps', 120)
         self.seed     = kwargs.get('seed', int(time.time()))
         self.name     = kwargs.get('name', 'Tölvera')
-        self.name_clean = remove_accents(self.name).strip().lower()
+        self.name_clean = clean_name(self.name)
         self.headless = kwargs.get('headless', False)
         # OSC
         self.osc          = kwargs.get('osc', False)
@@ -58,7 +65,7 @@ class Options:
         self.export_patch   = kwargs.get('export_patch', None)
 
     def init(self):
-        if self.osc: self.init_osc()
+        if self.osc is True: self.init_osc()
         self.init_ti()
         self.init_ui()
         print(f"[Tölvera] Initialised with: {vars(self)}")
@@ -126,6 +133,22 @@ def init(**kwargs):
 def render(f=None, px=None, **kwargs):
     try: _run(f, px, **kwargs)
     except KeyboardInterrupt: _stop()
+
+'''
+# Render as decorator
+def render(px=None, **kwargs):
+    def decorator(func):
+        def wrapper(*args, **func_kwargs):
+            try:
+                # add any pre-function call logic
+                _run(func, px, **{**kwargs, **func_kwargs})
+            except KeyboardInterrupt:
+                _stop()
+            # add any post-function call logic
+        return wrapper
+
+    return decorator
+'''
 
 _cleanup_fns = []
 # decorator to make a function run on KeyBoardInterrupt (before exit)

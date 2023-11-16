@@ -16,11 +16,11 @@ from .state import *
 class Tolvera:
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
-        self.init()
-    def init(self):
+        self.setup()
+    def setup(self):
         self.o  = init(**self.kwargs)
         self.px = Pixels(self.o)
-        self.p  = Particles(self.o, self.px)
+        self.p  = Particles(self.o)
         self.flock = vera.Flock(self.o)
         self.slime = vera.Slime(self.o)
         self.move = vera.Move(self.o)
@@ -36,7 +36,7 @@ class Tolvera:
     def reset(self, **kwargs):
         if kwargs is not None:
             self.kwargs = kwargs
-        self.init()
+        self.setup()
     def add_to_osc_map(self):
         setter_name = f"{self.o.name_clean}_set"
         getter_name = f"{self.o.name_clean}_get"

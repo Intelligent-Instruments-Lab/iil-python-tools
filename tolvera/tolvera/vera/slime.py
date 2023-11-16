@@ -4,6 +4,7 @@ TODO: sense_rgba:
     test
     remove `a` from `rgba`?
     separate slime class? slimergba?
+TODO: re-add credit
 '''
 
 import taichi as ti
@@ -87,7 +88,7 @@ class Slime:
         px_rgba_weighted = px_rgba * (1.0 - (px_rgba - rgba).norm())
         return px_rgba_weighted
     @ti.kernel
-    def deposit(self, particles: ti.template(), species: ti.template()):
+    def deposit_particles(self, particles: ti.template(), species: ti.template()):
         for i in range(particles.shape[0]):
             if particles[i].active == 0.0: continue
             p, s = particles[i], species[particles[i].species, 0]
@@ -98,7 +99,7 @@ class Slime:
     def step(self, particles):
         for i in range(self.CONSTS.SUBSTEP):
             self.move(particles.field)
-            self.deposit(particles.field, particles.species.field)
+            self.deposit_particles(particles.field, particles.species.field)
             self.trail.diffuse(self.evaporate[None])
     def __call__(self, particles):
         self.step(particles)

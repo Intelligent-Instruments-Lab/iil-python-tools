@@ -92,17 +92,6 @@ def main(host="127.0.0.1", port=4000):
     particle_life = ParticleLife(x, y, species, attract=0.00010)
     pixels = Pixels(x,y,fps=fps)
 
-    # osc_update = OSCUpdaters(osc, client="particles",
-    #     receives={
-    #         "/tolvera/particles/set/pos": particles.osc_set_pos,
-    #         "/tolvera/particles/set/vel": particles.osc_set_vel
-    #     }, receive_count=10,
-    #     sends={
-    #         "/tolvera/particles/get/pos/all": particles.osc_get_pos_all
-    #     }, send_count=60
-    # )
-    # particle_life(particles.field)
-
     def render():
         # pixels.diffuse()
         pixels.clear()

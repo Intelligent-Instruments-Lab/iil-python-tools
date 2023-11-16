@@ -77,11 +77,19 @@ class Pixels:
         self.fps = self.o.fps
         self.px = Pixel.field(shape=(self.x, self.y))
         self.mode = mode
+        self.shape_enum = {
+            'point':    0,
+            'line':     1,
+            'rect':     2,
+            'circle':   3,
+            'triangle': 4,
+            'polygon':  5,
+        }
         self._polygon_mode = polygon_mode
     def set(self, px):
         self.px.rgba = px.rgba
     def get(self):
-        return self.px.rgba
+        return self.px
     @ti.kernel
     def clear(self):
         self.px.rgba.fill(0)
@@ -119,6 +127,7 @@ class Pixels:
         Bresenham's line algorithm
         TODO: thickness
         TODO: anti-aliasing
+        TODO: should lines wrap around (as two lines)?
         '''
         dx = ti.abs(x1 - x0)
         dy = ti.abs(y1 - y0)
@@ -155,6 +164,10 @@ class Pixels:
                 self.px.rgba[x + i, y - j] = rgba
                 self.px.rgba[x - i, y - j] = rgba
                 self.px.rgba[x - i, y + j] = rgba
+    @ti.func
+    def circles(self, x: ti.template(), y: ti.template(), r: ti.template(), rgba: vec4):
+        for i in ti.static(range(len(x))):
+            self.circle(x[i], y[i], r[i], rgba)
     @ti.func
     def triangle(self, a, b, c, rgba: vec4):
         # TODO: fill arg
@@ -331,3 +344,10 @@ class Pixels:
     def rgba_inv(self):# -> vec3:
         # TODO: rgba_inv
         pass
+    # TODO: Normalise positions to [0,1] range?
+    @ti.func
+    def pos_to_px(self, pos: ti.math.vec2) -> ti.math.vec2:
+        return pos * [self.o.x, self.o.y]
+    @ti.func
+    def px_to_pos(self, px: ti.math.vec2) -> ti.math.vec2:
+        return px / [self.o.x, self.o.y]
