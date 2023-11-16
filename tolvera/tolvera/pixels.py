@@ -233,6 +233,72 @@ class Pixels:
         for i, j in ti.ndrange(self.x, self.y):
             self.px.rgba[i,j] *= evaporate
     @ti.kernel
+    def blend_add(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] += px.rgba[i,j]
+    @ti.kernel
+    def blend_sub(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] -= px.rgba[i,j]
+    @ti.kernel
+    def blend_mul(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] *= px.rgba[i,j]
+    @ti.kernel
+    def blend_div(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] /= px.rgba[i,j]
+    @ti.kernel
+    def blend_min(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] = ti.min(self.px.rgba[i,j], px.rgba[i,j])
+    @ti.kernel
+    def blend_max(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] = ti.max(self.px.rgba[i,j], px.rgba[i,j])
+    @ti.kernel
+    def blend_diff(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] = ti.abs(self.px.rgba[i,j] - px.rgba[i,j])
+    @ti.kernel
+    def blend_diff_inv(self, px: ti.template()):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] = ti.abs(px.rgba[i,j] - self.px.rgba[i,j])
+    @ti.kernel
+    def blend_mix(self, px: ti.template(), a: ti.f32):
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba[i,j] = ti.math.mix(self.px.rgba[i,j], px.rgba[i,j], a)
+    def particles(self, particles: ti.template(), shape='circle'):
+        shape = self.shape_enum[shape]
+        self._particles(particles, shape)
+    @ti.kernel
+    def _particles(self, particles: ti.template(), shape: int):
+        for i in range(self.o.particles):
+            p = particles.field[i]
+            s = particles.species.field[p.species, 0]
+            if p.active == 0.0: continue
+            px = ti.cast(p.pos[0], ti.i32)
+            py = ti.cast(p.pos[1], ti.i32)
+            vx = ti.cast(p.pos[0] + p.vel[0]*20, ti.i32)
+            vy = ti.cast(p.pos[1] + p.vel[1]*20, ti.i32)
+            rgba = ti.Vector([s.r, s.g, s.b, s.a])
+            if shape == 0:
+                self.point(px, py, rgba)
+            elif shape == 1:
+                self.line(px, py, vx, vy, rgba)
+            elif shape == 2:
+                side = int(s.size)*2
+                self.rect(px, py, side, side, rgba)
+            elif shape == 3:
+                self.circle(px, py, s.size, rgba)
+            elif shape == 4:
+                a = p.pos
+                b = p.pos + 1
+                c = a + b
+                self.triangle(a,b,c, rgba)
+            # elif shape == 5:
+            #     self.polygon(px, py, rgba)
+    @ti.kernel
     def update(self):
         pass
     def reset(self):
