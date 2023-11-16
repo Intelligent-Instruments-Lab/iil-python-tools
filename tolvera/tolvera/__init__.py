@@ -74,9 +74,15 @@ class Tolvera:
         print(f"\n[Tölvera] Exiting {self.name}...")
         for f in self._cleanup_fns: f()
         exit(0)
-    def render(self, f=None, px=None, **kwargs):
-        try: self.run(f, px, **kwargs)
-        except KeyboardInterrupt: self.stop()
+    def render(self, px=None, **kwargs):
+        def decorator(func):
+            def wrapper(*args, **func_kwargs):
+                try:
+                    self.run(func, px, **{**kwargs, **func_kwargs})
+                except KeyboardInterrupt:
+                    self.stop()
+            return wrapper
+        return decorator
     def cleanup(self, f=None):
         """
         @cleanup decorator based on iipyper
