@@ -1,12 +1,9 @@
 import taichi as ti
-from ..state import State
-from ..utils import Options, CONSTS
 
 @ti.data_oriented
 class Move:
-    def __init__(self, options: Options):
-        self.o = options
-        pass
+    def __init__(self, tolvera):
+        self.tv = tolvera
     @ti.kernel
     def step(self, particles: ti.template()):
         for i in range(particles.shape[0]):

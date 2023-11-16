@@ -41,9 +41,7 @@ TODO: @ti.func struct methods - can these be monkey patched?
 
 from typing import Any
 import taichi as ti
-from .utils import Options
 from taichi._lib.core.taichi_python import DataType
-import numpy as np
 
 @ti.data_oriented
 class State:
@@ -57,13 +55,13 @@ class State:
         randomise: randomise the state on initialisation
     '''
     def __init__(self, 
-                 options: Options,
+                 tolvera,
                  state: dict[str, tuple[ti.f32, ti.f32]], # tuple[DataType, Any, Any]
                  shape: int,# | tuple[int], 
                  osc: tuple = None,
                  name: str = 'state',
                  randomise: bool = True):
-        self.o = options
+        self.tv = tolvera
         self.dict = state
         self.shape = shape
         # self.struct = ti.types.struct(**{k: v[0] for k,v in self.dict.items()})
@@ -85,7 +83,7 @@ class State:
 
     def init(self, randomise: bool = False):
         if randomise: self.randomise()
-        if self.o.osc is not False and self.osc:
+        if self.tv.osc.osc is not False and self.osc:
             self.add_to_osc_map()
 
     def get(self, index: tuple, attribute: str):
@@ -97,8 +95,8 @@ class State:
     def osc_getter(self, i: int, j: int, attribute: str):
         ret = self.get((i,j), attribute)
         if ret is not None:
-            route = self.o.osc_map.pascal_to_path(self.getter_name)#+'/'+attribute
-            self.o.osc.return_to_sender_by_name((route, attribute,ret), self.o.client_name)
+            route = self.tv.osc.map.pascal_to_path(self.getter_name)#+'/'+attribute
+            self.tv.osc.osc.return_to_sender_by_name((route, attribute,ret), self.tv.client_name)
         return ret
 
     @ti.kernel
@@ -218,17 +216,17 @@ class State:
 
     def add_to_osc_map(self):
         if self.osc_set:
-            self.setter_name = f"{self.o.name_clean}_set_{self.name}"
+            self.setter_name = f"{self.tv.name_clean}_set_{self.name}"
             self.add_osc_setters(self.setter_name)
         if self.osc_get:
-            self.getter_name = f"{self.o.name_clean}_get_{self.name}"
+            self.getter_name = f"{self.tv.name_clean}_get_{self.name}"
             self.add_osc_getters(self.getter_name)
 
     def add_osc_setters(self, name):
         # randomise
-        self.o.osc_map.receive_args_inline(name+'_randomise', self._randomise)
+        self.tv.osc.map.receive_args_inline(name+'_randomise', self._randomise)
         # state
-        f = self.o.osc_map.receive_list_with_idx
+        f = self.tv.osc.map.receive_list_with_idx
         f(f"{name}_idx", self.set_state_idx_from_list, 2, getattr(self,'len_state_idx'))
         f(f"{name}_row", self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
         f(f"{name}_col", self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
@@ -244,7 +242,7 @@ class State:
         for k,v in self.dict.items():
             ranges = (int(v[0]), int(v[0]), int(v[1]))
             kwargs = {'i': ranges, 'j': ranges, 'attr': (k,k,k)}
-            self.o.osc_map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
+            self.tv.osc.map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
 
     '''
     def add_osc_streams(self, name):

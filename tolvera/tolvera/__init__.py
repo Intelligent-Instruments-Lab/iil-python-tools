@@ -102,20 +102,19 @@ class Tolvera:
         self.osc.map.receive_args_inline(setter_name+'_randomise', self.randomise)
         self.osc.map.receive_args_inline(setter_name+'_reset', self.reset) # TODO: kwargs?
         self.osc.map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise) # TODO: move inside Particles
-    def run(self, f, px, **kwargs):
+    def run(self, f, **kwargs):
         """
         Run Tölvera with given function, pixels, and keyword arguments.
 
         Args:
             f: Function to run.
-            px: Pixels to show.
             **kwargs: Keyword arguments for function.
         """
         while self.ti.window.running:
             with _lock:
                 if f is not None: f(**kwargs)
                 if self.osc is not False: self.osc.osc_map()
-                self.ti.show(px)
+                self.ti.show(self.px)
                 self.i += 1
     def stop(self):
         """
@@ -124,25 +123,23 @@ class Tolvera:
         print(f"\n[Tölvera] Exiting {self.name}...")
         for f in self._cleanup_fns: f()
         exit(0)
-    def render(self, px=None, **kwargs):
+    def render(self, f=None, **kwargs):
         """
-        Decorator for rendering Tölvera with given pixels and keyword arguments.
+        Decorator for rendering Tölvera with keyword arguments.
 
         Args:
-            px: Pixels to render.
             **kwargs: Keyword arguments for rendering.
 
         Returns:
             Decorator function.
         """
-        def decorator(func):
+        def decorator(f):
             def wrapper(*args, **func_kwargs):
                 try:
-                    self.run(func, px, **{**kwargs, **func_kwargs})
+                    self.run(f, **{**kwargs, **func_kwargs})
                 except KeyboardInterrupt:
                     self.stop()
             return wrapper
-        print('render', decorator, px, kwargs)
         return decorator
     def cleanup(self, f=None):
         """

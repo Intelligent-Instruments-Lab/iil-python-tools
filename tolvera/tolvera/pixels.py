@@ -4,10 +4,10 @@ FIXME: @ti.dataclass inheritance https://github.com/taichi-dev/taichi/issues/742
 TODO: add convex hull algorithm
 TODO: add algobets-style shape analysis (to CV?)
 TODO: add draw funcs to OSCMap? how to handle state/repainting?
+TODO: add functions for symmetry? (e.g. mirror, rotate, etc.)
 '''
 
 import taichi as ti
-from .utils import Options
 
 vec1 = ti.types.vector(1, ti.f32)
 vec2 = ti.math.vec2
@@ -67,16 +67,13 @@ class Polygon:
 
 @ti.data_oriented
 class Pixels:
-    def __init__(self,
-                 options: Options,
-                 mode='rgba',
-                 polygon_mode='crossing'):
-        self.o = options
-        self.x = self.o.x
-        self.y = self.o.y
-        self.fps = self.o.fps
+    def __init__(self, tolvera, **kwargs):
+        self.tv = tolvera
+        self.kwargs = kwargs
+        self.polygon_mode = kwargs.get('polygon_mode', 'crossing')
+        self.x = self.tv.x
+        self.y = self.tv.y
         self.px = Pixel.field(shape=(self.x, self.y))
-        self.mode = mode
         self.shape_enum = {
             'point':    0,
             'line':     1,
@@ -85,7 +82,6 @@ class Pixels:
             'triangle': 4,
             'polygon':  5,
         }
-        self._polygon_mode = polygon_mode
     def set(self, px):
         self.px.rgba = px.rgba
     def get(self):
@@ -238,7 +234,17 @@ class Pixels:
                 n -= 1
         return n
     @ti.kernel
-    def invert(self):
+    def flip_x(self):
+        '''
+        Invert image in x-axis.
+        '''
+        for i, j in ti.ndrange(self.x, self.y):
+            self.px.rgba_inv[i,j] = self.px.rgba[self.x-1-i,j]
+    @ti.kernel
+    def flip_y(self):
+        '''
+        Flip image in y-axis.
+        '''
         for i, j in ti.ndrange(self.x, self.y):
             self.px.rgba_inv[i,j] = self.px.rgba[i,self.y-1-j]
     @ti.kernel
@@ -286,7 +292,7 @@ class Pixels:
         self._particles(particles, shape)
     @ti.kernel
     def _particles(self, particles: ti.template(), shape: int):
-        for i in range(self.o.particles):
+        for i in range(self.tv.p.n):
             p = particles.field[i]
             s = particles.species.field[p.species, 0]
             if p.active == 0.0: continue
@@ -318,28 +324,6 @@ class Pixels:
         self.clear()
     def __call__(self):
         return self.get()
-    @ti.kernel
-    def g_to_rgba(self):# -> vec1:
-        for i, j in ti.ndrange(self.x, self.y):
-            # _i, _j = self.y-j-1,self.x-i-1
-            p = self.px.g[0,i,j]
-            self.px.rgba[i,j] = ti.Vector([p,p,p,1.0])
-    @ti.func
-    def rgba_to_g(self, rgba):# -> vec1:
-        # TODO: rgba_to_g
-        pass
-    @ti.func
-    def rgba_to_rgb(self, rgba):# -> vec3:
-        # TODO: rgba_to_rgb
-        pass
-    @ti.func
-    def g_inv(self):# -> vec3:
-        # TODO: g_inv
-        pass
-    @ti.func
-    def rgb_inv(self):# -> vec3:
-        # TODO: rgb_inv
-        pass
     @ti.func
     def rgba_inv(self):# -> vec3:
         # TODO: rgba_inv
@@ -347,7 +331,7 @@ class Pixels:
     # TODO: Normalise positions to [0,1] range?
     @ti.func
     def pos_to_px(self, pos: ti.math.vec2) -> ti.math.vec2:
-        return pos * [self.o.x, self.o.y]
+        return pos * [self.tv.x, self.tv.y]
     @ti.func
     def px_to_pos(self, px: ti.math.vec2) -> ti.math.vec2:
-        return px / [self.o.x, self.o.y]
+        return px / [self.tv.x, self.tv.y]

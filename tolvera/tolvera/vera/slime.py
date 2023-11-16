@@ -10,31 +10,32 @@ TODO: re-add credit
 import taichi as ti
 from ..pixels import Pixels
 from ..state import State
-from ..utils import Options, CONSTS
+from ..utils import CONSTS
 
 @ti.data_oriented
 class Slime:
-    def __init__(self, options: Options, evaporate: ti.f32 = 0.99):
-        self.o = options
+    def __init__(self, tolvera, evaporate: ti.f32 = 0.99, **kwargs):
+        self.tv = tolvera
+        self.kwargs = kwargs
         self.CONSTS = CONSTS({
             'SENSE_ANGLE': (ti.f32, ti.math.pi * 0.3),
             'MOVE_ANGLE':  (ti.f32, ti.math.pi * 0.3),
             'SUBSTEP':     (ti.i32, 1)
         })
-        self.particles = State(self.o, {
+        self.particles = State(self.tv, {
             'sense_angle':  (0.,10.),
             'sense_left':   (0.,10.),
             'sense_centre': (0.,10.),
             'sense_right':  (0.,10.),
-        }, self.o.p, osc=('get'), name='slime_particles', randomise=False)
-        self.species = State(self.o, {
+        }, self.tv.p.n, osc=('get'), name='slime_particles', randomise=False)
+        self.species = State(self.tv, {
             'sense_angle': (0., 1.),
             'sense_dist':  (0., 50.),
             'move_angle':  (0., 1.),
             'move_dist':   (0., 4.),
             'evaporate':   (0., 1.)
-        }, self.o.s, osc=('set'), name='slime_species')
-        self.trail = Pixels(self.o)
+        }, self.tv.s.n, osc=('set'), name='slime_species')
+        self.trail = Pixels(self.tv, **kwargs)
         self.evaporate = ti.field(dtype=ti.f32, shape=())
         self.evaporate[None] = evaporate
     def randomise(self):
@@ -75,15 +76,15 @@ class Slime:
     @ti.func
     def sense(self, pos, ang, dist):
         p = pos + ti.Vector([ti.cos(ang), ti.sin(ang)]) * dist
-        px = ti.cast(p[0], ti.i32) % self.o.x
-        py = ti.cast(p[1], ti.i32) % self.o.y
+        px = ti.cast(p[0], ti.i32) % self.tv.x
+        py = ti.cast(p[1], ti.i32) % self.tv.y
         pixel = self.trail.px.rgba[px, py]
         return pixel
     @ti.func
     def sense_rgba(self, pos, ang, dist, rgba):
         p = pos + ti.Vector([ti.cos(ang), ti.sin(ang)]) * dist
-        px = ti.cast(p[0], ti.i32) % self.o.x
-        py = ti.cast(p[1], ti.i32) % self.o.y
+        px = ti.cast(p[0], ti.i32) % self.tv.x
+        py = ti.cast(p[1], ti.i32) % self.tv.y
         px_rgba = self.trail.px.rgba[px, py]
         px_rgba_weighted = px_rgba * (1.0 - (px_rgba - rgba).norm())
         return px_rgba_weighted
@@ -92,8 +93,8 @@ class Slime:
         for i in range(particles.shape[0]):
             if particles[i].active == 0.0: continue
             p, s = particles[i], species[particles[i].species, 0]
-            x = ti.cast(p.pos[0], ti.i32) % self.o.x
-            y = ti.cast(p.pos[1], ti.i32) % self.o.y
+            x = ti.cast(p.pos[0], ti.i32) % self.tv.x
+            y = ti.cast(p.pos[1], ti.i32) % self.tv.y
             rgba = ti.Vector([s.r, s.g, s.b, s.a])
             self.trail.circle(x, y, p.size, rgba * p.active)
     def step(self, particles):

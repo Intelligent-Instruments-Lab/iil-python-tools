@@ -4,29 +4,29 @@ TODO: particle state analysis/applications?
 TODO: is half of self.state.dist redundant? print with low n
 TODO: re-add credit
 '''
-
 import taichi as ti
 from ..state import State
-from ..utils import Options, CONSTS
+from ..utils import CONSTS
 
 @ti.data_oriented
 class Flock:
-    def __init__(self, options: Options):
-        self.o = options
-        self.particles = State(self.o, {
+    def __init__(self, tolvera, **kwargs):
+        self.tv = tolvera
+        self.kwargs = kwargs
+        self.particles = State(tolvera, {
             # 'separate': (0., 1.), # ti.math.vec2
             # 'align':    (0., 1.), # ti.math.vec2
             # 'cohere':   (0., 1.), # ti.math.vec2
-            'nearby':   (0., self.o.p-1),   # ti.i32
-            'dist':     (0., self.o.x*2), # ti.f32
-            'dist_wrap':(0., self.o.x*2), # ti.f32
-        }, self.o.p, osc=('get'), name='flock_particles', randomise=False)
-        self.species = State(self.o, {
+            'nearby':   (0., self.tv.p.n-1),   # ti.i32
+            'dist':     (0., self.tv.x*2), # ti.f32
+            'dist_wrap':(0., self.tv.x*2), # ti.f32
+        }, self.tv.p.n, osc=('get'), name='flock_particles', randomise=False)
+        self.species = State(tolvera, {
             'separate': (.01, 1.),
             'align':    (.01, 1.),
             'cohere':   (.01, 1.),
             'radius':   (.01, 300.)
-        }, self.o.s, osc=('set'), name='flock_species')
+        }, self.tv.s.n, osc=('set'), name='flock_species')
     def randomise(self):
         self.species.randomise()
     @ti.kernel
@@ -46,7 +46,7 @@ class Flock:
                 if i==j and particles[j].active == 0: continue
                 p2 = particles[j]
                 species = self.species.field[p1.species, p2.species]
-                dis_wrap = p1.dist_wrap(p2, self.o.x, self.o.y)
+                dis_wrap = p1.dist_wrap(p2, self.tv.x, self.tv.y)
                 dis_wrap_norm = dis_wrap.norm()
                 if dis_wrap_norm < species.radius:
                     separate += dis_wrap

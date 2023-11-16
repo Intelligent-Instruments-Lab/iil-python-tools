@@ -11,48 +11,49 @@ import taichi as ti
 
 from ..pixels import Pixels
 from ..state import State
-from ..utils import Options, CONSTS
+from ..utils import CONSTS
 
 @ti.data_oriented
 class ReactionDiffusion():
     def __init__(self,
-                 options: Options,
-                 Du=0.160,
-                 Dv=0.080,
-                 feed=0.060,
-                 kill=0.062,
-                 substep=18):
-        self.o = options
-        self.i = 0
-        self.uv     = ti.Vector.field(2, ti.f32, shape=(2, self.o.x, self.o.y))
+                 tolvera,
+                 **kwargs):
+        self.tv = tolvera
+        self.kwargs = kwargs
+        self.uv     = ti.Vector.field(2, ti.f32, shape=(2, self.tv.x, self.tv.y))
         self.colors = ti.Vector.field(4, ti.f32, shape=(5, ))
-        self.field  = Pixels(self.o)
-        self.params = State(self.o, {
+        self.field  = Pixels(self.tv, **kwargs)
+        self.params = State(self.tv, {
             'Du':     (0., 1.),
             'Dv':     (0., 1.),
             'feed':   (0., 1.),
             'kill':   (0., 1.),
             'substep':(0, 100),
         }, 1, osc=('set'), name='reaction_diffusion', randomise=False)
-        self.params.set_state_all_from_list([Du, Dv, feed, kill, substep])
+        self.params.set_state_all_from_list([
+            kwargs.get('Du', 0.160),
+            kwargs.get('Dv', 0.080),
+            kwargs.get('feed', 0.060),
+            kwargs.get('kill', 0.062),
+            kwargs.get('substep', 18)])
         self.init()
     def init(self):
         self.randomise()
         self.make_palette()
-        if self.o.osc is not False:
+        if self.tv.osc.osc is not False:
             self.add_to_osc_map()
     def reset(self):
         self.uv.fill(0.0)
     def randomise(self):
-        self.uv_grid = np.zeros((2, self.o.x, self.o.y, 2), dtype=np.float32)
+        self.uv_grid = np.zeros((2, self.tv.x, self.tv.y, 2), dtype=np.float32)
         self.uv_grid[0, :, :, 0] = 1.0
-        rand_rows = np.random.choice(range(self.o.x), 50)
-        rand_cols = np.random.choice(range(self.o.y), 50)
+        rand_rows = np.random.choice(range(self.tv.x), 50)
+        rand_cols = np.random.choice(range(self.tv.y), 50)
         self.uv_grid[0, rand_rows, rand_cols, 1] = 1.0
         self.uv.from_numpy(self.uv_grid)
     def add_to_osc_map(self):
-        self.o.osc_map.receive_args_inline(self.params.setter_name+'_reset', self.reset)
-        self.o.osc_map.receive_args_inline(self.params.setter_name+'_randomise_uv', self.randomise)
+        self.tv.osc.map.receive_args_inline(self.params.setter_name+'_reset', self.reset)
+        self.tv.osc.map.receive_args_inline(self.params.setter_name+'_randomise_uv', self.randomise)
     def make_palette(self):
         self.colors[0] = [0.0, 0.0, 0.0, 0.3137]
         self.colors[1] = [1.0, 0.1843, 0.53333, 0.37647]
@@ -68,7 +69,7 @@ class ReactionDiffusion():
     @ti.kernel
     def compute(self, phase: int):
         p = self.params.field[0,0]
-        for i, j in ti.ndrange(self.o.x, self.o.y):
+        for i, j in ti.ndrange(self.tv.x, self.tv.y):
             cen = self.uv[phase, i, j]
             lapl = self.uv[phase, i + 1, j] + self.uv[phase, i, j + 1] + self.uv[
                 phase, i - 1, j] + self.uv[phase, i, j - 1] - 4.0 * cen
@@ -78,7 +79,7 @@ class ReactionDiffusion():
             self.uv[1 - phase, i, j] = val
     @ti.kernel
     def render(self):
-        for i, j in ti.ndrange(self.o.x, self.o.y):
+        for i, j in ti.ndrange(self.tv.x, self.tv.y):
             value = self.uv[0, i, j].y
             color = ti.math.vec3(0)
             # if value <= self.colors[0].w:
@@ -92,8 +93,7 @@ class ReactionDiffusion():
             self.field.px.rgba[i, j] = [color.x, color.y, color.z, 1.0]
     def process(self):
         for _ in range(self.substep[None]):
-            self.compute(self.i % 2)
-            self.i += 1
+            self.compute(self.tv.i % 2)
     def __call__(self):
         self.process()
         self.render()
