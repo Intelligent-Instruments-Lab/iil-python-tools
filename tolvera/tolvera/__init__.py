@@ -98,20 +98,3 @@ class Tolvera:
             return decorator(f)
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.render(*args, **kwds)
-
-'''
-# Render as decorator
-def render(px=None, **kwargs):
-    def decorator(func):
-        def wrapper(*args, **func_kwargs):
-            try:
-                # add any pre-function call logic
-                _run(func, px, **{**kwargs, **func_kwargs})
-            except KeyboardInterrupt:
-                _stop()
-            # add any post-function call logic
-        return wrapper
-
-    return decorator
-'''
-
