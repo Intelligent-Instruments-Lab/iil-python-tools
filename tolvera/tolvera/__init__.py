@@ -142,7 +142,10 @@ class Tolvera:
                 except KeyboardInterrupt:
                     self.stop()
             return wrapper
-        return decorator
+        if f is not None:
+            return decorator(f)
+        else:
+            return decorator
     def cleanup(self, f=None):
         """
         Decorator for cleanup functions based on iipyper.
