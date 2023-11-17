@@ -124,8 +124,8 @@ class State:
                 state[k] = self.field[index][k]
         self.field[index] = self.struct(**state)
 
-    def set_state_idx_from_list(self, index: tuple, state: list):
-        self.set_state_idx_from_args(index, *state)
+    def set_state_idx_from_ndarray(self, index: tuple, state: np.ndarray):
+        self.set_state_idx_from_args(index, *state.tolist())
 
     def set_state_row_from_list(self, i: int|tuple[int], state: list):
         '''
