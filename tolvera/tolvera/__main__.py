@@ -12,10 +12,13 @@ def help():
 def main(**kwargs):
     tv = Tolvera(**kwargs)
 
-    @tv.render()
+    @tv.render
     def _():
-        print('_')
+        tv.px.diffuse(0.99)
         tv.p()
+        tv.v.flock(tv.p)
+        tv.px.particles(tv.p, tv.s, 'circle')
+        return tv.px
 
 if __name__=='__main__':
     fire.Fire(main)

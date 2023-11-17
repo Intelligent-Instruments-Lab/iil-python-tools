@@ -3,8 +3,9 @@ TODO: test reset
 TODO: add attractors
 TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
 TODO: async runner based on sardine @swim?
-TODO: should _packages be singletons?
+TODO: decouple _packages in init() from Tolvera
 TODO: global state load/save via utils.ti_serialize, k:v store
+TODO: turn render() into a proper decorator with args, kwargs
 '''
 
 # External packages
@@ -16,7 +17,7 @@ from sys import exit
 from ._taichi import Taichi
 from ._osc import OSC
 from ._iml import IML
-# from ._cv import CV
+from ._cv import CV
 
 # Tölvera components
 from .patches import *
@@ -25,18 +26,10 @@ from .particles import *
 from .pixels import *
 from .vera import Vera
 
-class Tolvera:
+class TolveraContext:
     def __init__(self, **kwargs) -> None:
-        """
-        Initialize and setup Tölvera with given keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments for setup and initialization.
-        """
         self.kwargs = kwargs
         self.init(**kwargs)
-        self.setup(**kwargs)
-        print(f"[Tölvera] Initialization and setup complete.")
     def init(self, **kwargs):
         """
         Initialize wrapped external packages with given keyword arguments.
@@ -45,18 +38,135 @@ class Tolvera:
         Args:
             **kwargs: Keyword arguments for component initialization.
         """
+        self.name = 'Tölvera Context'
+        self.name_clean = clean_name(self.name)
+        print(f"[{self.name}] Initializing context...")
         self.i = 0
         self.x = kwargs.get('x', 1920)
         self.y = kwargs.get('y', 1080)
+        self.ti = Taichi(self, **kwargs)
+        self.canvas = Pixels(self, **kwargs)
+        self.osc = kwargs.get('osc', False)
+        self.iml = kwargs.get('iml', False)
+        self.cv  = kwargs.get('cv', False)
+        if self.osc:
+            self.osc = OSC(self, **kwargs)
+        if self.iml:
+            self.iml = IML(self, **kwargs)
+        if self.cv:
+            self.cv = CV(self, **kwargs)
+        self._cleanup_fns = []
+        self.tolveras = []
+        print(f"[{self.name}] Context initialization complete.")
+    def run(self, f=None, **kwargs):
+        """
+        Run Tölvera with given render function and keyword arguments.
+        This function will run inside a locked thread until KeyboardInterrupt/exit.
+        It runs the render function, updates the OSC map (if enabled), and shows the pixels.
+
+        Args:
+            f: Function to run.
+            **kwargs: Keyword arguments for function.
+        """
+        print(f"[{self.name}] Running with render function {f.__name__}...")
+        while self.ti.window.running:
+            with _lock:
+                if f is not None: 
+                    self.canvas = f(**kwargs)
+                if self.osc is not False: 
+                    self.osc.map()
+                self.ti.show(self.canvas)
+                self.i += 1
+    def stop(self):
+        """
+        Run cleanup functions and exit.
+        """
+        print(f"\n[{self.name}] Stopping {self.name}...")
+        for f in self._cleanup_fns: 
+            print(f"\n[{self.name}] Running cleanup function {f.__name__}...")
+            f()
+        print(f"\n[{self.name}] Exiting {self.name}...")
+        exit(0)
+    def render(self, f=None, **kwargs):
+        """Render Tölvera with given function and keyword arguments.
+
+        Args:
+            f (function, optional): Function to run. Defaults to None.
+        """
+        try: self.run(f, **kwargs)
+        except KeyboardInterrupt: self.stop()
+    def cleanup(self, f=None):
+        """
+        Decorator for cleanup functions based on iipyper.
+        Make functions run on KeyBoardInterrupt (before exit).
+        Cleanup functions must be defined before render is called!
+
+        Args:
+            f: Function to cleanup.
+
+        Returns:
+            Decorator function if f is None, else decorated function.
+        """
+        print(f"\n[{self.name}] Adding cleanup function {f.__name__}...")
+        def decorator(f):
+            self._cleanup_fns.append(f)
+            return f
+        if f is None: # return a decorator
+            return decorator
+        else: #bare decorator case; return decorated function
+            return decorator(f)
+    def add_tolvera(self, tolvera):
+        """
+        Add Tölvera to context.
+
+        Args:
+            tolvera (Tolvera): Tölvera to add.
+        """
+        assert isinstance(tolvera, Tolvera), f"tolvera must be of type Tolvera, not {type(tolvera)}."
+        print(f"[{self.name}] Adding tolvera='{tolvera.name}' to context.")
+        self.tolveras.append(tolvera)
+    def get_tolvera_names(self):
+        names = []
+        for tolvera in self.tolveras:
+            names.append(tolvera.name)
+        return names
+
+class Tolvera:
+    def __init__(self, **kwargs):
+        """
+        Initialize and setup Tölvera with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for setup and initialization.
+        """
+        self.kwargs = kwargs
         self.name = kwargs.get('name', 'Tölvera')
         self.name_clean = clean_name(self.name)
-        self.ti = Taichi(self, **kwargs)
-        self.osc = OSC(self, **kwargs)
-        self.iml = IML(self, **kwargs)
-        # self.cv = CV(self, **kwargs)
-        if self.osc.osc is not False: # TODO: check
-            self.add_to_osc_map()
-        print(f"[Tölvera] Initialization complete.")
+        if 'context' not in kwargs:
+            self.init_context(**kwargs)
+        else:
+            self.share_context(kwargs['context'])
+        self.setup(**kwargs)
+        print(f"[{self.name}] Initialization and setup complete.")
+    def init_context(self, **kwargs):
+        context = TolveraContext(**kwargs)
+        self.share_context(context)
+    def share_context(self, context):
+        names = context.get_tolvera_names()
+        if len(names) == 0:
+            print(f"[{self.name}] Sharing context '{context.name}'.")
+        else:
+            print(f"[{self.name}] Sharing context '{context.name}' with {context.get_tolvera_names()}.")
+        self.ctx = context
+        self.x       = context.x
+        self.y       = context.y
+        self.ti      = context.ti
+        self.canvas  = context.canvas
+        self.osc     = context.osc
+        self.iml     = context.iml
+        self.render  = context.render
+        self.cleanup = context.cleanup
+        self.cv      = context.cv
     def setup(self, **kwargs):
         """
         Setup Tölvera with given keyword arguments.
@@ -74,8 +184,9 @@ class Tolvera:
         self.s = Species(self, **kwargs)
         self.p = Particles(self, self.s, **kwargs)
         self.v = Vera(self, **kwargs)
-        self._cleanup_fns = []
-        print(f"[Tölvera] Setup complete.")
+        if self.osc is not False: self.add_to_osc_map()
+        self.ctx.add_tolvera(self)
+        print(f"[{self.name}] Setup complete.")
     def randomise(self):
         """
         Randomize particles, species, and Vera.
@@ -91,6 +202,7 @@ class Tolvera:
         Args:
             **kwargs: Keyword arguments for reset.
         """
+        print(f"[{self.name}] Resetting self with kwargs={kwargs}...")
         if kwargs is not None:
             self.kwargs = kwargs
         self.setup()
@@ -98,73 +210,11 @@ class Tolvera:
         """
         Add top-level Tölvera functions to OSC map.
         """
-        setter_name = f"{self.o.name_clean}_set"
-        getter_name = f"{self.o.name_clean}_get"
+        setter_name = f"{self.name_clean}_set"
+        getter_name = f"{self.name_clean}_get"
         self.osc.map.receive_args_inline(setter_name+'_randomise', self.randomise)
-        self.osc.map.receive_args_inline(setter_name+'_reset', self.reset) # TODO: kwargs?
+        # self.osc.map.receive_args_inline(setter_name+'_reset', self.reset) # TODO: kwargs?
         self.osc.map.receive_args_inline(setter_name+'_particles_randomise', self.p._randomise) # TODO: move inside Particles
-    def run(self, f, **kwargs):
-        """
-        Run Tölvera with given function, pixels, and keyword arguments.
-
-        Args:
-            f: Function to run.
-            **kwargs: Keyword arguments for function.
-        """
-        print('run')
-        while self.ti.window.running:
-            with _lock:
-                if f is not None: f(**kwargs)
-                if self.osc is not False: self.osc.osc_map()
-                self.ti.show(self.px)
-                self.i += 1
-    def stop(self):
-        """
-        Stop Tölvera and exit.
-        """
-        print(f"\n[Tölvera] Exiting {self.name}...")
-        for f in self._cleanup_fns: f()
-        exit(0)
-    def render(self, f=None, **kwargs):
-        """
-        Decorator for rendering Tölvera with keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments for rendering.
-
-        Returns:
-            Decorator function.
-        """
-        def decorator(f):
-            def wrapper(*args, **func_kwargs):
-                try:
-                    self.run(f, **{**kwargs, **func_kwargs})
-                except KeyboardInterrupt:
-                    self.stop()
-            return wrapper
-        if f is not None:
-            return decorator(f)
-        else:
-            return decorator
-    def cleanup(self, f=None):
-        """
-        Decorator for cleanup functions based on iipyper.
-        Make functions run on KeyBoardInterrupt (before exit).
-        Cleanup functions must be defined before render is called!
-
-        Args:
-            f: Function to cleanup.
-
-        Returns:
-            Decorator function if f is None, else decorated function.
-        """
-        def decorator(f):
-            self._cleanup_fns.append(f)
-            return f
-        if f is None: # return a decorator
-            return decorator
-        else: #bare decorator case; return decorated function
-            return decorator(f)
 
 
 def main(**kwargs):

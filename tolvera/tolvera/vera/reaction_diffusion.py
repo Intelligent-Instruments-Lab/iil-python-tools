@@ -40,7 +40,7 @@ class ReactionDiffusion():
     def init(self):
         self.randomise()
         self.make_palette()
-        if self.tv.osc.osc is not False:
+        if self.tv.osc is not False:
             self.add_to_osc_map()
     def reset(self):
         self.uv.fill(0.0)

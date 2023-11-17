@@ -202,9 +202,9 @@ class Pixels:
     @ti.func
     def _is_inside(self,p,x,y,l):
         is_inside = 0
-        if self._polygon_mode == 'crossing':
+        if self.polygon_mode == 'crossing':
             is_inside = self._is_inside_crossing(p,x,y,l)
-        elif self._polygon_mode == 'winding':
+        elif self.polygon_mode == 'winding':
             is_inside = self._is_inside_winding(p,x,y,l)
         return is_inside
     @ti.func
@@ -287,14 +287,14 @@ class Pixels:
     def blend_mix(self, px: ti.template(), a: ti.f32):
         for i, j in ti.ndrange(self.x, self.y):
             self.px.rgba[i,j] = ti.math.mix(self.px.rgba[i,j], px.rgba[i,j], a)
-    def particles(self, particles: ti.template(), shape='circle'):
+    def particles(self, particles: ti.template(), species: ti.template(), shape='circle'):
         shape = self.shape_enum[shape]
-        self._particles(particles, shape)
+        self._particles(particles, species, shape)
     @ti.kernel
-    def _particles(self, particles: ti.template(), shape: int):
+    def _particles(self, particles: ti.template(), species: ti.template(), shape: int):
         for i in range(self.tv.p.n):
             p = particles.field[i]
-            s = particles.species.field[p.species, 0]
+            s = species.state.field[p.species, 0]
             if p.active == 0.0: continue
             px = ti.cast(p.pos[0], ti.i32)
             py = ti.cast(p.pos[1], ti.i32)

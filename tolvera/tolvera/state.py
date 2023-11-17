@@ -83,7 +83,8 @@ class State:
 
     def init(self, randomise: bool = False):
         if randomise: self.randomise()
-        if self.tv.osc.osc is not False and self.osc:
+        if self.tv.osc is not False and self.osc:
+            self.osc = self.tv.osc
             self.add_to_osc_map()
 
     def get(self, index: tuple, attribute: str):
@@ -95,8 +96,8 @@ class State:
     def osc_getter(self, i: int, j: int, attribute: str):
         ret = self.get((i,j), attribute)
         if ret is not None:
-            route = self.tv.osc.map.pascal_to_path(self.getter_name)#+'/'+attribute
-            self.tv.osc.osc.return_to_sender_by_name((route, attribute,ret), self.tv.client_name)
+            route = self.osc.map.pascal_to_path(self.getter_name)#+'/'+attribute
+            self.osc.host.return_to_sender_by_name((route, attribute,ret), self.osc.client_name)
         return ret
 
     @ti.kernel
@@ -224,9 +225,9 @@ class State:
 
     def add_osc_setters(self, name):
         # randomise
-        self.tv.osc.map.receive_args_inline(name+'_randomise', self._randomise)
+        self.osc.map.receive_args_inline(name+'_randomise', self._randomise)
         # state
-        f = self.tv.osc.map.receive_list_with_idx
+        f = self.osc.map.receive_list_with_idx
         f(f"{name}_idx", self.set_state_idx_from_list, 2, getattr(self,'len_state_idx'))
         f(f"{name}_row", self.set_state_row_from_list, 1, getattr(self,'len_state_row'))
         f(f"{name}_col", self.set_state_col_from_list, 1, getattr(self,'len_state_col'))
@@ -242,7 +243,7 @@ class State:
         for k,v in self.dict.items():
             ranges = (int(v[0]), int(v[0]), int(v[1]))
             kwargs = {'i': ranges, 'j': ranges, 'attr': (k,k,k)}
-            self.tv.osc.map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
+            self.osc.map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
 
     '''
     def add_osc_streams(self, name):

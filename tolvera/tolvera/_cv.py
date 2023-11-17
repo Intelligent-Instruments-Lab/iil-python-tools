@@ -4,8 +4,6 @@ import numpy as np
 
 from .particles import Particles
 from .pixels import Pixels
-# from .vera import Physarum
-from .utils import render, init
 
 # TODO: OtsuThreshold
 # TODO: test kmeans https://docs.opencv.org/4.6.0/d5/d38/group__core__cluster.html
@@ -176,21 +174,3 @@ class CV:
             return self.px_g#.to_numpy()[0]
         else:
             assert False, f'colormode error: {self.colormode}'
-
-def main(x=1920,y=1080,n=128,species=2,fps=120, evaporate=0.99, device=0):
-    init(x=x,y=y,n=n,species=species,evaporate=evaporate,fps=fps)
-    particles = Particles(x, y, n, species)
-    pixels = Pixels(x, y, evaporate=evaporate, fps=fps)
-    # physarum = Physarum(x, y, species, evaporate)
-    cv = CV(x,y,fps,device=device)
-
-    def render_physarum():
-        # physarum.deposit_px(cv(), 0.1)
-        # physarum(particles)
-        # pixels.set(physarum.trail.px)
-        pixels.decay()
-    
-    render(render_physarum, pixels)
-
-if __name__ == '__main__':
-    main()

@@ -17,3 +17,5 @@ class Species:
             'b':      (0., 1.),
             'a':      (1., 1.),
         }, self.n, osc=('set'), name='species')
+    def randomise(self):
+        self.state.randomise()

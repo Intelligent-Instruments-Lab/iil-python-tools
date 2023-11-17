@@ -2,8 +2,8 @@ import taichi as ti
 import time
 
 class Taichi:
-    def __init__(self, tolvera, **kwargs) -> None:
-        self.tv = tolvera
+    def __init__(self, context, **kwargs) -> None:
+        self.ctx = context
         self.kwargs = kwargs
         self.gpu      = kwargs.get('gpu', 'vulkan')
         self.cpu      = kwargs.get('cpu', None)
@@ -30,7 +30,7 @@ class Taichi:
                 return False
             print(f"[Tölvera] Running on {self.gpu}")
     def init_ui(self):
-        self.window = ti.ui.Window(self.tv.name, (self.tv.x, self.tv.y), fps_limit=self.fps, show_window=not self.headless)
+        self.window = ti.ui.Window(self.ctx.name, (self.ctx.x, self.ctx.y), fps_limit=self.fps, show_window=not self.headless)
         self.canvas = self.window.get_canvas()
     def show(self, px):
         self.canvas.set_image(px.px.rgba)
