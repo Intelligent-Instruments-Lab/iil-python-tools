@@ -4,6 +4,7 @@ TODO: add attractors
 TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
 TODO: async runner based on sardine @swim?
 TODO: should _packages be singletons?
+TODO: global state load/save via utils.ti_serialize, k:v store
 '''
 
 # External packages
@@ -38,7 +39,7 @@ class Tolvera:
         print(f"[Tölvera] Initialization and setup complete.")
     def init(self, **kwargs):
         """
-        Initialize external packages with given keyword arguments.
+        Initialize wrapped external packages with given keyword arguments.
         This only happens once when Tölvera is first initialized.
 
         Args:
@@ -110,6 +111,7 @@ class Tolvera:
             f: Function to run.
             **kwargs: Keyword arguments for function.
         """
+        print('run')
         while self.ti.window.running:
             with _lock:
                 if f is not None: f(**kwargs)
