@@ -14,6 +14,7 @@ def main(**kwargs):
 
     @tv.render
     def _():
+        print('_')
         tv.p()
 
 if __name__=='__main__':
