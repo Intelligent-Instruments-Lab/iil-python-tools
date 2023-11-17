@@ -12,7 +12,7 @@ def help():
 def main(**kwargs):
     tv = Tolvera(**kwargs)
 
-    @tv.render
+    @tv.render()
     def _():
         print('_')
         tv.p()
