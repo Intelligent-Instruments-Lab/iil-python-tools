@@ -1,13 +1,3 @@
-'''
-TODO: test reset
-TODO: add attractors
-TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
-TODO: async runner based on sardine @swim?
-TODO: decouple _packages in init() from Tolvera
-TODO: global state load/save via utils.ti_serialize, k:v store
-TODO: turn render() into a proper decorator with args, kwargs
-'''
-
 # External packages
 from iipyper.state import _lock
 import fire
@@ -26,7 +16,19 @@ from .particles import *
 from .pixels import *
 from .vera import Vera
 
+'''
+TODO: render
+    proper decorator with args, kwargs
+    async runner based on sardine @swim?
+TODO: global state load/save via utils.ti_serialize, k:v store
+'''
+
 class TolveraContext:
+    """
+    Context for sharing between multiple Tölvera instances.
+    Context includes Taichi, OSC, IML and CV.
+    All Tölvera instances share the same context and are added to a dict.
+    """
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
         self.init(**kwargs)
@@ -56,7 +58,7 @@ class TolveraContext:
         if self.cv:
             self.cv = CV(self, **kwargs)
         self._cleanup_fns = []
-        self.tolveras = []
+        self.tolveras = {}
         print(f"[{self.name}] Context initialization complete.")
     def run(self, f=None, **kwargs):
         """
@@ -124,14 +126,49 @@ class TolveraContext:
         """
         assert isinstance(tolvera, Tolvera), f"tolvera must be of type Tolvera, not {type(tolvera)}."
         print(f"[{self.name}] Adding tolvera='{tolvera.name}' to context.")
-        self.tolveras.append(tolvera)
+        self.tolveras[tolvera.name] = tolvera
+    def get_tolvera_by_name(self, name):
+        """
+        Get Tölvera by name.
+
+        Args:
+            name (str): Name of Tölvera to get.
+
+        Returns:
+            Tölvera: Tölvera with given name.
+        """
+        return self.tolveras[name]
     def get_tolvera_names(self):
-        names = []
-        for tolvera in self.tolveras:
-            names.append(tolvera.name)
-        return names
+        """
+        Get names of all Tölveras in context.
+
+        Returns:
+            list: List of Tölvera names.
+        """
+        return list(self.tolveras.keys())
+    def delete_tolvera(self, name):
+        """
+        Delete Tölvera by name.
+
+        Args:
+            name (str): Name of Tölvera to delete.
+        """
+        print(f"[{self.name}] Deleting tolvera='{name}' from context.")
+        del self.tolveras[name]
+
+'''
+TODO: test reset
+TODO: add attractors
+TODO: combined OSC setter(s) for species+flock+slime+rd etc..?
+TODO: make tv.p.n and tv.s.n into 0d fields
+'''
 
 class Tolvera:
+    """
+    Tölvera class which contains all Tölvera components;
+    Particles, Species, Vera, and Pixels.
+    Multiple Tölvera instances share the same TölveraContext.
+    """
     def __init__(self, **kwargs):
         """
         Initialize and setup Tölvera with given keyword arguments.
@@ -181,9 +218,9 @@ class Tolvera:
         self.substep   = kwargs.get('substep', 1)
         self.evaporate = kwargs.get('evaporate', 0.95)
         self.px = Pixels(self, **kwargs)
-        self.s = Species(self, **kwargs)
-        self.p = Particles(self, self.s, **kwargs)
-        self.v = Vera(self, **kwargs)
+        # self.s = Species(self, **kwargs)
+        # self.p = Particles(self, self.s, **kwargs)
+        # self.v = Vera(self, **kwargs)
         if self.osc is not False: self.add_to_osc_map()
         self.ctx.add_tolvera(self)
         print(f"[{self.name}] Setup complete.")
