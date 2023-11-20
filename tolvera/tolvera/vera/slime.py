@@ -22,33 +22,35 @@ class Slime:
             'MOVE_ANGLE':  (ti.f32, ti.math.pi * 0.3),
             'SUBSTEP':     (ti.i32, 1)
         })
-        self.particles = State(self.tv, {
+        self.tv.s.slime_p = {'state': {
             'sense_angle':  (ti.math.vec2, 0., 10.),
             'sense_left':   (ti.math.vec2, 0., 10.),
             'sense_centre': (ti.math.vec2, 0., 10.),
             'sense_right':  (ti.math.vec2, 0., 10.),
-        }, self.tv.p.n, osc=('get'), name='slime_particles', randomise=False)
-        self.species = State(self.tv, {
+        }, 'shape': self.tv.pn,
+        'osc': ('get'), 'randomise': False}
+        self.tv.s.slime_s = {'state': {
             'sense_angle': (ti.f32, 0., 1.),
             'sense_dist':  (ti.f32, 0., 50.),
             'move_angle':  (ti.f32, 0., 1.),
             'move_dist':   (ti.f32, 0., 4.),
             'evaporate':   (ti.f32, 0., 1.)
-        }, self.tv.s.n, osc=('set'), name='slime_species')
+        }, 'shape': (self.tv.sn, self.tv.sn),
+        'osc': ('set'), 'randomise': True}
         self.trail = Pixels(self.tv, **kwargs)
         self.evaporate = ti.field(dtype=ti.f32, shape=())
         self.evaporate[None] = evaporate
     def randomise(self):
-        self.species.randomise()
-        self.particles.randomise()
+        self.tv.s.slime_s.randomise()
+        self.tv.s.slime_p.randomise()
     @ti.kernel
     def move(self, field: ti.template()):
         for i in range(field.shape[0]):
             if field[i].active == 0.0: continue
 
             p    = field[i]
-            ang  = self.particles.field[i,0].sense_angle
-            species = self.species.field[p.species, p.species] # diagonal
+            ang  = self.tv.s.slime_p[i,0].sense_angle
+            species = self.tv.s.slime_s[p.species, p.species] # diagonal
 
             sense_angle = species.sense_angle * self.CONSTS.SENSE_ANGLE
             move_angle  = species.move_angle  * self.CONSTS.MOVE_ANGLE
@@ -68,10 +70,10 @@ class Slime:
             p.pos += ti.Vector([ti.cos(ang), ti.sin(ang)]) \
                 * species.move_dist * p.active
             
-            self.particles.field[i,0].sense_angle  = ang
-            self.particles.field[i,0].sense_centre = c
-            self.particles.field[i,0].sense_left   = l
-            self.particles.field[i,0].sense_right  = r
+            self.tv.s.slime_p[i,0].sense_angle  = ang
+            self.tv.s.slime_p[i,0].sense_centre = c
+            self.tv.s.slime_p[i,0].sense_left   = l
+            self.tv.s.slime_p[i,0].sense_right  = r
             field[i].pos = p.pos
     @ti.func
     def sense(self, pos, ang, dist):

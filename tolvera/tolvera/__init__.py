@@ -15,6 +15,7 @@ from .utils import *
 from .particles import *
 from .pixels import *
 from .vera import Vera
+from .state import StateDict
 
 '''
 TODO: render
@@ -214,13 +215,24 @@ class Tolvera:
         """
         self.particles = kwargs.get('particles', 1024)
         self.species   = kwargs.get('species', 4)
+        self.pn = self.particles
+        self.sn = self.species
         self.p_per_s   = self.particles // self.species
         self.substep   = kwargs.get('substep', 1)
         self.evaporate = kwargs.get('evaporate', 0.95)
+        self.s = StateDict(self)
         self.px = Pixels(self, **kwargs)
-        self.s = Species(self, **kwargs)
-        self.p = Particles(self, self.s, **kwargs)
+        self._species = Species(self, **kwargs)
+        # self.p = Particles(self, self.s, **kwargs)
+        self.p = Particles(self, **kwargs)
         self.v = Vera(self, **kwargs)
+        # TODO: Useful?
+        # self.v = dotdict({
+        #     'move':  Move(self),
+        #     'flock': Flock(self),
+        #     'slime': Slime(self),
+        #     'rd':    ReactionDiffusion(self),
+        # })
         if self.osc is not False: self.add_to_osc_map()
         self.ctx.add_tolvera(self)
         print(f"[{self.name}] Setup complete.")
@@ -229,7 +241,7 @@ class Tolvera:
         Randomize particles, species, and Vera.
         """
         self.p.randomise()
-        self.s.randomise()
+        self.s.species.randomise()
         self.v.randomise()
     def reset(self, **kwargs):
         """

@@ -15,121 +15,135 @@ from typing import Any
 from taichi._lib.core.taichi_python import DataType
 import taichi as ti
 import numpy as np
+import jsons
 
 from .npndarray_dict import NpNdarrayDict, np_vec2, np_vec3, np_vec4
+from .utils import *
+
+class StateDict(dotdict):
+    def __init__(self, tolvera) -> None:
+        self.tv = tolvera
+    def set(self, name, kwargs: dict) -> None:
+        if name in self:
+            raise ValueError(f"[tolvera.state.StateDict] '{name}' already in dict.")
+        try:
+            if name == 'tv' and type(kwargs) is not dict and type(kwargs) is not tuple:
+                self[name] = kwargs
+            elif type(kwargs) is dict:
+                self[name] = State(self.tv, name=name, **kwargs)
+            elif type(kwargs) is tuple:
+                self[name] = State(self.tv, name, *kwargs)
+            else:
+                raise TypeError(f"[tolvera.state.StateDict] set() requires dict|tuple, not {type(kwargs)}")
+        except TypeError as e:
+            print(f"[tolvera.state.StateDict] TypeError setting {name}: {e}")
+        except ValueError as e:
+            print(f"[tolvera.state.StateDict] ValueError setting {name}: {e}")
+        except Exception as e:
+            print(f"[tolvera.state.StateDict] UnexpectedError setting {name}: {e}")
+            raise
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        self.set(__name, __value)
 
 @ti.data_oriented
 class State:
-    '''
-    Args
-        tolvera: tolvera instance
-        state: a dictionary of attributes in `'attr': (min, max)` format
-        shape: the shape of the state field (currently only `int->(int,int)` supported)
-        osc: one/both of `('get', 'set')` to create OSC getters and/or setters
-        name: becomes the OSC path prefix for the state
-        randomise: randomise the state on initialisation
-    '''
     def __init__(self, 
                  tolvera,
+                 name: str,
                  state: dict[str, tuple[DataType, Any, Any]],
                  shape: int|tuple[int],
-                 osc: tuple = None,
-                 name: str = 'state',
-                 randomise: bool = True):
+                 iml: str|tuple = None, # 'get' | ('get', 'set')
+                 osc: str|tuple = None, # 'get' | ('get', 'set')
+                 randomise: bool = True,
+                 methods: dict[str, Any] = None):
         self.tv = tolvera
-        self.dict = state
-        self.shape = (shape,) if type(shape) is int else shape
-        self.struct = ti.types.struct(**{k: v[0] for k,v in self.dict.items()})
-        self.field = self.struct.field(shape=self.shape)
-        self.osc = True if osc is not None else False
-        self.osc_get = 'get' in osc if osc is not None else False
-        self.osc_set = 'set' in osc if osc is not None else False
+        assert name is not None, "State must have a name."
         self.name = name
-        self.init(randomise)
+        self.setup_data(state, shape, randomise, methods)
+        self.setup_accessors(iml, osc)
 
-    def init(self, randomise: bool = False):
-        self.init_nddict()
-        if randomise:
-            self.nddict_randomise()
-        if self.tv.osc is not False and self.osc:
-            self.osc = self.tv.osc
-            self.add_to_osc_map()
+    def setup_data(self, dict: dict[str, tuple[DataType, Any, Any]], shape: int|tuple[int], randomise: bool = True, methods: dict[str, Any] = None):
+        self.create_struct_field(dict, shape, methods)
+        self.create_npndarray_dict()
+        if randomise: self.randomise()
 
-    def init_nddict(self):
-        self.types = {
-            ti.i32: np.int32,
-            ti.f32: np.float32,
-            ti.math.vec2: np_vec2,
-            ti.math.vec3: np_vec3,
-            ti.math.vec4: np_vec4,
-        }
+    def create_struct_field(self, dict: dict[str, tuple[DataType, Any, Any]], shape: int|tuple[int], methods: dict[str, Any] = None):
+        self.dict = dict
+        self.shape = (shape,) if isinstance(shape, int) else shape
+        if methods is None:
+            self.struct = ti.types.struct(**{k: v[0] for k, v in self.dict.items()})
+        else:
+            self.struct = ti.types.struct(**{k: v[0] for k, v in self.dict.items()}, methods=methods)
+        self.field = self.struct.field(shape=self.shape)
 
+    def create_npndarray_dict(self):
         nddict = {}
         for k, v in self.dict.items():
             titype, min_val, max_val = v
-            nptype = self.types.get(titype)
+            nptype = TiNpTypeMap.get(titype)
             if nptype is None:
                 raise NotImplementedError(f"no nptype for {titype}")
             nddict[k] = (nptype, min_val, max_val)
-        
         self.nddict = NpNdarrayDict(nddict, self.shape)
 
-    def from_nddict(self):
-        self.field.from_numpy(self.nddict.get_data())
-
-    def to_nddict(self):
-        self.nddict.set_data(self.field.to_numpy())
-
-    def nddict_randomise(self):
+    def randomise(self):
         self.nddict.randomise()
         self.from_nddict()
+    
+    def setup_accessors(self, iml: tuple=None, osc: tuple=None):
+        self.setter_name = f"{self.tv.name_clean}_set_{self.name}"
+        self.getter_name = f"{self.tv.name_clean}_get_{self.name}"
+        self.handle_accessor_flags(iml, osc)
+        if self.tv.iml is not False and self.iml:
+            self.setup_iml_mapping()
+        if self.tv.osc is not False and self.osc:
+            self.setup_osc_mapping()
 
-    def randomise(self):
-        f_np = self.field.to_numpy()
-        shape = self.shape
-        for k, v in self.dict.items():
-            datatype, dmin, dmax = v
-            match datatype:
-                case ti.i32:
-                    f_np[k] = np.random.randint(dmin, dmax, size=shape).astype(np.int32)
-                case ti.f32:
-                    f_np[k] = np.random.uniform(dmin, dmax, size=shape).astype(np.float32)
-                case ti.math.vec2:
-                    f_np[k] = np.random.uniform(dmin, dmax, size=shape+(2,)).astype(np.float32)
-                case ti.math.vec3:
-                    f_np[k] = np.random.uniform(dmin, dmax, size=shape+(3,)).astype(np.float32)
-                case ti.math.vec4:
-                    f_np[k] = np.random.uniform(dmin, dmax, size=shape+(4,)).astype(np.float32)
-                case _:
-                    raise NotImplementedError(f"randomise() not implemented for {datatype}")
-        self.field.from_numpy(f_np)
+    def handle_accessor_flags(self, iml, osc):
+        self.iml, self.iml_get, self.iml_set = self.handle_get_set(iml)
+        self.osc, self.osc_get, self.osc_set = self.handle_get_set(osc)
 
-    @ti.kernel
-    def ti_randomise(self):
+    def handle_get_set(self, flag):
+        enabled = flag is not None
+        if isinstance(flag, str): flag = (flag,)
+        get = 'get' in flag if enabled else False
+        set = 'set' in flag if enabled else False
+        return enabled, get, set
+
+    def setup_iml_mapping(self):
+        self.iml = self.tv.iml
+        if self.iml_set:
+            self.add_iml_setters()
+        if self.iml_get:
+            self.add_iml_getters()
+    
+    def add_iml_setters(self):
+        name = self.setter_name
         """
-        TODO: every `I`, need to generate a random self.struct
-            for this we need to retrieve datatype, dmin, dmax for each attribute as above
-            dont know how to do this in Taichi scope
+        self.iml[name] = IMLOSCToFunc(self.tv)
         """
-        for I in ti.grouped(self.field):
-            self.field[I] = self.struct()
+        self.iml.add_instance(name+'')
 
-    def osc_getter(self, i: int, j: int, attribute: str):
-        ret = self.get((i,j), attribute)
-        if ret is not None:
-            route = self.osc.map.pascal_to_path(self.getter_name)#+'/'+attribute
-            self.osc.host.return_to_sender_by_name((route, attribute,ret), self.osc.client_name)
-        return ret
+    def add_iml_getters(self):
+        name = self.getter_name
+        """
+        self.iml[name] = IMLFuncToOSC(self.tv)
+        """
+        self.iml.add_instance(name+'')
 
-    def add_to_osc_map(self):
+    def setup_osc_mapping(self):
+        self.osc = self.tv.osc
         if self.osc_set:
-            self.setter_name = f"{self.tv.name_clean}_set_{self.name}"
-            self.add_osc_setters(self.setter_name)
+            self.add_osc_setters()
+            if self.iml_set:
+                self.add_iml_osc_setters()
         if self.osc_get:
-            self.getter_name = f"{self.tv.name_clean}_get_{self.name}"
-            self.add_osc_getters(self.getter_name)
+            self.add_osc_getters()
+            if self.iml_get:
+                self.add_iml_osc_getters()
 
-    def add_osc_setters(self, name):
+    def add_osc_setters(self):
+        name = self.setter_name
         # randomise
         self.osc.map.receive_args_inline(name+'_randomise', self._randomise)
         # state
@@ -145,11 +159,19 @@ class State:
             f(f"{name}_{k}_col", self.set_attr_col, 1, getattr(self,'len_attr_col'), k)
             f(f"{name}_{k}_all", self.set_attr_all, 0, getattr(self,'len_attr_all'), k)
 
-    def add_osc_getters(self, name):
+    def add_osc_getters(self):
+        name = self.getter_name
         for k,v in self.dict.items():
             ranges = (int(v[0]), int(v[0]), int(v[1]))
             kwargs = {'i': ranges, 'j': ranges, 'attr': (k,k,k)}
             self.osc.map.receive_args_inline(f"{name}", self.osc_getter, **kwargs)
+
+    def osc_getter(self, i: int, j: int, attribute: str):
+        ret = self.get((i,j), attribute)
+        if ret is not None:
+            route = self.osc.map.pascal_to_path(self.getter_name)#+'/'+attribute
+            self.osc.host.return_to_sender_by_name((route, attribute,ret), self.osc.client_name)
+        return ret
 
     '''
     def add_osc_streams(self, name):
@@ -157,5 +179,37 @@ class State:
         pass
     '''
 
+    def add_iml_osc_setters(self):
+        name = self.setter_name
+
+    def add_iml_osc_getters(self):
+        name = self.getter_name
+
+    def serialize(self) -> str:
+        return ti_serialize(self.field)
+    
+    def deserialize(self, json_str: str):
+        ti_deserialize(self.field, json_str)
+
+    def save(self, path: str):
+        # TODO: path validation, save to path, etc.
+        json_str = self.serialize()
+    
+    def load(self, path: str):
+        # TODO: path validation, file ext., etc.
+        # TODO: data validation (pydantic?)
+        json_str = jsons.load(path)
+        self.deserialize(json_str)
+
+    def from_nddict(self):
+        self.field.from_numpy(self.nddict.get_data())
+
+    def to_nddict(self):
+        self.nddict.set_data(self.field.to_numpy())
+
+    @ti.func
+    def __getitem__(self, key):
+        return self.field[key]
+
     def __call__(self, *args: Any, **kwds: Any) -> Any:
-        pass
+        return self.field

@@ -1,5 +1,6 @@
 '''
 TODO: color palette - implement using State
+TODO: Rewrite Particle class as tv.s.particle
 TODO: Particle.dist debug toroidal distance wrap function
 TODO: expose self.speed over OSC
 FIXME: refactor tmp_* fields and setters to use State
@@ -84,11 +85,12 @@ class Particle:
 
 @ti.data_oriented
 class Particles:
-    def __init__(self, tolvera, species: Species, **kwargs):
+    # def __init__(self, tolvera, species: Species, **kwargs):
+    def __init__(self, tolvera, **kwargs):
         self.tv = tolvera
         self.kwargs = kwargs
-        self.n = self.tv.particles
-        self.s = species
+        self.n = self.tv.pn
+        # self.s = species
         self._speed = ti.field(ti.f32, shape=())
         self._speed[None] = 1.0
         self.substep = self.tv.substep
@@ -119,7 +121,7 @@ class Particles:
     def randomise(self):
         for i in range(self.n):
             si = self.field[i].species
-            s = self.s.state.field[si, 0]
+            s = self.tv.s.species[si]
             species = si
             active  = 1.0
             pos     = [self.tv.x*ti.random(ti.f32),self.tv.y*ti.random(ti.f32)]
@@ -154,7 +156,7 @@ class Particles:
     @ti.func
     def limit_speed(self, i: int):
         p = self.field[i]
-        s = self.s.state.field[p.species, 0]
+        s = self.tv.s.species[p.species]
         if p.vel.norm() > s.speed:
             self.field[i].vel = p.vel.normalized() * s.speed * self._speed[None]
     @ti.kernel

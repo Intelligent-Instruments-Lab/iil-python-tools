@@ -23,19 +23,19 @@ class ReactionDiffusion():
         self.uv     = ti.Vector.field(2, ti.f32, shape=(2, self.tv.x, self.tv.y))
         self.colors = ti.Vector.field(4, ti.f32, shape=(5, ))
         self.field  = Pixels(self.tv, **kwargs)
-        self.params = State(self.tv, {
+        self.tv.s.rd = {'state': {
             'Du':     (ti.f32, 0., 1.),
             'Dv':     (ti.f32, 0., 1.),
             'feed':   (ti.f32, 0., 1.),
             'kill':   (ti.f32, 0., 1.),
             'substep':(ti.i32, 0, 100),
-        }, 1, osc=('set'), name='reaction_diffusion', randomise=False)
-        # self.params.set_state_all_from_list([
-        #     kwargs.get('Du', 0.160),
-        #     kwargs.get('Dv', 0.080),
-        #     kwargs.get('feed', 0.060),
-        #     kwargs.get('kill', 0.062),
-        #     kwargs.get('substep', 18)])
+        }, 'shape': 1, 'osc': ('set'), 'randomise': False}
+        self.tv.s.rd.field[0] = self.tv.s.rd.struct(
+            kwargs.get('Du', 0.160),
+            kwargs.get('Dv', 0.080),
+            kwargs.get('feed', 0.060),
+            kwargs.get('kill', 0.062),
+            kwargs.get('substep', 18))
         self.init()
     def init(self):
         self.randomise()
@@ -52,8 +52,8 @@ class ReactionDiffusion():
         self.uv_grid[0, rand_rows, rand_cols, 1] = 1.0
         self.uv.from_numpy(self.uv_grid)
     def add_to_osc_map(self):
-        self.tv.osc.map.receive_args_inline(self.params.setter_name+'_reset', self.reset)
-        self.tv.osc.map.receive_args_inline(self.params.setter_name+'_randomise_uv', self.randomise)
+        self.tv.osc.map.receive_args_inline(self.tv.s.rd.setter_name+'_reset', self.reset)
+        self.tv.osc.map.receive_args_inline(self.tv.s.rd.setter_name+'_randomise_uv', self.randomise)
     def make_palette(self):
         self.colors[0] = [0.0, 0.0, 0.0, 0.3137]
         self.colors[1] = [1.0, 0.1843, 0.53333, 0.37647]
@@ -68,7 +68,7 @@ class ReactionDiffusion():
             self.uv[0, int(p.pos.x), int(p.pos.y)] += [0.1, 0.0]
     @ti.kernel
     def compute(self, phase: int):
-        p = self.params.field[0,0]
+        p = self.tv.s.params.field[0,0]
         for i, j in ti.ndrange(self.tv.x, self.tv.y):
             cen = self.uv[phase, i, j]
             lapl = self.uv[phase, i + 1, j] + self.uv[phase, i, j + 1] + self.uv[
