@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import taichi as ti
-from tolvera.npndarray_dict import NpNdarrayDict
+from tolvera.npndarray_dict import NpNdarrayDict, np_vec2, np_vec3, np_vec4
 
 shape = (2,2)
 
@@ -10,9 +10,9 @@ def setup():
     return NpNdarrayDict({
         'i':  (np.int32, 2, 10),
         'f':  (np.float32, 0., 1.),
-        'v2': (np.float32, (0., 0.), (1., 1.)),
-        'v3': (np.float32, (0., 0., 0.), (1., 1., 1.)),
-        'v4': (np.float32, (0., 0., 0., 0.), (1., 1., 1., 1.)),
+        'v2': (np_vec2, 0., 1.),
+        'v3': (np_vec3, 0., 1.),
+        'v4': (np_vec4, 0., 1.),
     }, shape)
 
 @pytest.fixture
@@ -20,9 +20,9 @@ def setup_two():
     return NpNdarrayDict({
         'i':  (np.int32, 2, 10),
         'f':  (np.float32, 0., 1.),
-        'v2': (np.float32, (0., 0.), (1., 1.)),
-        'v3': (np.float32, (0., 0., 0.), (1., 1., 1.)),
-        'v4': (np.float32, (0., 0., 0., 0.), (1., 1., 1., 1.)),
+        'v2': (np_vec2, 0., 1.),
+        'v3': (np_vec3, 0., 1.),
+        'v4': (np_vec4, 0., 1.),
     }, shape)
 
 @pytest.fixture

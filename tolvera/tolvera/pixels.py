@@ -300,23 +300,22 @@ class Pixels:
             py = ti.cast(p.pos[1], ti.i32)
             vx = ti.cast(p.pos[0] + p.vel[0]*20, ti.i32)
             vy = ti.cast(p.pos[1] + p.vel[1]*20, ti.i32)
-            rgba = ti.Vector([s.r, s.g, s.b, s.a])
             if shape == 0:
-                self.point(px, py, rgba)
+                self.point(px, py, s.rgba)
             elif shape == 1:
-                self.line(px, py, vx, vy, rgba)
+                self.line(px, py, vx, vy, s.rgba)
             elif shape == 2:
                 side = int(s.size)*2
-                self.rect(px, py, side, side, rgba)
+                self.rect(px, py, side, side, s.rgba)
             elif shape == 3:
-                self.circle(px, py, s.size, rgba)
+                self.circle(px, py, s.size, s.rgba)
             elif shape == 4:
                 a = p.pos
                 b = p.pos + 1
                 c = a + b
-                self.triangle(a,b,c, rgba)
+                self.triangle(a,b,c, s.rgba)
             # elif shape == 5:
-            #     self.polygon(px, py, rgba)
+            #     self.polygon(px, py, s.rgba)
     @ti.kernel
     def update(self):
         pass

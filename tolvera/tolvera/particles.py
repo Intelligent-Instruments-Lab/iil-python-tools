@@ -94,10 +94,10 @@ class Particles:
         self.substep = self.tv.substep
         self.field = Particle.field(shape=(self.n))
         # TODO: These should be possible with State
-        self.pos = State(self.tv, {
-            'x': (0., self.tv.x),
-            'y': (0., self.tv.y),
-        }, self.n, osc=('get'), name='particles_pos')
+        # self.pos = State(self.tv, {
+        #     'x': (0., self.tv.x),
+        #     'y': (0., self.tv.y),
+        # }, shape=(self.n,), osc=('get'), name='particles_pos')
         self.tmp_pos = ti.Vector.field(2, ti.f32, shape=(self.n))
         self.tmp_vel = ti.Vector.field(2, ti.f32, shape=(self.n))
         self.tmp_pos_species = ti.Vector.field(2, ti.f32, shape=(self.tv.species))

@@ -16,7 +16,7 @@ from taichi._lib.core.taichi_python import DataType
 import taichi as ti
 import numpy as np
 
-from .npndarray_dict import NpNdarrayDict
+from .npndarray_dict import NpNdarrayDict, np_vec2, np_vec3, np_vec4
 
 @ti.data_oriented
 class State:
@@ -41,20 +41,48 @@ class State:
         self.shape = (shape,) if type(shape) is int else shape
         self.struct = ti.types.struct(**{k: v[0] for k,v in self.dict.items()})
         self.field = self.struct.field(shape=self.shape)
-        self.nddict = NpNdarrayDict(self.dict, self.shape)
         self.osc = True if osc is not None else False
         self.osc_get = 'get' in osc if osc is not None else False
         self.osc_set = 'set' in osc if osc is not None else False
         self.name = name
         self.init(randomise)
-        exit()
 
     def init(self, randomise: bool = False):
+        self.init_nddict()
         if randomise:
-            self.randomise()
+            self.nddict_randomise()
         if self.tv.osc is not False and self.osc:
             self.osc = self.tv.osc
             self.add_to_osc_map()
+
+    def init_nddict(self):
+        self.types = {
+            ti.i32: np.int32,
+            ti.f32: np.float32,
+            ti.math.vec2: np_vec2,
+            ti.math.vec3: np_vec3,
+            ti.math.vec4: np_vec4,
+        }
+
+        nddict = {}
+        for k, v in self.dict.items():
+            titype, min_val, max_val = v
+            nptype = self.types.get(titype)
+            if nptype is None:
+                raise NotImplementedError(f"no nptype for {titype}")
+            nddict[k] = (nptype, min_val, max_val)
+        
+        self.nddict = NpNdarrayDict(nddict, self.shape)
+
+    def from_nddict(self):
+        self.field.from_numpy(self.nddict.get_data())
+
+    def to_nddict(self):
+        self.nddict.set_data(self.field.to_numpy())
+
+    def nddict_randomise(self):
+        self.nddict.randomise()
+        self.from_nddict()
 
     def randomise(self):
         f_np = self.field.to_numpy()
@@ -74,11 +102,10 @@ class State:
                     f_np[k] = np.random.uniform(dmin, dmax, size=shape+(4,)).astype(np.float32)
                 case _:
                     raise NotImplementedError(f"randomise() not implemented for {datatype}")
-        self.field_np = f_np
         self.field.from_numpy(f_np)
 
     @ti.kernel
-    def _randomise(self):
+    def ti_randomise(self):
         """
         TODO: every `I`, need to generate a random self.struct
             for this we need to retrieve datatype, dmin, dmax for each attribute as above

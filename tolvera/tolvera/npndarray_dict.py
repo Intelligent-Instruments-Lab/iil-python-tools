@@ -1,6 +1,10 @@
 import numpy as np
 from typing import Any, Union, Callable
 
+np_vec2 = np.array([0.0, 0.0], dtype=np.float32)
+np_vec3 = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+np_vec4 = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
 class NpNdarrayDict:
     """
     A class that encapsulates a dictionary of NumPy ndarrays, each associated with a specific data type and a defined min-max range. 
@@ -22,15 +26,15 @@ class NpNdarrayDict:
         >>> state = NpNdarrayDict({
                 'i':  (np.int32, 2, 10),
                 'f':  (np.float32, 0., 1.),
-                'v2': (np.float32, (0., 0.), (1., 1.)),
-                'v3': (np.float32, (0., 0., 0.), (1., 1., 1.)),
-                'v4': (np.float32, (0., 0., 0., 0.), (1., 1., 1., 1.)),
+                'v2': (np_vec2, 0., 1.),
+                'v3': (np_vec3, 0., 1.),
+                'v4': (np_vec4, 0., 1.),
             }, (2,2))
         >>> state.set_value('i', (0, 0), 5)
         >>> print(state.get_value('i', (0, 0)))
         5
     """
-    def __init__(self, data_dict: dict[str, tuple[Any, Any, Any]], shape: tuple[int, int]):
+    def __init__(self, data_dict: dict[str, tuple[Any, Any, Any]], shape: tuple[int]):
         """
         Initialize the State class.
 
@@ -41,14 +45,18 @@ class NpNdarrayDict:
 
         """
         self.shape = shape
+        self.init(data_dict, shape)
+    
+    def init(self, data_dict: dict[str, tuple[Any, Any, Any]], shape: tuple[int]) -> None:
         self.dict = {}
         self.data = {}
         for key, (dtype, min_val, max_val) in data_dict.items():
-            dshape = shape
+            dshape = self.shape
             length = 1
-            if isinstance(min_val, tuple):
-                length = len(min_val)
-                dshape = shape + (length,)
+            if isinstance(dtype, np.ndarray):
+                dshape = dshape + dtype.shape
+                length = dtype.shape[0]
+                dtype = np.float32
             self.dict[key] = {
                 'dtype': dtype, 
                 'min': min_val, 

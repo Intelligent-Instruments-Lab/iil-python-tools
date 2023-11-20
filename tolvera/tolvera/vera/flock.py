@@ -13,20 +13,23 @@ class Flock:
     def __init__(self, tolvera, **kwargs):
         self.tv = tolvera
         self.kwargs = kwargs
+        # self.tv.p.state
         self.particles = State(tolvera, {
-            # 'separate': (0., 1.), # ti.math.vec2
-            # 'align':    (0., 1.), # ti.math.vec2
-            # 'cohere':   (0., 1.), # ti.math.vec2
-            'nearby':   (0., self.tv.p.n-1),   # ti.i32
-            'dist':     (0., self.tv.x*2), # ti.f32
-            'dist_wrap':(0., self.tv.x*2), # ti.f32
-        }, self.tv.p.n, osc=('get'), name='flock_particles', randomise=False)
+            'separate': (ti.math.vec2, 0., 1.),
+            'align':    (ti.math.vec2, 0., 1.),
+            'cohere':   (ti.math.vec2, 0., 1.),
+            'nearby':   (ti.i32, 0., self.tv.p.n-1),
+        }, shape=self.tv.p.n, osc=('get'), name='flock_particles', randomise=False)
+        self.distances = State(tolvera, {
+            'dist':     (ti.f32, 0., self.tv.x*2),
+            'dist_wrap':(ti.f32, 0., self.tv.x*2),
+        }, shape=(self.tv.p.n, self.tv.p.n), osc=('get'), name='flock_particles', randomise=False)
         self.species = State(tolvera, {
-            'separate': (.01, 1.),
-            'align':    (.01, 1.),
-            'cohere':   (.01, 1.),
-            'radius':   (.01, 300.)
-        }, self.tv.s.n, osc=('set'), name='flock_species')
+            'separate': (ti.f32, .01, 1.),
+            'align':    (ti.f32, .01, 1.),
+            'cohere':   (ti.f32, .01, 1.),
+            'radius':   (ti.f32, .01, 300.)
+        }, shape=(self.tv.s.n, self.tv.s.n), osc=('set'), name='flock_species')
     def randomise(self):
         self.species.randomise()
     @ti.kernel
@@ -53,8 +56,8 @@ class Flock:
                     align    += p2.vel
                     cohere   += p2.pos
                     nearby   += 1
-                self.particles.field[i,j].dist = p1.dist(p2).norm()
-                self.particles.field[i,j].dist_wrap = dis_wrap_norm
+                self.distances.field[i,j].dist = p1.dist(p2).norm()
+                self.distances.field[i,j].dist_wrap = dis_wrap_norm
             if nearby > 0:
                 separate = separate/nearby        * p1.active * species.separate
                 align    = align/nearby           * p1.active * species.align
@@ -62,7 +65,7 @@ class Flock:
                 vel      = (separate+align+cohere).normalized()
                 particles[i].vel += vel
                 particles[i].pos += particles[i].vel * p1.speed * p1.active
-            self.particles.field[i,0].nearby = nearby
+            self.particles.field[i] = self.particles.struct(separate, align, cohere, nearby)
 
     def __call__(self, particles):
         self.step(particles.field)

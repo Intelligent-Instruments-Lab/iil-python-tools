@@ -24,18 +24,18 @@ class ReactionDiffusion():
         self.colors = ti.Vector.field(4, ti.f32, shape=(5, ))
         self.field  = Pixels(self.tv, **kwargs)
         self.params = State(self.tv, {
-            'Du':     (0., 1.),
-            'Dv':     (0., 1.),
-            'feed':   (0., 1.),
-            'kill':   (0., 1.),
-            'substep':(0, 100),
+            'Du':     (ti.f32, 0., 1.),
+            'Dv':     (ti.f32, 0., 1.),
+            'feed':   (ti.f32, 0., 1.),
+            'kill':   (ti.f32, 0., 1.),
+            'substep':(ti.i32, 0, 100),
         }, 1, osc=('set'), name='reaction_diffusion', randomise=False)
-        self.params.set_state_all_from_list([
-            kwargs.get('Du', 0.160),
-            kwargs.get('Dv', 0.080),
-            kwargs.get('feed', 0.060),
-            kwargs.get('kill', 0.062),
-            kwargs.get('substep', 18)])
+        # self.params.set_state_all_from_list([
+        #     kwargs.get('Du', 0.160),
+        #     kwargs.get('Dv', 0.080),
+        #     kwargs.get('feed', 0.060),
+        #     kwargs.get('kill', 0.062),
+        #     kwargs.get('substep', 18)])
         self.init()
     def init(self):
         self.randomise()

@@ -7,6 +7,7 @@ import unicodedata
 import numpy as np
 import jsons
 import base64
+import time
 
 import taichi as ti
 from taichi.lang.field import ScalarField
@@ -71,3 +72,12 @@ def ti_deserialize(field, json_str):
         field.serialized = None
     else:
         raise TypeError(f"Unsupported field type for deserialization: {type(field)}")
+
+def time_function(func, *args, **kwargs):
+    """Time how long it takes to run a function and print the result
+    """
+    start = time.time()
+    func(*args, **kwargs)
+    end = time.time()
+    print(f"[Tolvera.utils] {func.__name__}() ran in {end-start:.4f}s")
+    return end-start

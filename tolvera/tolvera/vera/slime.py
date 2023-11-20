@@ -23,17 +23,17 @@ class Slime:
             'SUBSTEP':     (ti.i32, 1)
         })
         self.particles = State(self.tv, {
-            'sense_angle':  (0.,10.),
-            'sense_left':   (0.,10.),
-            'sense_centre': (0.,10.),
-            'sense_right':  (0.,10.),
+            'sense_angle':  (ti.math.vec2, 0., 10.),
+            'sense_left':   (ti.math.vec2, 0., 10.),
+            'sense_centre': (ti.math.vec2, 0., 10.),
+            'sense_right':  (ti.math.vec2, 0., 10.),
         }, self.tv.p.n, osc=('get'), name='slime_particles', randomise=False)
         self.species = State(self.tv, {
-            'sense_angle': (0., 1.),
-            'sense_dist':  (0., 50.),
-            'move_angle':  (0., 1.),
-            'move_dist':   (0., 4.),
-            'evaporate':   (0., 1.)
+            'sense_angle': (ti.f32, 0., 1.),
+            'sense_dist':  (ti.f32, 0., 50.),
+            'move_angle':  (ti.f32, 0., 1.),
+            'move_dist':   (ti.f32, 0., 4.),
+            'evaporate':   (ti.f32, 0., 1.)
         }, self.tv.s.n, osc=('set'), name='slime_species')
         self.trail = Pixels(self.tv, **kwargs)
         self.evaporate = ti.field(dtype=ti.f32, shape=())
