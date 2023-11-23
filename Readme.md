@@ -1,4 +1,6 @@
-# Repository Structure
+# iil-python-tools
+
+⚠️ NOTICE: This repository has been archived. See [iil-dev](https://github.com/Intelligent-Instruments-Lab/iil-dev) for a single development environment, and [Intelligent-Instruments-Lab/repositories](https://github.com/orgs/Intelligent-Instruments-Lab/repositories) for the individual projects.
 
 ## Python packages
 
