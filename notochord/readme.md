@@ -1,3 +1,12 @@
+NOTE: this project has moved to https://github.com/Intelligent-Instruments-Lab/notochord
+
+
+
+
+
+
+
+
 # Notochord ([Paper](https://zenodo.org/record/7088404 "Notochord AIMC 2022 paper") | [Video](https://www.youtube.com/watch?v=mkBKAyudL0A "Notochord AIMC 2022 video"))
  
 <div align="middle">
